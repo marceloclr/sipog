@@ -1,0 +1,21 @@
+# Publicação no GitLab Pages, gerada por batch_migrate.sh na migração do GitHub Pages.
+# Tipo de site detectado: HTML puro
+pages:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - |
+      mkdir -p "$CI_PROJECT_DIR/.site"
+      cd "."
+      for f in *; do
+        [ -e "$f" ] || continue
+        case "$f" in node_modules|_*) continue ;; esac
+        cp -R "$f" "$CI_PROJECT_DIR/.site/"
+      done
+      cd "$CI_PROJECT_DIR"
+      rm -rf public && mv .site public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
