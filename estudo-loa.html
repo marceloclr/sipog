@@ -135,9 +135,9 @@
             <p class="estudo-nota">Os arquivos são lidos só neste navegador — nada é enviado à nuvem nem altera o SIPOG (a não ser que você use "Salvar na nuvem").</p>
             <div class="estudo-grid-carga">
                 <div class="estudo-carga">
-                    <h3>LOA 2027 — Fonte × Órgão</h3>
-                    <p class="estudo-nota">Planilha com a aba <strong>"Fonte x Órgão"</strong> (coluna C, "Valor LOA (R$)"). A aba "Resumo por sub fonte", se existir, é usada na conferência.</p>
-                    <input type="file" id="arquivo-loa" accept=".xlsx" onchange="selecionarArquivoLOA(this)">
+                    <h3>LOA 2027 — Investimento por Órgão e Fonte</h3>
+                    <p class="estudo-nota"><strong>PDF</strong> do relatório "Demonstrativo Consolidado por Órgão e Fonte" emitido só com Investimento (conferido pelo total de cada órgão e pelo TOTAL GERAL), ou a planilha com a aba "Fonte x Órgão" (coluna C; LOA inteira, conferida pela aba "Resumo por sub fonte").</p>
+                    <input type="file" id="arquivo-loa" accept=".pdf,.xlsx" onchange="selecionarArquivoLOA(this)">
                     <div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div>
                 </div>
                 <div class="estudo-carga">
@@ -207,7 +207,7 @@
     <section class="estudo-aba estudo-secao" data-aba="consolidado">
         <h2 class="estudo-aba-titulo">4. Consolidado Órgão × Fonte e MAPPs</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs); clique numa linha de fonte para ver os MAPPs dela logo abaixo.</p>
+            <p class="estudo-nota">A LOA é o Investimento do órgão naquela fonte (pelo PDF da aba 1; a planilha "Fonte x Órgão" traz o orçamento inteiro). "% da LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs); clique numa linha de fonte para ver os MAPPs dela logo abaixo.</p>
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>

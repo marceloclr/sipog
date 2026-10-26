@@ -144,7 +144,126 @@ function lerLOADeWorkbook(wb) {
             if (Math.abs(esperado - lido) > 0.5) divergencias.push({ subfonte: sf, esperado, lido });
         });
     }
-    return { linhas, conferido, divergencias };
+    return { linhas, conferido, divergencias, origem: 'xlsx' };
+}
+
+// ─── LEITURA DA LOA EM PDF ("Demonstrativo Consolidado por Órgão e Fonte") ──
+// Relatório do orçamento: linha de órgão (8 dígitos + nome + Tesouro / Outras
+// Fontes / Total) seguida das linhas de fonte (500.9.1.0.00.00 + descrição +
+// valor na coluna do grupo + Total). Nomes longos quebram na linha de baixo.
+// O grupo (Tesouro / Outras Fontes) sai da coluna em que o valor está: um 501
+// pode estar em Outras Fontes. pdf.js só é baixado quando um PDF é escolhido.
+const PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+const RE_VALOR_PDF = /^\d{1,3}(\.\d{3})*,\d{2}$/;
+
+function carregarPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    return new Promise((ok, falha) => {
+        let s = document.createElement('script');
+        s.src = PDFJS_BASE + 'pdf.min.js';
+        s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'; ok(window.pdfjsLib); };
+        s.onerror = () => falha(new Error('Não foi possível baixar o leitor de PDF (pdf.js). Verifique a conexão.'));
+        document.head.appendChild(s);
+    });
+}
+
+// Linhas da página: palavras com a borda direita estimada (as colunas de valor
+// são alinhadas à direita), agrupadas pela altura (y) e ordenadas pelo x.
+function linhasDaPaginaPDF(conteudo) {
+    let palavras = [];
+    conteudo.items.forEach(it => {
+        let txt = it.str || '';
+        if (!txt.trim()) return;
+        let x = it.transform[4], y = it.transform[5], larg = it.width || 0;
+        let re = /\S+/g, m;
+        while ((m = re.exec(txt))) {
+            palavras.push({ txt: m[0], y, x: x + larg * m.index / txt.length, dir: x + larg * (m.index + m[0].length) / txt.length });
+        }
+    });
+    palavras.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+    let linhas = [];
+    palavras.forEach(p => {
+        let l = linhas[linhas.length - 1];
+        if (l && Math.abs(l.y - p.y) <= 2.5) l.palavras.push(p);
+        else linhas.push({ y: p.y, palavras: [p] });
+    });
+    linhas.forEach(l => l.palavras.sort((a, b) => a.x - b.x));
+    return linhas;
+}
+
+async function lerLOADePDF(buffer) {
+    let pdfjs = await carregarPdfJs();
+    let doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
+    let brutas = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+        let pagina = await doc.getPage(i);
+        brutas.push(...linhasDaPaginaPDF(await pagina.getTextContent()));
+        brutas.push(null); // quebra de página: descrição não continua na página seguinte
+    }
+
+    // Separa código, descrição e valores (com a borda direita de cada valor).
+    let itens = [], totalGeral = null, ultimo = null;
+    brutas.forEach(l => {
+        if (!l) { ultimo = null; return; }
+        let ps = l.palavras.slice();
+        let valores = [];
+        while (ps.length && RE_VALOR_PDF.test(ps[ps.length - 1].txt)) {
+            let p = ps.pop();
+            valores.unshift({ valor: V(p.txt), dir: p.dir });
+        }
+        let primeiro = ps.length ? ps[0].txt : '';
+        let texto = ps.map(p => p.txt).join(' ');
+        if (/^\d{8}$/.test(primeiro) && valores.length) {
+            ultimo = { tipo: 'orgao', codigo: primeiro, desc: ps.slice(1).map(p => p.txt).join(' '), valores };
+            itens.push(ultimo);
+        } else if (/^\d{3}(\.\d+){5}$/.test(primeiro) && valores.length) {
+            ultimo = { tipo: 'fonte', codigo: primeiro, desc: ps.slice(1).map(p => p.txt).join(' '), valores };
+            itens.push(ultimo);
+        } else if (N(texto) === 'TOTAL GERAL' && valores.length) {
+            totalGeral = valores[valores.length - 1].valor;
+            ultimo = null;
+        } else if (!valores.length && ultimo && texto && !/^(PAGINA|ORCAMENTO ANUAL|DEMONSTRATIVO|CODIGO )/.test(N(texto))) {
+            ultimo.desc += ' ' + texto; // continuação do nome
+        } else {
+            ultimo = null;
+        }
+    });
+    if (!itens.some(it => it.tipo === 'fonte')) throw new Error('O PDF não tem o layout "Demonstrativo Consolidado por Órgão e Fonte" (nenhuma linha de fonte com valor encontrada).');
+
+    // Colunas Tesouro e Outras Fontes: bordas direitas das linhas com os 3 valores.
+    let mediana = arr => { let a = arr.slice().sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
+    let com3 = itens.filter(it => it.valores.length === 3);
+    let dirTesouro = mediana(com3.map(it => it.valores[0].dir));
+    let dirOutras = mediana(com3.map(it => it.valores[1].dir));
+    let grupoDoValor = (v, codigo) => {
+        if (dirTesouro !== null && dirOutras !== null) return Math.abs(v.dir - dirTesouro) <= Math.abs(v.dir - dirOutras) ? 'Tesouro' : 'Outras Fontes';
+        return /^50[01]\./.test(codigo) ? 'Tesouro' : 'Outras Fontes';
+    };
+
+    let linhas = [], orgao = null, orgaos = [];
+    itens.forEach(it => {
+        if (it.tipo === 'orgao') {
+            orgao = { codigo: it.codigo, nome: it.desc, total: it.valores[it.valores.length - 1].valor, lido: 0 };
+            orgaos.push(orgao);
+            return;
+        }
+        if (!orgao) return;
+        // Uma fonte tem o valor na coluna do grupo + o Total; com 3 valores, as duas colunas.
+        let partes = it.valores.length >= 2 ? it.valores.slice(0, -1) : it.valores;
+        partes.forEach(v => {
+            if (!v.valor) return;
+            linhas.push({ grupo: grupoDoValor(v, it.codigo), subfonte: it.codigo, descSubfonte: it.desc,
+                codOrgao: orgao.codigo, orgao: orgao.nome, sigla: extrairSigla(orgao.nome), valor: v.valor });
+            orgao.lido += v.valor;
+        });
+    });
+
+    // Conferência: soma das fontes = total do órgão; soma geral = TOTAL GERAL.
+    let divergencias = orgaos.filter(o => Math.abs(o.total - o.lido) > 0.5)
+        .map(o => ({ item: `${o.codigo} ${o.nome}`, esperado: o.total, lido: o.lido }));
+    let somaGeral = linhas.reduce((s, l) => s + l.valor, 0);
+    if (totalGeral !== null && Math.abs(totalGeral - somaGeral) > 0.5) divergencias.push({ item: 'TOTAL GERAL', esperado: totalGeral, lido: somaGeral });
+    return { linhas, conferido: true, divergencias, origem: 'pdf', totalGeral };
 }
 
 async function selecionarArquivoLOA(input) {
@@ -153,6 +272,10 @@ async function selecionarArquivoLOA(input) {
     let status = document.getElementById('status-loa');
     status.innerHTML = 'Lendo…';
     try {
+        if (/\.pdf$/i.test(arquivo.name)) {
+            carregarLOA(await lerLOADePDF(await lerArquivoComoBuffer(arquivo)), arquivo.name);
+            return;
+        }
         let wb = new ExcelJS.Workbook();
         await wb.xlsx.load(await lerArquivoComoBuffer(arquivo));
         carregarLOA(lerLOADeWorkbook(wb), arquivo.name);
@@ -166,20 +289,25 @@ async function selecionarArquivoLOA(input) {
 
 function carregarLOA(resultado, nomeArquivo) {
     loaLinhas = resultado.linhas;
-    loaConferencia = { conferido: !!resultado.conferido, divergencias: resultado.divergencias || [] };
+    let origem = resultado.origem || (/\.pdf$/i.test(nomeArquivo || '') ? 'pdf' : 'xlsx');
+    loaConferencia = { conferido: !!resultado.conferido, divergencias: resultado.divergencias || [], origem };
     loaArquivo = nomeArquivo || '';
     let total = loaLinhas.reduce((s, l) => s + l.valor, 0);
     let subfontes = new Set(loaLinhas.map(l => l.subfonte)).size;
     let orgaos = new Set(loaLinhas.map(l => l.codOrgao)).size;
+    let ref = origem === 'pdf' ? 'totais do PDF' : 'Resumo';
+    let divs = loaConferencia.divergencias;
     let conf;
     if (!resultado.conferido) conf = '<span class="aviso">⚠ Aba "Resumo por sub fonte" ausente — soma não conferida.</span>';
-    else if (resultado.divergencias.length === 0) conf = '<span class="ok">✔ Somas por sub fonte conferem com o Resumo.</span>';
-    else conf = `<span class="erro">✖ ${resultado.divergencias.length} sub fonte(s) divergem do Resumo:</span> ` +
-        resultado.divergencias.slice(0, 5).map(d => `${escHtml(d.subfonte)} (lido ${F(d.lido)} × resumo ${F(d.esperado)})`).join('; ');
+    else if (divs.length === 0) conf = origem === 'pdf' ? '<span class="ok">✔ Somas das fontes conferem com o total de cada órgão e com o TOTAL GERAL.</span>'
+        : '<span class="ok">✔ Somas por sub fonte conferem com o Resumo.</span>';
+    else conf = `<span class="erro">✖ ${divs.length} item(ns) divergem dos ${ref}:</span> ` +
+        divs.slice(0, 5).map(d => `${escHtml(d.item || d.subfonte)} (lido ${F(d.lido)} × ${ref} ${F(d.esperado)})`).join('; ');
     document.getElementById('status-loa').innerHTML =
         `<span class="ok">✅ ${escHtml(loaArquivo)}</span><br>` +
         `${loaLinhas.length.toLocaleString('pt-BR')} pares Sub fonte × Órgão · ${subfontes} sub fontes · ${orgaos} órgãos<br>` +
-        `Total LOA: <strong>${F(total)}</strong><br>${conf}`;
+        `Total LOA: <strong>${F(total)}</strong><br>${conf}` +
+        (origem === 'xlsx' ? '<br><span class="aviso">⚠ A planilha "Fonte x Órgão" traz a LOA inteira (pessoal, custeio e dívida). Para o estudo, use o PDF emitido só com Investimento.</span>' : '');
     recalcularEstudo();
 }
 
@@ -1066,7 +1194,7 @@ function renderizarAjustesFinais() {
     let contM = document.getElementById('tabela-ajustes-mapps');
     let resumo = document.getElementById('resumo-ajustes');
     let aviso = document.getElementById('aviso-loa-ajustes');
-    if (aviso) aviso.innerHTML = loaLinhas.length ? '⚠️ A LOA 2027 usada é o total do órgão na fonte e <strong>ainda inclui Pessoal e Custeio</strong>: o arquivo da LOA (aba "Fonte x Órgão") não traz grupo de despesa. Para excluí-los é preciso a LOA aberta por grupo de despesa (GND).' : '';
+    if (aviso) aviso.innerHTML = (loaLinhas.length && loaConferencia.origem !== 'pdf') ? '⚠️ A LOA 2027 carregada é a planilha "Fonte x Órgão", que <strong>inclui Pessoal, Custeio e Dívida</strong>. Carregue na aba 1 o PDF "Demonstrativo Consolidado por Órgão e Fonte" emitido só com Investimento.' : '';
 
     // Selo do menu: fontes divergentes no total (sem filtro).
     let todas = montarAlertasFontes({ fonte: '', orgao: '' });
@@ -1435,7 +1563,7 @@ async function exportarEstudoXLSX() {
         ['', ''],
         ['Regra', 'Cópia da Previsão de Empenho por Estágio do SIPOG (cenário PADRÃO) e do Valor Deliberado por grupo; sem subtetos, PLOA ou edições/travas manuais.'],
         ['Necessidade Ajustada', 'Programado 2027 + (Programado 2026 − Prev. Empenho × (1 − % deliberado do grupo)).'],
-        ['% da LOA', 'Necessidade 2027 Ajustada dos MAPPs ÷ LOA 2027 do órgão na fonte (a LOA inclui pessoal, custeio e dívida).']
+        ['% da LOA', 'Necessidade 2027 Ajustada dos MAPPs ÷ LOA 2027 do órgão na fonte (' + (loaConferencia.origem === 'pdf' ? 'LOA de Investimento, do PDF por Órgão e Fonte' : 'planilha Fonte x Órgão: inclui pessoal, custeio e dívida') + ').']
     ].forEach((r, i) => { wsP.addRow(r); if (i === 0) wsP.getRow(1).font = { bold: true, size: 13 }; });
 
     let buffer = await wb.xlsx.writeBuffer();

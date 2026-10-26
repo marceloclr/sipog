@@ -66,8 +66,12 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 
 ## Página de estudo separada: `estudo-loa.html` + `js/estudo-loa.js`
 
-Cruza a LOA 2027 (xlsx "Fonte x Órgão", coluna C) com a base de MAPPs (layout do
-`importar()`), sem tocar no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).
+Cruza a LOA 2027 com a base de MAPPs (layout do `importar()`). LOA: de preferência o **PDF**
+"Demonstrativo Consolidado por Órgão e Fonte" emitido **só com Investimento** (`lerLOADePDF`,
+pdf.js 3.11.174 do cdnjs baixado sob demanda; grupo Tesouro/Outras Fontes pela coluna do
+valor; conferido por órgão e TOTAL GERAL — em 26/10: 205 pares, R$ 6.671.837.045); a planilha
+"Fonte x Órgão" (coluna C) ainda é aceita, mas traz a LOA inteira (pessoal, custeio, dívida).
+Não toca no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).
 Carrega só `js/03`, `js/06` e `js/05` do SIPOG (definições sem efeito ao carregar; o js/05 dá a
 gravação em chunks) — não incluir outros arquivos js/01–15. Nuvem: coleção própria
 `estudos_loa` (separada de `cenarios`), Firebase com cache em memória. Nomes de estudos salvos
@@ -88,8 +92,8 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
 - Ajustes Finais: Proposta de Programado 2027 = LOA do par Órgão × Fonte × (Nec. Ajustada do
   MAPP ÷ soma do par; negativas = 0). Edições em `propostasManuais` (localStorage por arquivo e
   no estudo salvo na nuvem); "Distribuir" reparte, por par, LOA − editados entre os não editados.
-  Alerta por fonte: situação pela parte distribuível (diferença − LOA sem MAPP). A LOA ainda
-  inclui Pessoal e Custeio — o xlsx/PDF da LOA não tem grupo de despesa (GND).
+  Alerta por fonte: situação pela parte distribuível (diferença − LOA sem MAPP). O aviso de
+  "LOA inteira" só aparece quando a LOA veio da planilha (`loaConferencia.origem`).
 - De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
   (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,
   ignorando emendas 3xx) e manual. Órgão casa pela sigla entre parênteses.
