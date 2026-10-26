@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estudo LOA × MAPPs — SIPOG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Maitree:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+    /* Estilos exclusivos da página de estudo — o restante vem de css/styles.css (SIPOG). */
+    .estudo-secao { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 18px; box-shadow: 0 4px 6px -1px var(--shadow); }
+    .estudo-secao > summary { padding: 14px 18px; font-weight: 700; font-size: 15px; cursor: pointer; list-style: none; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .estudo-secao > summary::-webkit-details-marker { display: none; }
+    .estudo-secao > summary::before { content: '▸'; color: var(--muted); }
+    .estudo-secao[open] > summary::before { content: '▾'; }
+    .estudo-corpo { padding: 0 18px 18px; }
+    .estudo-nota { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 6px 0 12px; }
+    .estudo-grid-carga { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+    .estudo-carga { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+    .estudo-carga h3 { font-size: 13px; margin-bottom: 4px; }
+    .estudo-status { font-size: 12px; margin-top: 10px; line-height: 1.5; }
+    .estudo-status .ok { color: var(--success); font-weight: 700; }
+    .estudo-status .aviso { color: var(--warning); font-weight: 700; }
+    .estudo-status .erro { color: var(--danger); font-weight: 700; }
+    .estudo-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+    .estudo-params label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+    .estudo-params input { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 13px; }
+    .estudo-filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 12px; }
+    .estudo-filtros select, .estudo-filtros input[type="search"] { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 12px; max-width: 100%; }
+    .estudo-tabela-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; max-height: 620px; overflow-y: auto; }
+    .estudo-tabela-wrap table { font-size: 12px; }
+    .estudo-tabela-wrap th, .estudo-tabela-wrap td { padding: 7px 10px; }
+    .estudo-tabela-wrap thead th { position: sticky; top: 0; z-index: 1; }
+    .estudo-tabela-wrap tfoot td { position: sticky; bottom: 0; background: var(--panel2); font-weight: 700; }
+    .estudo-tabela-wrap th.sem-ordem::after { content: ''; }
+    td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .estudo-tag { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .tag-exata { background: rgba(38,167,55,0.15); color: var(--success); }
+    .tag-tesouro { background: rgba(245,156,0,0.15); color: var(--warning); }
+    .tag-prefixo { background: rgba(45,179,158,0.15); color: var(--teal); }
+    .tag-manual { background: rgba(176,124,255,0.15); color: var(--purple); }
+    .tag-sem { background: rgba(233,79,14,0.12); color: var(--danger); }
+    .estudo-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .estudo-resumo div { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .estudo-resumo b { display: block; font-size: 16px; margin-top: 2px; }
+    .estudo-resumo span { font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+    .pct-alto { color: var(--danger); font-weight: 700; }
+    @media (max-width: 640px) {
+        .top-header { padding: 14px 16px; }
+        .wrap { padding: 16px; }
+    }
+</style>
+</head>
+<body>
+
+<header class="top-header">
+    <div class="header-row-main">
+        <div class="header-title">
+            <h1>Estudo LOA 2027 × MAPPs</h1>
+            <p>Página de estudo, separada do SIPOG: cruza a LOA por Órgão e Sub fonte com a Previsão de Empenho por Estágio dos MAPPs</p>
+        </div>
+        <div class="header-actions">
+            <a class="btn-mini-header" href="index.html" style="text-decoration:none;" title="Volta ao SIPOG">↩ Voltar ao SIPOG</a>
+            <button class="btn-mini-header" onclick="alternarTemaEstudo()" title="Alterna entre tema claro e escuro">🌗 Tema</button>
+            <button class="btn-mini-header" id="btn-exportar-estudo" onclick="exportarEstudoXLSX()" disabled title="Exporta Detalhe por MAPP, Órgão × Fonte e De-para em um XLSX">📥 Exportar XLSX</button>
+        </div>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <details class="estudo-secao" open>
+        <summary>1. Carga dos arquivos</summary>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">Os arquivos são lidos só neste navegador — nada é enviado à nuvem nem altera o SIPOG.</p>
+            <div class="estudo-grid-carga">
+                <div class="estudo-carga">
+                    <h3>LOA 2027 — Fonte × Órgão</h3>
+                    <p class="estudo-nota">Planilha com a aba <strong>"Fonte x Órgão"</strong> (coluna C, "Valor LOA (R$)"). A aba "Resumo por sub fonte", se existir, é usada na conferência.</p>
+                    <input type="file" id="arquivo-loa" accept=".xlsx" onchange="selecionarArquivoLOA(this)">
+                    <div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div>
+                </div>
+                <div class="estudo-carga">
+                    <h3>Base de MAPPs (layout do SIPOG)</h3>
+                    <p class="estudo-nota">A mesma planilha importada no SIPOG: 1ª aba, cabeçalho na linha 1 (MAPP, ORGAO, FONTE, ESTAGIO_EXECUCAO, VLR_…).</p>
+                    <input type="file" id="arquivo-mapps" accept=".xlsx" onchange="selecionarArquivoMAPPs(this)">
+                    <div class="estudo-status" id="status-mapps">Nenhum arquivo carregado.</div>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <details class="estudo-secao" open>
+        <summary>2. Parâmetros de estudo — Previsão de Empenho por Estágio</summary>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">Mesmos percentuais e mesma regra da etapa "Previsão de Empenho por Estágio" do SIPOG (padrões da regra vigente). Os estágios com percentual só usam o % quando o Limite 2026 é zero; com Limite, a previsão é o próprio Limite 2026. Alterar um valor recalcula tudo.</p>
+            <div class="estudo-params">
+                <div><label for="ep-conveniado">Conveniado (%)</label><input type="number" id="ep-conveniado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-licitado">Licitado (%)</label><input type="number" id="ep-licitado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-emlicitacao">Em Licitação (%)</label><input type="number" id="ep-emlicitacao" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-contratado">Contratado (%)</label><input type="number" id="ep-contratado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-preparatorias">Ativ. Preparatórias (%)</label><input type="number" id="ep-preparatorias" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-naoiniciado">Não Iniciado (%)</label><input type="number" id="ep-naoiniciado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-limiar">Em Execução — limiar (% do Prog.)</label><input type="number" id="ep-limiar" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+            </div>
+            <div style="margin-top:12px;"><button class="btn-mini-header" onclick="restaurarParametrosEstudo()">↺ Restaurar padrões do SIPOG</button></div>
+        </div>
+    </details>
+
+    <details class="estudo-secao" id="secao-depara">
+        <summary>3. De-para de fontes (Sub fonte da LOA → Fonte do SIPOG) <span class="estudo-tag tag-manual" id="badge-depara"></span></summary>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">
+                Sugestão automática:
+                <span class="estudo-tag tag-exata">exata</span> código de detalhamento igual (ex.: 700.2.2.0.00.<b>82</b> → (700)-(0<b>82</b>); no 754, a modalidade entra no código: 754.3.2.<b>2</b>.00.<b>59</b> → (754)-(<b>259</b>));
+                <span class="estudo-tag tag-tesouro">tesouro</span> sub fontes 500/501 do grupo Tesouro → (500)-(501) Tesouro;
+                <span class="estudo-tag tag-prefixo">prefixo</span> única fonte do SIPOG com o mesmo código de 3 dígitos;
+                <span class="estudo-tag tag-sem">sem par</span> escolha manual.
+                Escolhas manuais (<span class="estudo-tag tag-manual">manual</span>) ficam guardadas neste navegador.
+            </p>
+            <div class="estudo-tabela-wrap"><div id="tabela-depara"><p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p></div></div>
+        </div>
+    </details>
+
+    <details class="estudo-secao" open>
+        <summary>4. Consolidado Órgão × Fonte</summary>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" é a participação da Necessidade 2027 dos MAPPs na LOA — referência, não teto rígido.</p>
+            <div class="estudo-resumo" id="resumo-consolidado"></div>
+            <div class="estudo-filtros">
+                <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado()"><option value="">(todas)</option></select></label>
+                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado()">
+                    <option value="">(todas)</option>
+                    <option value="OK">LOA e MAPPs</option>
+                    <option value="SEM_LOA">MAPPs sem LOA</option>
+                    <option value="SEM_MAPP">LOA sem MAPPs</option>
+                </select></label>
+                <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado()">
+            </div>
+            <div class="estudo-tabela-wrap"><div id="tabela-consolidado"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+        </div>
+    </details>
+
+    <details class="estudo-secao" open>
+        <summary>5. Detalhe por MAPP — regra aplicada</summary>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 = Programado 2027 + TRF 2026. MAPPs Concluídos, Cancelados, Transferidos e de Entrega Prioritária são expurgados, como no SIPOG.</p>
+            <div class="estudo-filtros">
+                <label>Órgão <select id="filtro-det-orgao" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
+                <label>Fonte <select id="filtro-det-fonte" onchange="renderizarDetalhe()"><option value="">(todas)</option></select></label>
+                <label>Estágio <select id="filtro-det-estagio" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
+                <label><input type="checkbox" id="filtro-det-expurgo" onchange="renderizarDetalhe()"> mostrar expurgados</label>
+                <input type="search" id="filtro-det-texto" placeholder="Buscar MAPP ou regra…" oninput="renderizarDetalhe()">
+            </div>
+            <div class="estudo-tabela-wrap"><div id="tabela-detalhe"><p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p></div></div>
+        </div>
+    </details>
+
+</main>
+
+<!-- Utilitários do SIPOG reaproveitados (só definições, sem efeito ao carregar):
+     js/03 → N, S, V, F, valorCelulaExcelJS, labelClasse; js/06 → classificarRegistro, EST_*, labelEstagio. -->
+<script src="js/03-utils-formatacao.js"></script>
+<script src="js/06-classificacao-gate.js"></script>
+<script src="js/estudo-loa.js"></script>
+</body>
+</html>
