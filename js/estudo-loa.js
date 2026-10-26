@@ -99,6 +99,39 @@ function escHtml(v) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ─── TOOLTIPS DE CÁLCULO ────────────────────────────────────────────────────
+// Todo valor das grades e dos cards mostra, ao passar o mouse, a fórmula com os
+// números usados. FT() é o F() do SIPOG sem o "-" no zero (na fórmula o zero aparece).
+function FT(v) { return (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+
+function dica(...linhas) {
+    let txt = linhas.filter(l => l !== null && l !== undefined && l !== '').join('\n');
+    return txt ? ` title="${escHtml(txt)}"` : '';
+}
+
+function tdNum(valor, titulo, extra) {
+    return `<td class="num${extra ? ' ' + extra : ''}"${dica(titulo)}>${F(valor)}</td>`;
+}
+
+// Prev. Empenho 2026 de um MAPP: a conta da regra aplicada, com os valores.
+function explicarPrevEmp(m) {
+    if (m.expurgado) return `${m.regra}: Prev. Empenho, TRF e Necessidade = 0`;
+    let r = N(m.regra), conta;
+    if (/\(EMP\/[\d.,]+\)/.test(r)) {
+        let meses = (r.match(/EMP\/([\d.,]+)/) || [])[1];
+        conta = `(Empenhado 2026 ${FT(m.e26)} ÷ ${meses}) × 12`;
+    } else if (/LIMITE 2026|EMP=0/.test(r)) conta = `Limite 2026 ${FT(m.l26)}`;
+    else if (/EMPENHADO 2026/.test(r)) conta = `Empenhado 2026 ${FT(m.e26)}`;
+    else if (/\((\d+(?:[.,]\d+)?)%\)/.test(r) && !/100%/.test(r)) conta = `Programado 2026 ${FT(m.p26)} × ${(r.match(/\((\d+(?:[.,]\d+)?)%\)/) || [])[1]}%`;
+    else conta = `Programado 2026 ${FT(m.p26)}`;
+    if (/CAP: PROG/.test(r)) conta = `mín(${conta}, Programado 2026 ${FT(m.p26)})`;
+    return `Regra: ${m.regra}\nPrev. Empenho 2026 = ${conta} = ${FT(m.prevEmp)}`;
+}
+
+function explicarNecAj(m) {
+    return `Nec. 2027 Ajustada = Programado 2027 + (Programado 2026 − Prev. Empenho Ajustada)\n= ${FT(m.p27)} + (${FT(m.p26)} − ${FT(m.prevEmpAj)}) = ${FT(m.necAj)}`;
+}
+
 function fmtPct(v) {
     if (v === null || v === undefined || !isFinite(v)) return '—';
     return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
@@ -746,13 +779,15 @@ function renderizarDePara() {
         });
         h += `<tr>
             <td>${escHtml(s.grupo)}</td><td style="white-space:nowrap;">${escHtml(s.subfonte)}</td><td>${escHtml(s.desc)}</td>
-            <td class="num">${s.orgaos}</td><td class="num">${F(s.valor)}</td>
+            <td class="num"${dica(`Órgãos do Executivo com LOA 2027 na sub fonte ${s.subfonte}`)}>${s.orgaos}</td>
+            ${tdNum(s.valor, `LOA 2027 da sub fonte = Σ LOA dos ${s.orgaos} órgão(s) = ${FT(s.valor)}`)}
             <td><span class="estudo-tag tag-${tag === 'sem par' ? 'sem' : tag}">${ROTULO_REGRA_DEPARA[tag] || tag}</span></td>
             <td><select data-subfonte="${escHtml(s.subfonte)}" onchange="alterarDePara(this)" style="max-width:340px;">${opcoes}</select></td>
         </tr>`;
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL${fGrupo ? ' ' + escHtml(fGrupo).toUpperCase() : ''} (${lista.length} sub fontes)</td>
-        <td class="num">${tot.orgaos}</td><td class="num">${F(tot.valor)}</td>
+        <td class="num"${dica('Σ pares Órgão × Sub fonte')}>${tot.orgaos}</td>
+        ${tdNum(tot.valor, `Σ LOA das ${lista.length} sub fontes = com fonte do SIPOG ${FT(tot.valorCom)} + sem fonte ${FT(tot.valorSem)} = ${FT(tot.valor)}`)}
         <td colspan="2" style="font-weight:600; font-size:11px; white-space:normal;">Com fonte: ${tot.qtdCom} · ${F(tot.valorCom)} &nbsp;|&nbsp; Sem fonte: ${tot.qtdSem} · ${F(tot.valorSem)}</td>
         </tr></tfoot></table>`;
     cont.innerHTML = h;
@@ -767,7 +802,7 @@ function montarConsolidado() {
     let chave = (orgaoN, fonte) => orgaoN + '||' + fonte;
     let obter = (orgaoN, rotulo, fonte) => {
         let k = chave(orgaoN, fonte);
-        if (!mapa[k]) mapa[k] = { orgao: rotulo, fonte, loa: 0, temLOA: false, qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, subfontes: new Set() };
+        if (!mapa[k]) mapa[k] = { orgao: rotulo, fonte, loa: 0, temLOA: false, qtd: 0, p26: 0, p27: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, subfontes: new Set(), loaSubfonte: {} };
         return mapa[k];
     };
     let loaForaCruzamento = 0, paresForaCruzamento = 0;
@@ -778,12 +813,14 @@ function montarConsolidado() {
         item.loa += l.valor;
         item.temLOA = true;
         item.subfontes.add(l.subfonte);
+        item.loaSubfonte[l.subfonte] = (item.loaSubfonte[l.subfonte] || 0) + l.valor;
     });
     mappsCalculados.forEach(m => {
         if (m.expurgado) return;
         let item = obter(N(m.orgao), m.orgao, m.fonte);
         item.qtd++;
         item.p26 += m.p26;
+        item.p27 += m.p27;
         item.prevEmp += m.prevEmp;
         item.prevEmpAj += m.prevEmpAj;
         item.nec += m.nec;
@@ -849,17 +886,21 @@ const COLUNAS_CONSOLIDADO = [
     { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao, celula: l => `<td><strong>${escHtml(l.orgao)}</strong></td>` },
     { chave: 'situacao', titulo: 'Situação', valor: l => ROTULO_SITUACAO[l.situacao], ordem: l => ORDEM_SITUACAO[l.situacao],
       celula: l => `<td><span class="estudo-tag ${l.situacao === 'OK' ? 'tag-exata' : (l.situacao === 'SEM_LOA' ? 'tag-sem' : 'tag-prefixo')}">${ROTULO_SITUACAO[l.situacao]}</span></td>` },
-    { chave: 'loa', titulo: 'LOA 2027', num: true, valor: l => l.temLOA ? l.loa : null, celula: l => `<td class="num">${l.temLOA ? F(l.loa) : '—'}</td>` },
-    { chave: 'qtd', titulo: 'MAPPs', num: true, valor: l => l.qtd, celula: l => `<td class="num">${l.qtd || '—'}</td>` },
-    { chave: 'p26', titulo: 'Programado 2026', num: true, valor: l => l.p26 },
-    { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: l => l.prevEmp },
-    { chave: 'prevEmpAj', titulo: 'Prev. Empenho Ajustada', num: true, valor: l => l.prevEmpAj },
-    { chave: 'nec', titulo: 'Nec. 2027 Calculada', num: true, valor: l => l.nec },
-    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj, celula: l => `<td class="num"><strong>${F(l.necAj)}</strong></td>` },
+    { chave: 'loa', titulo: 'LOA 2027', num: true, valor: l => l.temLOA ? l.loa : null,
+      celula: l => `<td class="num"${dica(l.temLOA ? `LOA 2027 de ${l.orgao} na fonte = Σ sub fontes da LOA\n` +
+          Object.keys(l.loaSubfonte).sort().map(sf => `  ${sf}: ${FT(l.loaSubfonte[sf])}`).join('\n') + `\n= ${FT(l.loa)}` : 'Sem LOA 2027 para o órgão nesta fonte')}>${l.temLOA ? F(l.loa) : '—'}</td>` },
+    { chave: 'qtd', titulo: 'MAPPs', num: true, valor: l => l.qtd, celula: l => `<td class="num"${dica('MAPPs ativos (não expurgados) do órgão na fonte')}>${l.qtd || '—'}</td>` },
+    { chave: 'p26', titulo: 'Programado 2026', num: true, valor: l => l.p26, dica: l => `Σ Programado 2026 dos ${l.qtd} MAPPs = ${FT(l.p26)}` },
+    { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: l => l.prevEmp, dica: l => `Σ Prev. Empenho 2026 (regra por estágio) dos ${l.qtd} MAPPs = ${FT(l.prevEmp)}` },
+    { chave: 'prevEmpAj', titulo: 'Prev. Empenho Ajustada', num: true, valor: l => l.prevEmpAj, dica: l => `Σ Prev. Empenho × (1 − % deliberado do grupo) dos ${l.qtd} MAPPs = ${FT(l.prevEmpAj)}` },
+    { chave: 'nec', titulo: 'Nec. 2027 Calculada', num: true, valor: l => l.nec,
+      dica: l => `Nec. 2027 Calculada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho)\n= ${FT(l.p27)} + (${FT(l.p26)} − ${FT(l.prevEmp)}) = ${FT(l.nec)}` },
+    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj,
+      celula: l => `<td class="num"${dica(`Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(l.p27)} + (${FT(l.p26)} − ${FT(l.prevEmpAj)}) = ${FT(l.necAj)}`)}><strong>${F(l.necAj)}</strong></td>` },
     { chave: 'pctLOA', titulo: '% da LOA', num: true, valor: l => l.pctLOA,
-      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}">${fmtPct(l.pctLOA)}</td>` },
+      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}"${dica(l.pctLOA === null ? 'Sem LOA 2027: não há percentual' : `% da LOA = Nec. 2027 Ajustada ÷ LOA 2027 × 100\n= ${FT(l.necAj)} ÷ ${FT(l.loa)} × 100 = ${fmtPct(l.pctLOA)}`)}>${fmtPct(l.pctLOA)}</td>` },
     { chave: 'saldo', titulo: 'Saldo (LOA − Nec. Aj.)', num: true, valor: l => l.saldo,
-      celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}">${l.saldo === null ? '—' : F(l.saldo)}</td>` },
+      celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}"${dica(l.saldo === null ? 'Sem LOA 2027: não há saldo' : `Saldo = LOA 2027 − Nec. 2027 Ajustada\n= ${FT(l.loa)} − ${FT(l.necAj)} = ${FT(l.saldo)}`)}>${l.saldo === null ? '—' : F(l.saldo)}</td>` },
     { chave: 'subfontes', titulo: 'Sub fontes da LOA', valor: l => l.subfontesTxt, celula: l => `<td style="font-size:11px; color:var(--muted);">${escHtml(l.subfontesTxt)}</td>` }
 ];
 
@@ -883,29 +924,34 @@ function renderizarConsolidado() {
         (!fFonte || l.fonte === fFonte) && (!fOrg || l.orgao === fOrg) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
 
     let tot = linhas.reduce((t, l) => {
-        t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.prevEmp += l.prevEmp; t.prevEmpAj += l.prevEmpAj; t.nec += l.nec; t.necAj += l.necAj;
-        if (l.temLOA) t.necAjComLOA += l.necAj;
+        t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.p27 += l.p27; t.prevEmp += l.prevEmp; t.prevEmpAj += l.prevEmpAj; t.nec += l.nec; t.necAj += l.necAj;
+        if (l.temLOA) { t.necAjComLOA += l.necAj; t.paresLOA++; }
         return t;
-    }, { loa: 0, qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, necAjComLOA: 0 });
-    let necSemLOA = linhas.filter(l => l.situacao === 'SEM_LOA').reduce((s, l) => s + l.necAj, 0);
+    }, { loa: 0, qtd: 0, p26: 0, p27: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, necAjComLOA: 0, paresLOA: 0 });
+    let semLOA = linhas.filter(l => l.situacao === 'SEM_LOA');
+    let necSemLOA = semLOA.reduce((s, l) => s + l.necAj, 0);
+    let pctTot = tot.loa > 0 ? tot.necAjComLOA / tot.loa * 100 : null;
+    let dNec = `Nec. 2027 Calculada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho)\n= ${FT(tot.p27)} + (${FT(tot.p26)} − ${FT(tot.prevEmp)}) = ${FT(tot.nec)}`;
+    let dNecAj = `Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(tot.p27)} + (${FT(tot.p26)} − ${FT(tot.prevEmpAj)}) = ${FT(tot.necAj)}`;
+    let dPct = pctTot === null ? 'Sem LOA no filtro' : `% da LOA = Nec. Ajustada dos pares com LOA ÷ LOA × 100\n= ${FT(tot.necAjComLOA)} ÷ ${FT(tot.loa)} × 100 = ${fmtPct(pctTot)}`;
     resumoEl.innerHTML = `
-        <div><span>LOA 2027 (filtro)</span><b>${F(tot.loa)}</b></div>
-        <div><span>Necessidade 2027 Calculada</span><b>${F(tot.nec)}</b></div>
-        <div><span>Necessidade 2027 Ajustada</span><b>${F(tot.necAj)}</b></div>
-        <div><span>% da LOA (Ajustada, só pares com LOA)</span><b>${fmtPct(tot.loa > 0 ? tot.necAjComLOA / tot.loa * 100 : null)}</b></div>
-        <div><span>Nec. Ajustada em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
-        <div><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
+        <div${dica(`Σ LOA 2027 dos ${tot.paresLOA} pares Órgão × Fonte do filtro = ${FT(tot.loa)}`)}><span>LOA 2027 (filtro)</span><b>${F(tot.loa)}</b></div>
+        <div${dica(dNec)}><span>Necessidade 2027 Calculada</span><b>${F(tot.nec)}</b></div>
+        <div${dica(dNecAj)}><span>Necessidade 2027 Ajustada</span><b>${F(tot.necAj)}</b></div>
+        <div${dica(dPct)}><span>% da LOA (Ajustada, só pares com LOA)</span><b>${fmtPct(pctTot)}</b></div>
+        <div${dica(`Σ Nec. 2027 Ajustada dos ${semLOA.length} pares Órgão × Fonte sem LOA 2027 = ${FT(necSemLOA)}`)}><span>Nec. Ajustada em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
+        <div${dica(`Σ LOA das sub fontes sem Fonte do SIPOG no De-para (aba 3): ${resumoForaCruzamento.paresForaCruzamento} pares = ${FT(resumoForaCruzamento.loaForaCruzamento)}`)}><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
 
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
     let h = `<table><thead>${cabecalhoOrdenavel('cons', COLUNAS_CONSOLIDADO)}</thead><tbody>`;
     linhas.forEach(l => {
         h += `<tr class="linha-clicavel" data-orgao="${escHtml(l.orgao)}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)" title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte no card 5">` +
-            COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : `<td class="num">${F(c.valor(l))}</td>`).join('') + '</tr>';
+            COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : '')).join('') + '</tr>';
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL (${linhas.length} linhas)</td>
-        <td class="num">${F(tot.loa)}</td><td class="num">${tot.qtd}</td><td class="num">${F(tot.p26)}</td>
-        <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.prevEmpAj)}</td><td class="num">${F(tot.nec)}</td><td class="num">${F(tot.necAj)}</td>
-        <td class="num">${fmtPct(tot.loa > 0 ? tot.necAjComLOA / tot.loa * 100 : null)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
+        ${tdNum(tot.loa, `Σ LOA 2027 das ${linhas.length} linhas = ${FT(tot.loa)}`)}<td class="num"${dica('Σ MAPPs ativos das linhas')}>${tot.qtd}</td>${tdNum(tot.p26, `Σ Programado 2026 = ${FT(tot.p26)}`)}
+        ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada = ${FT(tot.prevEmpAj)}`)}${tdNum(tot.nec, dNec)}${tdNum(tot.necAj, dNecAj)}
+        <td class="num"${dica(dPct)}>${fmtPct(pctTot)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
@@ -940,22 +986,32 @@ function renderizarGrupos() {
     let ativos = mappsCalculados.filter(m => !m.expurgado);
     if (ativos.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p>'; return; }
     let prm = lerParametrosEstudo();
-    let tot = { qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0 };
+    let tot = { qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, p27: 0 };
+    let celulas = (s, qtd, rotulo) => [
+        tdNum(s.p26, `Σ Programado 2026 dos ${qtd} MAPPs ativos ${rotulo} = ${FT(s.p26)}`),
+        tdNum(s.prevEmp, `Σ Prev. Empenho 2026 (regra por estágio, aba 4) dos ${qtd} MAPPs ${rotulo} = ${FT(s.prevEmp)}`),
+        tdNum(s.nec, `Nec. 2027 Calculada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho)\n= ${FT(s.p27)} + (${FT(s.p26)} − ${FT(s.prevEmp)}) = ${FT(s.nec)}`),
+        `<td class="num"${dica(`Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(s.p27)} + (${FT(s.p26)} − ${FT(s.prevEmpAj)}) = ${FT(s.necAj)}`)}><strong>${F(s.necAj)}</strong></td>`
+    ];
     let h = `<table><thead><tr><th class="sem-ordem">Grupo</th><th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">Programado 2026</th>
         <th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">% deliberado</th><th class="sem-ordem num">Prev. Empenho Ajustada</th>
         <th class="sem-ordem num">Nec. 2027 Calculada</th><th class="sem-ordem num">Nec. 2027 Ajustada</th></tr></thead><tbody>`;
     GRUPOS_VD_ESTUDO.forEach(g => {
         let doGrupo = ativos.filter(m => m.classe === g.classe);
-        let s = doGrupo.reduce((t, m) => { t.p26 += m.p26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.nec += m.nec; t.necAj += m.necAj; return t; },
-            { p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0 });
+        let s = doGrupo.reduce((t, m) => { t.p26 += m.p26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.nec += m.nec; t.necAj += m.necAj; t.p27 += m.p27; return t; },
+            { p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, p27: 0 });
         tot.qtd += doGrupo.length; for (let k in s) tot[k] += s[k];
-        h += `<tr><td>${escHtml(g.label)}</td><td class="num">${doGrupo.length.toLocaleString('pt-BR')}</td><td class="num">${F(s.p26)}</td>
-            <td class="num">${F(s.prevEmp)}</td><td class="num">${fmtPct(prm.vd[g.classe] * 100)}</td><td class="num">${F(s.prevEmpAj)}</td>
-            <td class="num">${F(s.nec)}</td><td class="num"><strong>${F(s.necAj)}</strong></td></tr>`;
+        let pct = prm.vd[g.classe] * 100;
+        let c = celulas(s, doGrupo.length, 'do grupo');
+        h += `<tr><td>${escHtml(g.label)}</td><td class="num"${dica(`MAPPs ativos (não expurgados) do grupo ${g.label}`)}>${doGrupo.length.toLocaleString('pt-BR')}</td>${c[0]}
+            ${c[1]}<td class="num"${dica(`Valor Deliberado do grupo (parâmetro acima)${prm.vdFonte ? ', só na fonte ' + prm.vdFonte : ', em todas as fontes'}`)}>${fmtPct(pct)}</td>
+            ${tdNum(s.prevEmpAj, `Prev. Empenho Ajustada = Σ Prev. Empenho × (1 − ${fmtPct(pct)})${prm.vdFonte ? ' nos MAPPs da fonte ' + prm.vdFonte + ' (demais sem redução)' : ''}\n= ${FT(s.prevEmpAj)}`)}
+            ${c[2]}${c[3]}</tr>`;
     });
-    h += `</tbody><tfoot><tr><td>TOTAL${prm.vdFonte ? ' — % aplicado só em ' + escHtml(prm.vdFonte) : ''}</td><td class="num">${tot.qtd.toLocaleString('pt-BR')}</td>
-        <td class="num">${F(tot.p26)}</td><td class="num">${F(tot.prevEmp)}</td><td></td><td class="num">${F(tot.prevEmpAj)}</td>
-        <td class="num">${F(tot.nec)}</td><td class="num">${F(tot.necAj)}</td></tr></tfoot></table>`;
+    let ct = celulas(tot, tot.qtd, 'de todos os grupos');
+    h += `</tbody><tfoot><tr><td>TOTAL${prm.vdFonte ? ' — % aplicado só em ' + escHtml(prm.vdFonte) : ''}</td><td class="num"${dica('Σ MAPPs ativos dos grupos')}>${tot.qtd.toLocaleString('pt-BR')}</td>
+        ${ct[0]}${ct[1]}<td></td>${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada dos grupos = ${FT(tot.prevEmpAj)}`)}
+        ${ct[2]}${ct[3]}</tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
@@ -966,18 +1022,22 @@ const COLUNAS_DETALHE = [
     { chave: 'fonte', titulo: 'Fonte', valor: m => m.fonte, celula: m => `<td class="col-fonte" style="font-size:11px;">${escHtml(m.fonte)}</td>` },
     { chave: 'estagio', titulo: 'Estágio', valor: m => m.estagio, celula: m => `<td style="font-size:11px;">${escHtml(m.estagio)}</td>` },
     { chave: 'grupo', titulo: 'Grupo', valor: m => rotuloGrupo(m.classe), celula: m => `<td style="font-size:11px;">${escHtml(rotuloGrupo(m.classe))}</td>` },
-    { chave: 'p26', titulo: 'Programado 2026', num: true, valor: m => m.p26 },
-    { chave: 'l26', titulo: 'Limite 2026', num: true, valor: m => m.l26 },
-    { chave: 'e26', titulo: 'Empenhado 2026', num: true, valor: m => m.e26 },
+    { chave: 'p26', titulo: 'Programado 2026', num: true, valor: m => m.p26, dica: () => 'Valor da base de MAPPs (Programado 2026)' },
+    { chave: 'l26', titulo: 'Limite 2026', num: true, valor: m => m.l26, dica: () => 'Valor da base de MAPPs (Limite 2026)' },
+    { chave: 'e26', titulo: 'Empenhado 2026', num: true, valor: m => m.e26, dica: () => 'Valor da base de MAPPs (Empenhado 2026)' },
     { chave: 'regra', titulo: 'Regra aplicada', valor: m => m.regra, celula: m => `<td class="col-regra">${escHtml(m.regra)}</td>` },
-    { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: m => m.prevEmp },
-    { chave: 'trf', titulo: 'TRF 2026', num: true, valor: m => m.trf },
-    { chave: 'p27', titulo: 'Programado 2027', num: true, valor: m => m.p27 },
-    { chave: 'nec', titulo: 'Nec. 2027 Calculada', num: true, valor: m => m.nec },
+    { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: m => m.prevEmp, dica: explicarPrevEmp },
+    { chave: 'trf', titulo: 'TRF 2026', num: true, valor: m => m.trf,
+      dica: m => m.expurgado ? explicarPrevEmp(m) : `TRF 2026 = Programado 2026 − Prev. Empenho 2026\n= ${FT(m.p26)} − ${FT(m.prevEmp)} = ${FT(m.trf)}` },
+    { chave: 'p27', titulo: 'Programado 2027', num: true, valor: m => m.p27, dica: () => 'Valor da base de MAPPs (Programado 2027)' },
+    { chave: 'nec', titulo: 'Nec. 2027 Calculada', num: true, valor: m => m.nec,
+      dica: m => m.expurgado ? explicarPrevEmp(m) : `Nec. 2027 Calculada = Programado 2027 + TRF 2026\n= ${FT(m.p27)} + ${FT(m.trf)} = ${FT(m.nec)}` },
     { chave: 'pctDel', titulo: '% deliberado', num: true, valor: m => m.pctDeliberado,
-      celula: m => `<td class="num">${m.pctDeliberado > 0 ? fmtPct(m.pctDeliberado) : '—'}</td>` },
-    { chave: 'prevEmpAj', titulo: 'Prev. Empenho Ajustada', num: true, valor: m => m.prevEmpAj },
-    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: m => m.necAj, celula: m => `<td class="num"><strong>${F(m.necAj)}</strong></td>` }
+      celula: m => `<td class="num"${dica('Valor Deliberado do grupo do MAPP (aba 2), se aplicado na fonte dele')}>${m.pctDeliberado > 0 ? fmtPct(m.pctDeliberado) : '—'}</td>` },
+    { chave: 'prevEmpAj', titulo: 'Prev. Empenho Ajustada', num: true, valor: m => m.prevEmpAj,
+      dica: m => m.expurgado ? explicarPrevEmp(m) : `Prev. Empenho Ajustada = Prev. Empenho 2026 × (1 − % deliberado)\n= ${FT(m.prevEmp)} × (1 − ${fmtPct(m.pctDeliberado || 0)}) = ${FT(m.prevEmpAj)}` },
+    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: m => m.necAj,
+      celula: m => `<td class="num"${dica(m.expurgado ? explicarPrevEmp(m) : explicarNecAj(m))}><strong>${F(m.necAj)}</strong></td>` }
 ];
 
 function linhasDetalheOrdenadas() {
@@ -1013,14 +1073,15 @@ function renderizarDetalhe() {
     let h = `<table><thead>${cabecalhoOrdenavel('det', COLUNAS_DETALHE)}</thead><tbody>`;
     exibidas.forEach(m => {
         h += `<tr${m.expurgado ? ' style="opacity:0.55;"' : ''}>` +
-            COLUNAS_DETALHE.map(c => c.celula ? c.celula(m) : `<td class="num">${F(c.valor(m))}</td>`).join('') + '</tr>';
+            COLUNAS_DETALHE.map(c => c.celula ? c.celula(m) : tdNum(c.valor(m), c.dica ? c.dica(m) : '')).join('') + '</tr>';
     });
     let aviso = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; use os filtros ou exporte o XLSX para ver todas` : '';
     let notaExpurgo = qtdExpurgadosExibidos ? `; ${qtdExpurgadosExibidos.toLocaleString('pt-BR')} expurgado(s) exibido(s), fora do total` : '';
     h += `</tbody><tfoot><tr><td colspan="5">TOTAL (${ativosExibidos.length.toLocaleString('pt-BR')} MAPPs${notaExpurgo}${aviso})</td>
-        <td class="num">${F(tot.p26)}</td><td class="num">${F(tot.l26)}</td><td class="num">${F(tot.e26)}</td><td></td>
-        <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.trf)}</td><td class="num">${F(tot.p27)}</td><td class="num">${F(tot.nec)}</td>
-        <td></td><td class="num">${F(tot.prevEmpAj)}</td><td class="num">${F(tot.necAj)}</td></tr></tfoot></table>`;
+        ${tdNum(tot.p26, `Σ Programado 2026 dos MAPPs ativos = ${FT(tot.p26)}`)}${tdNum(tot.l26, `Σ Limite 2026 = ${FT(tot.l26)}`)}${tdNum(tot.e26, `Σ Empenhado 2026 = ${FT(tot.e26)}`)}<td></td>
+        ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.trf, `Σ TRF 2026 = Σ Programado 2026 − Σ Prev. Empenho\n= ${FT(tot.p26)} − ${FT(tot.prevEmp)} = ${FT(tot.trf)}`)}
+        ${tdNum(tot.p27, `Σ Programado 2027 = ${FT(tot.p27)}`)}${tdNum(tot.nec, `Σ Nec. 2027 Calculada = Σ Programado 2027 + Σ TRF\n= ${FT(tot.p27)} + ${FT(tot.trf)} = ${FT(tot.nec)}`)}
+        <td></td>${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada = ${FT(tot.prevEmpAj)}`)}${tdNum(tot.necAj, `Σ Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(tot.p27)} + (${FT(tot.p26)} − ${FT(tot.prevEmpAj)}) = ${FT(tot.necAj)}`)}</tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
@@ -1125,13 +1186,14 @@ function calcularPropostasAutomaticas() {
         let peso = Math.max(m.necAj || 0, 0);
         somaNecPar[par] = (somaNecPar[par] || 0) + peso;
         return { chave: base + '#' + ocorrencias[base], par, peso, mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio,
-            classe: m.classe, necAj: m.necAj, loaPar: loaPar[par] !== undefined ? loaPar[par] : null };
+            classe: m.classe, necAj: m.necAj, p26: m.p26, p27: m.p27, prevEmpAj: m.prevEmpAj, loaPar: loaPar[par] !== undefined ? loaPar[par] : null };
     });
     // Proporcional à Necessidade Ajustada e nunca acima dela: se a LOA do par passa da soma
     // das necessidades, cada MAPP fica com a própria necessidade e o resto é "LOA sem destino".
     // Grade 1 = MAPPs com necessidade; grade 2 = sem necessidade (proposta só manual).
     linhasAjustes.forEach(l => {
         let soma = somaNecPar[l.par] || 0;
+        l.somaPar = soma;
         l.auto = (l.loaPar > 0 && soma > 0) ? l.peso * Math.min(1, l.loaPar / soma) : 0;
         l.grade = l.peso > 0 ? 1 : 2;
     });
@@ -1247,9 +1309,23 @@ function distribuirDiferencaFonte(fonte) {
 
 const ROTULO_ALERTA = { ok: 'Confere', sobra: 'LOA sobrando', estouro: 'Acima da LOA', semdestino: 'LOA sem destino' };
 
-function celulaDiferenca(dif) {
-    if (Math.abs(dif) < TOLERANCIA_ALERTA) return `<td class="num">—</td>`;
-    return `<td class="num ${dif > 0 ? 'valor-sobra' : 'valor-estouro'}">${dif > 0 ? '+' : '−'}${F(Math.abs(dif))}</td>`;
+function celulaDiferenca(dif, titulo) {
+    if (Math.abs(dif) < TOLERANCIA_ALERTA) return `<td class="num"${dica(titulo)}>—</td>`;
+    return `<td class="num ${dif > 0 ? 'valor-sobra' : 'valor-estouro'}"${dica(titulo)}>${dif > 0 ? '+' : '−'}${F(Math.abs(dif))}</td>`;
+}
+
+// Proposta de um MAPP: a conta da distribuição automática e, se houver, o valor editado.
+function explicarProposta(l) {
+    let man = propostasManuais[l.chave];
+    let auto = l.grade === 2
+        ? 'Automática = R$ 0,00 (MAPP sem Nec. 2027 Ajustada: proposta só manual)'
+        : (l.loaPar > 0
+            ? `Automática = Nec. Ajustada × mín(1, LOA do par ÷ Σ Nec. Ajustada do par)\n= ${FT(l.necAj)} × mín(1, ${FT(l.loaPar)} ÷ ${FT(l.somaPar)}) = ${FT(l.auto)}`
+            : 'Automática = R$ 0,00 (órgão sem LOA 2027 nesta fonte)');
+    let linhas = [auto];
+    if (man) linhas.push(`${man.origem === 'redistribuicao' ? 'Redistribuída (Distribuir)' : 'Editada'}: ${FT(man.valor)}`);
+    if (propostaExcede(l)) linhas.push(`⚠ Acima da Nec. 2027 Ajustada (${FT(l.necAj)}) em ${FT(propostaDe(l) - l.necAj)}`);
+    return linhas.join('\n');
 }
 
 function renderizarAjustesFinais() {
@@ -1278,6 +1354,8 @@ function renderizarAjustesFinais() {
     if (!loaLinhas.length || !mappsCalculados.length) {
         let msg = '<p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p>';
         contA.innerHTML = msg; contO.innerHTML = msg; contM.innerHTML = msg; contM2.innerHTML = msg; resumo.innerHTML = '';
+        let bloco = document.getElementById('bloco-ajustes-orgaos');
+        if (bloco) bloco.style.display = '';
         return;
     }
     let f = filtrosAjustes();
@@ -1293,14 +1371,18 @@ function renderizarAjustesFinais() {
     let doFiltro = linhasAjustes.filter(l => (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao)));
     let qtdEditados = doFiltro.filter(l => propostasManuais[l.chave]).length;
     let qtdExcede = doFiltro.filter(propostaExcede).length;
+    let propAuto = doFiltro.filter(l => !propostasManuais[l.chave]).reduce((s, l) => s + l.auto, 0);
+    let propEdit = doFiltro.filter(l => propostasManuais[l.chave]).reduce((s, l) => s + propostaDe(l), 0);
+    let tEstouro = alertas.reduce((s, a) => s + a.estouro, 0), tSobraDist = alertas.reduce((s, a) => s + a.sobraDistribuivel, 0);
+    let aResolver = divergentes.filter(a => a.status === 'estouro' || a.status === 'sobra');
     resumo.innerHTML = `
-        <div><span>LOA 2027 (filtro)</span><b>${F(tLOA)}</b></div>
-        <div><span>Proposta de Programado 2027</span><b>${F(tProp)}</b></div>
-        <div><span>Diferença (LOA − Proposta)</span><b class="${Math.abs(tLOA - tProp) < TOLERANCIA_ALERTA ? '' : (tLOA > tProp ? 'valor-sobra' : 'valor-estouro')}">${F(tLOA - tProp)}</b></div>
-        <div><span>Fontes a resolver (Proposta ≠ LOA distribuível)</span><b class="${divergentes.some(a => a.status === 'estouro' || a.status === 'sobra') ? 'valor-estouro' : ''}">${divergentes.filter(a => a.status === 'estouro' || a.status === 'sobra').length} de ${alertas.length}</b><small style="color:var(--muted);">${divergentes.filter(a => a.status === 'semdestino').length} só com LOA sem destino</small></div>
-        <div><span>LOA sem destino (sem MAPP ou além da Nec. Ajustada)</span><b>${F(tSemDest)}</b></div>
-        <div><span>MAPPs com proposta editada</span><b>${qtdEditados.toLocaleString('pt-BR')}</b></div>
-        <div><span>Proposta acima da Nec. Ajustada</span><b class="${qtdExcede ? 'valor-estouro' : ''}">${qtdExcede.toLocaleString('pt-BR')} MAPP(s)</b></div>`;
+        <div${dica(`Σ LOA 2027 dos pares Órgão × Fonte do filtro (${alertas.length} fonte(s)) = ${FT(tLOA)}`)}><span>LOA 2027 (filtro)</span><b>${F(tLOA)}</b></div>
+        <div${dica(`Σ Proposta dos ${doFiltro.length} MAPPs = automáticas ${FT(propAuto)} + editadas/redistribuídas ${FT(propEdit)} = ${FT(tProp)}`)}><span>Proposta de Programado 2027</span><b>${F(tProp)}</b></div>
+        <div${dica(`Diferença = LOA − Proposta = ${FT(tLOA)} − ${FT(tProp)} = ${FT(tLOA - tProp)}\n= LOA sem destino ${FT(tSemDest)} + a distribuir ${FT(tSobraDist)} − estouro ${FT(tEstouro)}`)}><span>Diferença (LOA − Proposta)</span><b class="${Math.abs(tLOA - tProp) < TOLERANCIA_ALERTA ? '' : (tLOA > tProp ? 'valor-sobra' : 'valor-estouro')}">${F(tLOA - tProp)}</b></div>
+        <div${dica(`Fontes com Proposta acima da LOA (${divergentes.filter(a => a.status === 'estouro').length}) ou com sobra que cabe nos MAPPs não editados (${divergentes.filter(a => a.status === 'sobra').length})`)}><span>Fontes a resolver (Proposta ≠ LOA distribuível)</span><b class="${aResolver.length ? 'valor-estouro' : ''}">${aResolver.length} de ${alertas.length}</b><small style="color:var(--muted);">${divergentes.filter(a => a.status === 'semdestino').length} só com LOA sem destino</small></div>
+        <div${dica(`Por par Órgão × Fonte: sobra (LOA − Proposta) que não cabe na Nec. Ajustada dos MAPPs não editados\nΣ dos pares = ${FT(tSemDest)}`)}><span>LOA sem destino (sem MAPP ou além da Nec. Ajustada)</span><b>${F(tSemDest)}</b></div>
+        <div${dica(`MAPPs do filtro com proposta editada ou redistribuída, somando ${FT(propEdit)}`)}><span>MAPPs com proposta editada</span><b>${qtdEditados.toLocaleString('pt-BR')}</b></div>
+        <div${dica('MAPPs com Nec. Ajustada cuja Proposta passa dela (linhas tarjadas em vermelho)')}><span>Proposta acima da Nec. Ajustada</span><b class="${qtdExcede ? 'valor-estouro' : ''}">${qtdExcede.toLocaleString('pt-BR')} MAPP(s)</b></div>`;
 
     // Grade de alerta (só fontes com diferença)
     if (!divergentes.length) {
@@ -1316,16 +1398,20 @@ function renderizarAjustesFinais() {
                 <td>${a.distribuivel ? `<button class="btn-mini-header" style="padding:4px 8px; font-size:11px;" onclick="distribuirDiferencaFonte('${fonteJs}')" title="Reparte a diferença de cada órgão desta fonte entre os MAPPs não editados, pela Necessidade Ajustada">⚖ Distribuir</button>` : ''}</td>
                 <td class="col-fonte">${escHtml(a.fonte)}</td>
                 <td><span class="estudo-tag tag-${a.status}">${ROTULO_ALERTA[a.status]}</span></td>
-                <td class="num">${F(a.loa)}</td><td class="num"><strong>${F(a.proposta)}</strong></td>${celulaDiferenca(a.dif)}
-                <td class="num">${a.semDestino ? F(a.semDestino) : '—'}</td>${celulaDiferenca(a.difDistribuivel)}
-                <td class="num">${a.qtd}</td><td class="num">${a.editados || '—'}</td>
+                ${tdNum(a.loa, `Σ LOA 2027 dos órgãos do filtro nesta fonte = ${FT(a.loa)}`)}
+                <td class="num"${dica(`Σ Proposta dos ${a.qtd} MAPPs desta fonte = ${FT(a.proposta)}`)}><strong>${F(a.proposta)}</strong></td>
+                ${celulaDiferenca(a.dif, `Diferença = LOA − Proposta = ${FT(a.loa)} − ${FT(a.proposta)} = ${FT(a.dif)}`)}
+                <td class="num"${dica(`Σ, por órgão, da sobra (LOA − Proposta) que não cabe na Nec. Ajustada dos MAPPs não editados = ${FT(a.semDestino)}`)}>${a.semDestino ? F(a.semDestino) : '—'}</td>
+                ${celulaDiferenca(a.difDistribuivel, `A distribuir = sobra que cabe nos MAPPs não editados ${FT(a.sobraDistribuivel)} − Proposta acima da LOA ${FT(a.estouro)} = ${FT(a.difDistribuivel)}`)}
+                <td class="num"${dica('MAPPs ativos desta fonte no filtro')}>${a.qtd}</td><td class="num"${dica('MAPPs com proposta editada ou redistribuída')}>${a.editados || '—'}</td>
             </tr>`;
         });
         let okQtd = alertas.length - divergentes.length;
+        let sd = k => divergentes.reduce((s, a) => s + a[k], 0);
         h += `</tbody><tfoot><tr><td colspan="3">${divergentes.length} fonte(s) com diferença${okQtd ? ` · ${okQtd} conferem` : ''}</td>
-            <td class="num">${F(divergentes.reduce((s, a) => s + a.loa, 0))}</td><td class="num">${F(divergentes.reduce((s, a) => s + a.proposta, 0))}</td>
-            ${celulaDiferenca(divergentes.reduce((s, a) => s + a.dif, 0))}<td class="num">${F(divergentes.reduce((s, a) => s + a.semDestino, 0))}</td>
-            ${celulaDiferenca(divergentes.reduce((s, a) => s + a.difDistribuivel, 0))}<td></td><td></td></tr></tfoot></table>`;
+            ${tdNum(sd('loa'), `Σ LOA das ${divergentes.length} fontes com diferença = ${FT(sd('loa'))}`)}${tdNum(sd('proposta'), `Σ Proposta das ${divergentes.length} fontes = ${FT(sd('proposta'))}`)}
+            ${celulaDiferenca(sd('dif'), `Σ LOA − Σ Proposta = ${FT(sd('loa'))} − ${FT(sd('proposta'))} = ${FT(sd('dif'))}`)}${tdNum(sd('semDestino'), `Σ LOA sem destino = ${FT(sd('semDestino'))}`)}
+            ${celulaDiferenca(sd('difDistribuivel'), `Σ a distribuir = ${FT(sd('sobraDistribuivel'))} − ${FT(sd('estouro'))} = ${FT(sd('difDistribuivel'))}`)}<td></td><td></td></tr></tfoot></table>`;
         contA.innerHTML = h;
     }
 
@@ -1349,13 +1435,18 @@ function renderizarAjustesFinais() {
     orgaos.forEach(o => {
         let st = Math.abs(o.dif) < TOLERANCIA_ALERTA ? 'ok' : (o.dif > 0 ? 'sobra' : 'estouro');
         ho += `<tr class="linha-clicavel alerta-${st}" data-orgao="${escHtml(o.orgao)}" onclick="document.getElementById('filtro-aj-orgao').value=this.dataset.orgao; renderizarAjustesFinais(); document.getElementById('tabela-ajustes-mapps').scrollIntoView({behavior:'smooth'});" title="Ver os MAPPs de ${escHtml(o.orgao)}">
-            <td><strong>${escHtml(o.orgao)}</strong></td><td class="num">${o.fontes.size}</td><td class="num">${o.qtd || '—'}</td><td class="num">${o.loa ? F(o.loa) : '—'}</td>
-            <td class="num">${F(o.necAj)}</td><td class="num"><strong>${F(o.proposta)}</strong></td>${celulaDiferenca(o.dif)}</tr>`;
+            <td><strong>${escHtml(o.orgao)}</strong></td><td class="num"${dica(`Fontes com LOA ou MAPP: ${[...o.fontes].sort().join('; ')}`)}>${o.fontes.size}</td><td class="num"${dica('MAPPs ativos do órgão no filtro')}>${o.qtd || '—'}</td>
+            <td class="num"${dica(`Σ LOA 2027 do órgão nas ${o.fontes.size} fonte(s) do filtro = ${FT(o.loa)}`)}>${o.loa ? F(o.loa) : '—'}</td>
+            ${tdNum(o.necAj, `Σ Nec. 2027 Ajustada dos ${o.qtd} MAPPs do órgão = ${FT(o.necAj)}`)}<td class="num"${dica(`Σ Proposta dos ${o.qtd} MAPPs do órgão = ${FT(o.proposta)}`)}><strong>${F(o.proposta)}</strong></td>
+            ${celulaDiferenca(o.dif, `Diferença = LOA − Proposta = ${FT(o.loa)} − ${FT(o.proposta)} = ${FT(o.dif)}`)}</tr>`;
     });
     let to = orgaos.reduce((t, o) => { t.loa += o.loa; t.necAj += o.necAj; t.proposta += o.proposta; t.qtd += o.qtd; return t; }, { loa: 0, necAj: 0, proposta: 0, qtd: 0 });
-    ho += `</tbody><tfoot><tr><td colspan="2">TOTAL (${orgaos.length} órgãos)</td><td class="num">${to.qtd.toLocaleString('pt-BR')}</td><td class="num">${F(to.loa)}</td>
-        <td class="num">${F(to.necAj)}</td><td class="num">${F(to.proposta)}</td>${celulaDiferenca(to.loa - to.proposta)}</tr></tfoot></table>`;
+    ho += `</tbody><tfoot><tr><td colspan="2">TOTAL (${orgaos.length} órgãos)</td><td class="num"${dica('Σ MAPPs ativos dos órgãos')}>${to.qtd.toLocaleString('pt-BR')}</td>${tdNum(to.loa, `Σ LOA 2027 dos ${orgaos.length} órgãos = ${FT(to.loa)}`)}
+        ${tdNum(to.necAj, `Σ Nec. 2027 Ajustada = ${FT(to.necAj)}`)}${tdNum(to.proposta, `Σ Proposta = ${FT(to.proposta)}`)}${celulaDiferenca(to.loa - to.proposta, `Σ LOA − Σ Proposta = ${FT(to.loa)} − ${FT(to.proposta)} = ${FT(to.loa - to.proposta)}`)}</tr></tfoot></table>`;
     contO.innerHTML = orgaos.length ? ho : '<p class="estudo-nota" style="padding:12px;">Nenhum órgão para o filtro.</p>';
+    // Com um órgão só (selecionado no filtro ou único na fonte) a grade repete os cards: fica oculta.
+    let blocoOrgaos = document.getElementById('bloco-ajustes-orgaos');
+    if (blocoOrgaos) blocoOrgaos.style.display = orgaos.length > 1 ? '' : 'none';
 
     // MAPPs — proposta editável: com Nec. Ajustada (distribuição automática) e sem (só manual)
     contM.innerHTML = tabelaMappsAjustes(linhas.filter(l => l.grade === 1), 'Nenhum MAPP com Necessidade 2027 Ajustada para o filtro.');
@@ -1374,9 +1465,9 @@ function tabelaMappsAjustes(linhas, msgVazia) {
         hm += `<tr class="${excede ? 'proposta-excede' : (man ? 'proposta-editada' : '')}"${excede ? ` title="Proposta acima da Nec. 2027 Ajustada (${escHtml(F(l.necAj))})"` : ''}>
             <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>
             <td class="col-fonte" style="font-size:11px;">${escHtml(l.fonte)}</td><td style="font-size:11px;">${escHtml(l.estagio)}</td>
-            <td class="num">${l.loaPar === null ? '<span title="Órgão sem LOA nesta fonte">sem LOA</span>' : F(l.loaPar)}</td>
-            <td class="num">${F(l.necAj)}</td>
-            <td class="num"><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="Automático: ${escHtml(F(l.auto))}">
+            <td class="num"${dica(l.loaPar === null ? 'Órgão sem LOA 2027 nesta fonte' : `LOA 2027 de ${l.orgao} na fonte ${l.fonte} = ${FT(l.loaPar)}\nΣ Nec. 2027 Ajustada dos MAPPs do par = ${FT(l.somaPar)}`)}>${l.loaPar === null ? 'sem LOA' : F(l.loaPar)}</td>
+            ${tdNum(l.necAj, explicarNecAj(l))}
+            <td class="num"${dica(explicarProposta(l))}><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="${escHtml(explicarProposta(l))}">
                 ${man ? `<button class="btn-link" onclick="restaurarProposta('${escHtml(l.chave.replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" title="${man.origem === 'redistribuicao' ? 'Valor da redistribuição' : 'Editado'} — voltar ao automático (${escHtml(F(l.auto))})">↺</button>` : ''}</td>
         </tr>`;
     });
@@ -1385,7 +1476,8 @@ function tabelaMappsAjustes(linhas, msgVazia) {
     let loaPares = Object.values(paresVistos).reduce((s, v) => s + v, 0);
     let avisoLim = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; filtre por fonte ou órgão para ver todas` : '';
     hm += `</tbody><tfoot><tr><td colspan="4">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${avisoLim})</td>
-        <td class="num" title="Soma da LOA dos pares Órgão × Fonte destes MAPPs">${F(loaPares)}</td><td class="num">${F(tm.necAj)}</td><td class="num">${F(tm.proposta)}</td></tr></tfoot></table>`;
+        ${tdNum(loaPares, `Σ LOA 2027 dos ${Object.keys(paresVistos).length} pares Órgão × Fonte destes MAPPs (cada par uma vez) = ${FT(loaPares)}`)}
+        ${tdNum(tm.necAj, `Σ Nec. 2027 Ajustada dos ${linhas.length} MAPPs = ${FT(tm.necAj)}`)}${tdNum(tm.proposta, `Σ Proposta dos ${linhas.length} MAPPs = ${FT(tm.proposta)}`)}</tr></tfoot></table>`;
     return hm;
 }
 

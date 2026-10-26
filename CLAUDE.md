@@ -107,7 +107,10 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   por par, LOA − editados entre os não editados, também com o teto da necessidade.
   Alerta por fonte apurado par a par: estouro (Proposta > LOA), sobra distribuível (cabe nos não
   editados até a necessidade) e "LOA sem destino" (par sem MAPP com necessidade ou LOA além da
-  necessidade — só a grade 2 recebe, à mão). O aviso de
+  necessidade — só a grade 2 recebe, à mão).
+- Tooltips de cálculo: todo valor de grade (`tdNum`/`dica`) e todo card mostra a fórmula com os
+  números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
+  Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de
   "LOA inteira" só aparece quando a LOA veio da planilha (`loaConferencia.origem`).
 - De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
   (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,

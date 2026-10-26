@@ -89,6 +89,8 @@
     tr.proposta-editada input.input-proposta { border-color: var(--warning); font-weight: 700; }
     tr.proposta-excede td { background: rgba(233,79,14,0.14); }
     tr.proposta-excede input.input-proposta { border-color: var(--danger); color: var(--danger); font-weight: 700; }
+    /* Valores com a fórmula de cálculo no tooltip (title) */
+    td.num[title], .estudo-resumo div[title] { cursor: help; }
     .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
     @media (max-width: 900px) {
         .estudo-layout { flex-direction: column; }
@@ -250,8 +252,10 @@
             <div class="estudo-resumo" id="resumo-ajustes"></div>
             <h3 class="estudo-subtitulo">Alerta por fonte — LOA 2027 × Proposta de Programado 2027</h3>
             <div class="estudo-tabela-wrap" style="max-height:360px;"><div id="tabela-alertas"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
-            <h3 class="estudo-subtitulo">Órgãos (todas as fontes, conforme o filtro)</h3>
-            <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-ajustes-orgaos"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+            <div id="bloco-ajustes-orgaos">
+                <h3 class="estudo-subtitulo">Órgãos (todas as fontes, conforme o filtro)</h3>
+                <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-ajustes-orgaos"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+            </div>
             <h3 class="estudo-subtitulo">MAPPs com Necessidade 2027 Ajustada — proposta editável</h3>
             <p class="estudo-nota">A proposta automática nunca passa da Nec. 2027 Ajustada; linha <span style="background:rgba(233,79,14,0.18); padding:0 4px; border-radius:3px;">tarjada em vermelho</span> = proposta editada acima da necessidade.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
