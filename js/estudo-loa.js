@@ -9,6 +9,8 @@ let loaLinhas = [];          // [{ grupo, subfonte, descSubfonte, codOrgao, orga
 let loaArquivo = '';
 let mappsBrutos = [];        // linhas da planilha de MAPPs, cabeçalho em maiúsculas
 let mappsArquivo = '';
+let mappsOriginais = [];     // linhas como vieram do arquivo (antes da tradução de colunas), p/ exportação
+let mappsColunasOriginais = [];
 let mappsCalculados = [];    // resultado de calcularPrevisaoEmpenhoEstudo por linha
 let deParaSugerido = {};     // { subfonte: { fonte, regra } }
 let deParaManual = {};       // { subfonte: fonteSIPOG | '' } — escolhas do usuário
@@ -309,6 +311,9 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
         return o;
     });
     let cab = (headers && headers.length ? headers : Object.keys(mappsBrutos[0] || {})).map(h => String(h).trim().toUpperCase());
+    // Cópia do arquivo como veio (as linhas de mappsBrutos recebem as colunas traduzidas).
+    mappsOriginais = mappsBrutos.map(o => Object.assign({}, o));
+    mappsColunasOriginais = cab;
     let n = normalizarLayoutMAPPs(mappsBrutos, cab);
     mappsArquivo = nomeArquivo || '';
     let avisos = '';
@@ -882,6 +887,25 @@ async function exportarEstudoXLSX() {
         let ef = fonteEfetiva(s.subfonte);
         return Object.assign({}, s, { regra: ROTULO_REGRA_DEPARA[ef.fonte || ef.regra === 'manual' ? ef.regra : 'sem'], fonte: ef.fonte || '(sem fonte)' });
     }));
+
+    // Abas com o conteúdo de cada arquivo carregado, para o xlsx ficar autossuficiente.
+    if (loaLinhas.length) {
+        adicionarAbaEstudo(wb, 'ARQ_LOA_FONTE_X_ORGAO', [
+            { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'SUB FONTE', chave: 'subfonte', largura: 18 },
+            { titulo: 'DESCRIÇÃO DA SUB FONTE', chave: 'descSubfonte', largura: 60 }, { titulo: 'CÓDIGO ÓRGÃO', chave: 'codOrgao', largura: 14 },
+            { titulo: 'ÓRGÃO', chave: 'orgao', largura: 60 }, { titulo: 'SIGLA', chave: 'sigla', largura: 14 },
+            { titulo: 'VALOR LOA (R$)', chave: 'valor', moeda: true, largura: 20 }
+        ], loaLinhas);
+    }
+    if (mappsOriginais.length) {
+        // Colunas VLR_* viram número (o CSV traz texto com vírgula decimal).
+        let colunas = mappsColunasOriginais.map(c => ({ titulo: c, chave: c, moeda: /^VLR_/.test(c), largura: /^VLR_/.test(c) ? 18 : (c === 'MAPP' ? 60 : 16) }));
+        adicionarAbaEstudo(wb, 'ARQ_BASE_MAPPS', colunas, mappsOriginais.map(r => {
+            let o = {};
+            mappsColunasOriginais.forEach(c => { o[c] = /^VLR_/.test(c) ? V(r[c]) : (r[c] === undefined ? '' : r[c]); });
+            return o;
+        }));
+    }
 
     let wsP = wb.addWorksheet('PARAMETROS');
     wsP.getColumn(1).width = 46; wsP.getColumn(2).width = 30;
