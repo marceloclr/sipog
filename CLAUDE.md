@@ -49,6 +49,21 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 | js/14-graficos-dashboard.js | 5958–6370 | Cenário estresse, gráficos, gauge, hover, **inicialização** |
 | js/15-relatorio-pdf.js | 6371–6861 | Relatório PDF por Fonte |
 
+## Estágio de Execução: texto e regras (revisão de 2026-10-26)
+
+- **Sempre** comparar estágio com `normalizarEstagio()` (js/06), nunca só com `N()`: ela corrige
+  acentuação corrompida (`corrigirMojibake`, js/03), junta espaços e uniformiza
+  "FINAN." / "FINAN, " → "FINAN,". `N()` continua sendo a de órgão/fonte — não mexer nela.
+- Textos da base passam por `corrigirAcentosBase()` (js/04) na importação e na carga de
+  estado/cenário (js/05); chaves de tetos e filtros salvos recebem a mesma correção.
+- Estágio sem regra própria (Não Definido, Não Informado, vazio, desconhecido) cai no padrão de
+  segurança (100% do Programado) e aparece em `#aviso-qualidade-base` (só Demais Projetos).
+- Regras parametrizadas: `regras['r-expurgar-fisfin']` (padrão **true**: Físic/Finan Concluída é
+  expurgada) e `cenario['r-exec-meses']` (padrão 5, `(EMP/meses)×12`). A Necessidade Calculada
+  usa o padrão de `DEFAULTS_PARAMETROS`; a Ajustada, o valor da tela.
+- Arquivos js/01–15 estão com CRLF na cópia de trabalho e LF no repositório: depois de editar,
+  converter para LF antes do commit (senão o diff vira o arquivo inteiro).
+
 ## Página de estudo separada: `estudo-loa.html` + `js/estudo-loa.js`
 
 Cruza a LOA 2027 (xlsx "Fonte x Órgão", coluna C) com a base de MAPPs (layout do
@@ -59,11 +74,8 @@ Carrega só `js/03` e `js/06` do SIPOG (definições puras) — não incluir out
   `processarDados()` (js/08, cenário PADRAO). **Mudou a regra no js/08 → atualizar a cópia.**
   Conferência: processar a base real no SIPOG com parâmetros padrão e comparar MAPP a MAPP
   (`prevEmp`, `regra`, `nec`); em 2026-10-26 deu 7.300/7.300 iguais.
-- Diferenças **intencionais** do estudo (desligadas pelo botão "⚖ Igualar ao SIPOG"):
-  expurgo de "EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA" (SIPOG: 100% do Programado, TRF zero) e meses
-  decorridos parametrizáveis em `(EMP/meses)×12` (SIPOG fixa 5). A leitura também corrige
-  acentos corrompidos (UTF-8 lido como 1252, ex.: "PREPARATÃ“RIAS") — o cenário "Base 14-07"
-  da nuvem do SIPOG tem 403 MAPPs assim, que no SIPOG caem no "padrão de segurança" (100%).
+- Usa `normalizarEstagio()`/`corrigirMojibake()` do SIPOG e os mesmos padrões (expurgo de
+  Físic/Finan ligado, 5 meses). Conferido após a revisão de regras: 7.300/7.300 iguais.
 - `aplicarValorDeliberadoEstudo()` é **cópia** da conta de `aplicarValorParadigmaGrupoCore()`
   (js/07): Prev. Emp. × (1 − % do grupo) → TRF e Necessidade Ajustadas, na fonte escolhida ou
   em todas; sem travas/edições manuais. Conferido em 2026-10-26: 7.111/7.111 iguais.

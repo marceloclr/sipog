@@ -238,8 +238,8 @@ function lerMAPPsDeCSV(texto) {
     return { linhas, headers };
 }
 
-// Traduz colunas do CSV bruto para o layout do SIPOG e uniformiza a grafia do
-// estágio "FISIC/FINAN.CONCLUÍDA" (extração) → "FISIC/FINAN,CONCLUÍDA" (SIPOG).
+// Traduz colunas do CSV bruto para o layout do SIPOG. A grafia do estágio
+// (ex.: "FINAN.CONCLUÍDA") é tratada no cálculo por normalizarEstagio() (js/06).
 function normalizarLayoutMAPPs(linhas, headers) {
     let traduzidas = [];
     for (let destino in ALIASES_COLUNAS_MAPPS) {
@@ -248,7 +248,6 @@ function normalizarLayoutMAPPs(linhas, headers) {
     }
     linhas.forEach(l => {
         traduzidas.forEach(([origem, destino]) => { l[destino] = l[origem]; });
-        if (l.ESTAGIO_EXECUCAO !== undefined) l.ESTAGIO_EXECUCAO = String(l.ESTAGIO_EXECUCAO).replace(/FINAN\.\s*CONCL/i, 'FINAN,CONCL');
     });
     let disponiveis = headers.concat(traduzidas.map(t => t[1]));
     return {
@@ -258,26 +257,7 @@ function normalizarLayoutMAPPs(linhas, headers) {
     };
 }
 
-// Texto UTF-8 lido como Windows-1252 ("PREPARATÃ“RIAS" em vez de "PREPARATÓRIAS"):
-// regrava os caracteres como bytes 1252 e decodifica de novo como UTF-8. Só troca
-// quando o resultado é UTF-8 válido — "NÃO", "SÃO" etc. continuam intactos.
-const CP1252_ALTOS = { '€': 0x80, '‚': 0x82, 'ƒ': 0x83, '„': 0x84, '…': 0x85, '†': 0x86, '‡': 0x87, 'ˆ': 0x88, '‰': 0x89, 'Š': 0x8A, '‹': 0x8B, 'Œ': 0x8C,
-    'Ž': 0x8E, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '˜': 0x98, '™': 0x99, 'š': 0x9A, '›': 0x9B, 'œ': 0x9C, 'ž': 0x9E, 'Ÿ': 0x9F };
-const DECODIFICADOR_UTF8_ESTRITO = new TextDecoder('utf-8', { fatal: true });
-
-function corrigirMojibake(texto) {
-    if (typeof texto !== 'string' || !/[ÃÂ]/.test(texto)) return texto;
-    let bytes = [];
-    for (let ch of texto) {
-        let c = ch.codePointAt(0);
-        if (c < 0x100) bytes.push(c);
-        else if (CP1252_ALTOS[ch] !== undefined) bytes.push(CP1252_ALTOS[ch]);
-        else return texto;
-    }
-    try { return DECODIFICADOR_UTF8_ESTRITO.decode(new Uint8Array(bytes)); }
-    catch (e) { return texto; }
-}
-
+// Acentuação corrompida na extração: usa corrigirMojibake() do SIPOG (js/03).
 function corrigirMojibakeLinhas(linhas) {
     let celulas = 0, exemplo = '';
     linhas.forEach(l => {
@@ -371,12 +351,13 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
 // Simulação PADRAO (o único usado na prática no SIPOG) e sem Valor Deliberado,
 // subtetos ou edições manuais. Se a regra mudar no js/08, atualizar aqui também.
 // pcts: frações (0,20 = 20%); limiar: percentual do Programado 2026 em Em Execução.
-// opcoes (diferenças do estudo em relação ao SIPOG, desligáveis para comparar):
-//   expurgarFisFin: expurga "EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA" (no SIPOG entra com 100% do Programado);
-//   meses: meses de execução decorridos na anualização de Em Execução (SIPOG fixa 5).
+// opcoes (mesmos parâmetros do SIPOG):
+//   expurgarFisFin: expurga "EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA" (regras.r-expurgar-fisfin, padrão ligado);
+//   meses: meses de execução decorridos em (EMP/meses)×12 (cenario.r-exec-meses, padrão 5).
+// O texto do estágio passa por normalizarEstagio() do SIPOG (js/06).
 function calcularPrevisaoEmpenhoEstudo(r, pcts, limiar, opcoes) {
     let meses = (opcoes && opcoes.meses > 0) ? opcoes.meses : 5;
-    let estagio = N(r.ESTAGIO_EXECUCAO);
+    let estagio = normalizarEstagio(r.ESTAGIO_EXECUCAO);
     let classe = classificarRegistro(r);
     let p26 = V(r.VLR_PROGRAMADO_2026), l26 = V(r.VLR_LIMITE_2026), e26 = V(r.VLR_EMPENHADO_2026), p27 = V(r.VLR_PROGRAMADO_2027);
     let base = {
@@ -476,20 +457,9 @@ function restaurarParametrosEstudo() {
         let el = document.getElementById(id);
         if (el) el.value = PADROES_ESTUDO[id];
     }
-    // Revisão das regras do estudo: Físic/Finan Concluída expurgada por padrão.
+    // Físic/Finan Concluída expurgada por padrão, como no SIPOG (regras.r-expurgar-fisfin).
     let elExp = document.getElementById('ep-expurgar-fisfin');
     if (elExp) elExp.checked = true;
-    recalcularEstudo();
-}
-
-// Modo de comparação: deixa o estudo idêntico ao SIPOG (sem expurgo extra, 5 meses).
-function igualarAoSIPOG() {
-    for (let id in PADROES_ESTUDO) {
-        let el = document.getElementById(id);
-        if (el) el.value = PADROES_ESTUDO[id];
-    }
-    let elExp = document.getElementById('ep-expurgar-fisfin');
-    if (elExp) elExp.checked = false;
     recalcularEstudo();
 }
 
@@ -1013,7 +983,7 @@ async function exportarEstudoXLSX() {
         ['Atividades Preparatórias (%)', prm.pcts.preparatorias * 100], ['Não Iniciado (%)', prm.pcts.naoiniciado * 100],
         ['Em Execução — limiar (% do Programado 2026)', prm.limiar],
         ['Em Execução — meses decorridos na anualização (EMP/meses×12)', prm.opcoes.meses],
-        ['Expurgar Execução Físic/Finan. Concluída', prm.opcoes.expurgarFisFin ? 'SIM' : 'NÃO (igual ao SIPOG)'],
+        ['Expurgar Execução Físic/Finan. Concluída', prm.opcoes.expurgarFisFin ? 'SIM' : 'NÃO'],
         ...GRUPOS_VD_ESTUDO.map(g => [`Valor Deliberado — ${g.label} (%)`, prm.vd[g.classe] * 100]),
         ['Valor Deliberado — fonte de aplicação', prm.vdFonte || '(todas as fontes)'],
         ['', ''],
