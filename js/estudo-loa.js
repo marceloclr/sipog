@@ -1078,10 +1078,19 @@ function calcularPropostasAutomaticas() {
         return { chave: base + '#' + ocorrencias[base], par, peso, mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio,
             classe: m.classe, necAj: m.necAj, loaPar: loaPar[par] !== undefined ? loaPar[par] : null };
     });
+    // Proporcional à Necessidade Ajustada e nunca acima dela: se a LOA do par passa da soma
+    // das necessidades, cada MAPP fica com a própria necessidade e o resto é "LOA sem destino".
+    // Grade 1 = MAPPs com necessidade; grade 2 = sem necessidade (proposta só manual).
     linhasAjustes.forEach(l => {
         let soma = somaNecPar[l.par] || 0;
-        l.auto = (l.loaPar > 0 && soma > 0) ? l.loaPar * l.peso / soma : 0;
+        l.auto = (l.loaPar > 0 && soma > 0) ? l.peso * Math.min(1, l.loaPar / soma) : 0;
+        l.grade = l.peso > 0 ? 1 : 2;
     });
+}
+
+// Teto da Proposta: a Nec. Ajustada (só na grade 1; a grade 2 recebe valor manual livre).
+function propostaExcede(l) {
+    return l.grade === 1 && propostaDe(l) > l.necAj + 0.005;
 }
 
 function propostaDe(l) {
@@ -1120,42 +1129,49 @@ function filtrosAjustes() {
     };
 }
 
-// Fontes: LOA (pares do filtro) × soma das propostas. "Sem destino" = LOA de pares
-// sem MAPP ou com Necessidade Ajustada total zero (não há onde distribuir).
+// Fontes: LOA (pares do filtro) × soma das propostas, apurado par a par (Órgão × Fonte):
+//   estouro    = Proposta acima da LOA do par;
+//   distribuível = sobra que cabe nos MAPPs não editados até a Nec. Ajustada deles ("Distribuir");
+//   sem destino = sobra que não cabe (par sem MAPP com necessidade, ou LOA além da necessidade):
+//                 só a grade de MAPPs sem necessidade pode recebê-la, à mão.
 function montarAlertasFontes(f) {
-    let porFonte = {};
-    let obter = fonte => porFonte[fonte] || (porFonte[fonte] = { fonte, loa: 0, proposta: 0, semDestino: 0, qtd: 0, editados: 0 });
-    let pesoPar = {};
-    linhasAjustes.forEach(l => { pesoPar[l.par] = (pesoPar[l.par] || 0) + l.peso; });
-    consolidadoAtual.forEach(c => {
-        if (!c.temLOA) return;
-        if ((f.fonte && c.fonte !== f.fonte) || (f.orgao && N(c.orgao) !== N(f.orgao))) return;
-        let a = obter(c.fonte);
-        a.loa += c.loa;
-        if (!(pesoPar[chaveParAj(c.orgao, c.fonte)] > 0)) a.semDestino += c.loa;
-    });
+    let noFiltro = (orgao, fonte) => (!f.fonte || fonte === f.fonte) && (!f.orgao || N(orgao) === N(f.orgao));
+    let pares = {};
+    let obterPar = (orgao, fonte) => {
+        let k = chaveParAj(orgao, fonte);
+        return pares[k] || (pares[k] = { fonte, loa: 0, proposta: 0, folga: 0, qtd: 0, editados: 0 });
+    };
+    consolidadoAtual.forEach(c => { if (c.temLOA && noFiltro(c.orgao, c.fonte)) obterPar(c.orgao, c.fonte).loa += c.loa; });
     linhasAjustes.forEach(l => {
-        if ((f.fonte && l.fonte !== f.fonte) || (f.orgao && N(l.orgao) !== N(f.orgao))) return;
-        let a = obter(l.fonte);
-        a.proposta += propostaDe(l);
-        a.qtd++;
-        if (propostasManuais[l.chave]) a.editados++;
+        if (!noFiltro(l.orgao, l.fonte)) return;
+        let p = obterPar(l.orgao, l.fonte), prop = propostaDe(l), man = propostasManuais[l.chave];
+        p.proposta += prop;
+        p.qtd++;
+        if (man) p.editados++;
+        if (l.grade === 1 && (!man || man.origem === 'redistribuicao')) p.folga += Math.max(l.necAj - prop, 0);
     });
-    // A situação olha a parte que DÁ para distribuir (diferença − LOA sem MAPP): assim um
-    // estouro causado por edição não fica escondido atrás de LOA que não tem MAPP.
+    let porFonte = {};
+    Object.values(pares).forEach(p => {
+        let a = porFonte[p.fonte] || (porFonte[p.fonte] = { fonte: p.fonte, loa: 0, proposta: 0, estouro: 0, sobraDistribuivel: 0, semDestino: 0, qtd: 0, editados: 0 });
+        let dif = p.loa - p.proposta;
+        a.loa += p.loa; a.proposta += p.proposta; a.qtd += p.qtd; a.editados += p.editados;
+        if (dif < 0) a.estouro += -dif;
+        else { let d = Math.min(dif, p.folga); a.sobraDistribuivel += d; a.semDestino += dif - d; }
+    });
     let ordem = { estouro: 0, sobra: 1, semdestino: 2, ok: 3 };
     return Object.values(porFonte).map(a => {
         a.dif = a.loa - a.proposta;
-        a.difDistribuivel = a.dif - a.semDestino;
-        a.distribuivel = Math.abs(a.difDistribuivel) >= TOLERANCIA_ALERTA;
-        a.status = a.distribuivel ? (a.difDistribuivel > 0 ? 'sobra' : 'estouro')
-            : (Math.abs(a.dif) < TOLERANCIA_ALERTA ? 'ok' : 'semdestino');
+        a.difDistribuivel = a.sobraDistribuivel - a.estouro;
+        a.distribuivel = a.estouro >= TOLERANCIA_ALERTA || a.sobraDistribuivel >= TOLERANCIA_ALERTA;
+        a.status = a.estouro >= TOLERANCIA_ALERTA ? 'estouro' : a.sobraDistribuivel >= TOLERANCIA_ALERTA ? 'sobra'
+            : (a.semDestino >= TOLERANCIA_ALERTA ? 'semdestino' : 'ok');
         return a;
     }).sort((x, y) => (ordem[x.status] - ordem[y.status]) || Math.abs(y.dif) - Math.abs(x.dif));
 }
 
 // Reequilibra cada par da fonte: os MAPPs NÃO editados recebem (LOA do par − soma
-// dos editados) na proporção da Necessidade Ajustada. Grava como "redistribuição".
+// dos editados) na proporção da Necessidade Ajustada, sem passar dela (o que sobrar
+// fica como LOA sem destino). Grava como "redistribuição".
 function distribuirDiferencaFonte(fonte) {
     let f = filtrosAjustes();
     let pares = {};
@@ -1171,7 +1187,7 @@ function distribuirDiferencaFonte(fonte) {
         livres.forEach(l => {
             // Sem necessidade (peso 0) a proposta é zero de qualquer forma: volta ao automático.
             if (l.peso <= 0) { delete propostasManuais[l.chave]; return; }
-            propostasManuais[l.chave] = { valor: alvo * l.peso / pesoLivre, origem: 'redistribuicao' };
+            propostasManuais[l.chave] = { valor: l.peso * Math.min(1, alvo / pesoLivre), origem: 'redistribuicao' };
             alterados++;
         });
     });
@@ -1180,7 +1196,7 @@ function distribuirDiferencaFonte(fonte) {
     if (!alterados) alert('Não há MAPPs não editados com Necessidade Ajustada para receber a diferença nesta fonte.');
 }
 
-const ROTULO_ALERTA = { ok: 'Confere', sobra: 'LOA sobrando', estouro: 'Acima da LOA', semdestino: 'LOA sem MAPP' };
+const ROTULO_ALERTA = { ok: 'Confere', sobra: 'LOA sobrando', estouro: 'Acima da LOA', semdestino: 'LOA sem destino' };
 
 function celulaDiferenca(dif) {
     if (Math.abs(dif) < TOLERANCIA_ALERTA) return `<td class="num">—</td>`;
@@ -1192,9 +1208,17 @@ function renderizarAjustesFinais() {
     if (!contA) return;
     let contO = document.getElementById('tabela-ajustes-orgaos');
     let contM = document.getElementById('tabela-ajustes-mapps');
+    let contM2 = document.getElementById('tabela-ajustes-mapps-sem-nec');
     let resumo = document.getElementById('resumo-ajustes');
     let aviso = document.getElementById('aviso-loa-ajustes');
-    if (aviso) aviso.innerHTML = (loaLinhas.length && loaConferencia.origem !== 'pdf') ? '⚠️ A LOA 2027 carregada é a planilha "Fonte x Órgão", que <strong>inclui Pessoal, Custeio e Dívida</strong>. Carregue na aba 1 o PDF "Demonstrativo Consolidado por Órgão e Fonte" emitido só com Investimento.' : '';
+    if (aviso) {
+        let avisos = [];
+        if (loaLinhas.length && loaConferencia.origem !== 'pdf') avisos.push('⚠️ A LOA 2027 carregada é a planilha "Fonte x Órgão", que <strong>inclui Pessoal, Custeio e Dívida</strong>. Carregue na aba 1 o PDF "Demonstrativo Consolidado por Órgão e Fonte" emitido só com Investimento.');
+        // Nec. Ajustada < 0 só ocorre com Prev. Empenho acima do Programado 2026 (Limite ou Empenhado maiores que o Programado).
+        let negativas = linhasAjustes.filter(l => l.necAj < -0.005).length;
+        if (negativas) avisos.push(`⚠️ ${negativas} MAPP(s) com <strong>Necessidade 2027 Ajustada negativa</strong> (Limite ou Empenhado 2026 acima do Programado 2026 — base inconsistente): ficam na grade "sem necessidade".`);
+        aviso.innerHTML = avisos.join('<br>');
+    }
 
     // Selo do menu: fontes divergentes no total (sem filtro).
     let todas = montarAlertasFontes({ fonte: '', orgao: '' });
@@ -1204,7 +1228,7 @@ function renderizarAjustesFinais() {
 
     if (!loaLinhas.length || !mappsCalculados.length) {
         let msg = '<p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p>';
-        contA.innerHTML = msg; contO.innerHTML = msg; contM.innerHTML = msg; resumo.innerHTML = '';
+        contA.innerHTML = msg; contO.innerHTML = msg; contM.innerHTML = msg; contM2.innerHTML = msg; resumo.innerHTML = '';
         return;
     }
     let f = filtrosAjustes();
@@ -1217,22 +1241,25 @@ function renderizarAjustesFinais() {
 
     let tLOA = alertas.reduce((s, a) => s + a.loa, 0), tProp = alertas.reduce((s, a) => s + a.proposta, 0);
     let tSemDest = alertas.reduce((s, a) => s + a.semDestino, 0);
-    let qtdEditados = linhasAjustes.filter(l => propostasManuais[l.chave] && (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao))).length;
+    let doFiltro = linhasAjustes.filter(l => (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao)));
+    let qtdEditados = doFiltro.filter(l => propostasManuais[l.chave]).length;
+    let qtdExcede = doFiltro.filter(propostaExcede).length;
     resumo.innerHTML = `
         <div><span>LOA 2027 (filtro)</span><b>${F(tLOA)}</b></div>
         <div><span>Proposta de Programado 2027</span><b>${F(tProp)}</b></div>
         <div><span>Diferença (LOA − Proposta)</span><b class="${Math.abs(tLOA - tProp) < TOLERANCIA_ALERTA ? '' : (tLOA > tProp ? 'valor-sobra' : 'valor-estouro')}">${F(tLOA - tProp)}</b></div>
-        <div><span>Fontes a resolver (Proposta ≠ LOA distribuível)</span><b class="${divergentes.some(a => a.status === 'estouro' || a.status === 'sobra') ? 'valor-estouro' : ''}">${divergentes.filter(a => a.status === 'estouro' || a.status === 'sobra').length} de ${alertas.length}</b><small style="color:var(--muted);">${divergentes.filter(a => a.status === 'semdestino').length} só com LOA sem MAPP</small></div>
-        <div><span>LOA sem MAPP para receber</span><b>${F(tSemDest)}</b></div>
-        <div><span>MAPPs com proposta editada</span><b>${qtdEditados.toLocaleString('pt-BR')}</b></div>`;
+        <div><span>Fontes a resolver (Proposta ≠ LOA distribuível)</span><b class="${divergentes.some(a => a.status === 'estouro' || a.status === 'sobra') ? 'valor-estouro' : ''}">${divergentes.filter(a => a.status === 'estouro' || a.status === 'sobra').length} de ${alertas.length}</b><small style="color:var(--muted);">${divergentes.filter(a => a.status === 'semdestino').length} só com LOA sem destino</small></div>
+        <div><span>LOA sem destino (sem MAPP ou além da Nec. Ajustada)</span><b>${F(tSemDest)}</b></div>
+        <div><span>MAPPs com proposta editada</span><b>${qtdEditados.toLocaleString('pt-BR')}</b></div>
+        <div><span>Proposta acima da Nec. Ajustada</span><b class="${qtdExcede ? 'valor-estouro' : ''}">${qtdExcede.toLocaleString('pt-BR')} MAPP(s)</b></div>`;
 
     // Grade de alerta (só fontes com diferença)
     if (!divergentes.length) {
         contA.innerHTML = `<p class="estudo-nota" style="padding:12px; color:var(--success); font-weight:700;">✔ Todas as ${alertas.length} fonte(s) do filtro conferem: Proposta = LOA 2027.</p>`;
     } else {
         let h = `<table><thead><tr><th class="sem-ordem" style="width:86px;"></th><th class="sem-ordem">Fonte do SIPOG</th><th class="sem-ordem">Situação</th><th class="sem-ordem num">LOA 2027</th>
-            <th class="sem-ordem num">Proposta 2027</th><th class="sem-ordem num" title="LOA − Proposta">Diferença</th><th class="sem-ordem num" title="LOA de órgãos sem MAPP (ou com Necessidade zero) nesta fonte — não há onde distribuir">LOA sem MAPP</th>
-            <th class="sem-ordem num" title="Diferença − LOA sem MAPP: o que a Proposta dos MAPPs ainda precisa absorver (+) ou devolver (−)">A distribuir</th>
+            <th class="sem-ordem num">Proposta 2027</th><th class="sem-ordem num" title="LOA − Proposta">Diferença</th><th class="sem-ordem num" title="LOA de órgãos sem MAPP com necessidade, ou além da Nec. Ajustada dos MAPPs — só a grade de MAPPs sem necessidade pode recebê-la (valor manual)">LOA sem destino</th>
+            <th class="sem-ordem num" title="O que os MAPPs não editados ainda podem absorver até a Nec. Ajustada (+) ou o que a Proposta passa da LOA (−) — resolvido pelo Distribuir">A distribuir</th>
             <th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">Editados</th></tr></thead><tbody>`;
         divergentes.forEach(a => {
             let fonteJs = escHtml(a.fonte.replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
@@ -1281,14 +1308,21 @@ function renderizarAjustesFinais() {
         <td class="num">${F(to.necAj)}</td><td class="num">${F(to.proposta)}</td>${celulaDiferenca(to.loa - to.proposta)}</tr></tfoot></table>`;
     contO.innerHTML = orgaos.length ? ho : '<p class="estudo-nota" style="padding:12px;">Nenhum órgão para o filtro.</p>';
 
-    // MAPPs — proposta editável
+    // MAPPs — proposta editável: com Nec. Ajustada (distribuição automática) e sem (só manual)
+    contM.innerHTML = tabelaMappsAjustes(linhas.filter(l => l.grade === 1), 'Nenhum MAPP com Necessidade 2027 Ajustada para o filtro.');
+    contM2.innerHTML = tabelaMappsAjustes(linhas.filter(l => l.grade === 2), 'Nenhum MAPP sem necessidade para o filtro.');
+}
+
+function tabelaMappsAjustes(linhas, msgVazia) {
+    if (!linhas.length) return `<p class="estudo-nota" style="padding:12px;">${msgVazia}</p>`;
     let ordenadas = ordenarLinhas(linhas.map(l => Object.assign(l, { proposta: propostaDe(l) })), COLUNAS_AJUSTES, ordemTabelas.aj);
     let exibidas = ordenadas.slice(0, LIMITE_LINHAS_DETALHE);
     let hm = `<table><thead>${cabecalhoOrdenavel('aj', COLUNAS_AJUSTES)}</thead><tbody>`;
     exibidas.forEach(l => {
         let man = propostasManuais[l.chave];
+        let excede = propostaExcede(l);
         let valorTxt = propostaDe(l).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        hm += `<tr class="${man ? 'proposta-editada' : ''}">
+        hm += `<tr class="${excede ? 'proposta-excede' : (man ? 'proposta-editada' : '')}"${excede ? ` title="Proposta acima da Nec. 2027 Ajustada (${escHtml(F(l.necAj))})"` : ''}>
             <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>
             <td class="col-fonte" style="font-size:11px;">${escHtml(l.fonte)}</td><td style="font-size:11px;">${escHtml(l.estagio)}</td>
             <td class="num">${l.loaPar === null ? '<span title="Órgão sem LOA nesta fonte">sem LOA</span>' : F(l.loaPar)}</td>
@@ -1303,7 +1337,7 @@ function renderizarAjustesFinais() {
     let avisoLim = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; filtre por fonte ou órgão para ver todas` : '';
     hm += `</tbody><tfoot><tr><td colspan="4">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${avisoLim})</td>
         <td class="num" title="Soma da LOA dos pares Órgão × Fonte destes MAPPs">${F(loaPares)}</td><td class="num">${F(tm.necAj)}</td><td class="num">${F(tm.proposta)}</td></tr></tfoot></table>`;
-    contM.innerHTML = linhas.length ? hm : '<p class="estudo-nota" style="padding:12px;">Nenhum MAPP para o filtro.</p>';
+    return hm;
 }
 
 const COLUNAS_AJUSTES = [
@@ -1534,13 +1568,16 @@ async function exportarEstudoXLSX() {
             { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
             { titulo: 'LOA 2027 (ÓRGÃO NA FONTE)', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
             { titulo: 'PROPOSTA AUTOMÁTICA', chave: 'auto', moeda: true, largura: 20 }, { titulo: 'PROPOSTA PROGRAMADO 2027', chave: 'proposta', moeda: true, largura: 22 },
-            { titulo: 'ORIGEM', chave: 'origem', largura: 16 }
+            { titulo: 'ORIGEM', chave: 'origem', largura: 16 }, { titulo: 'GRADE', chave: 'grade', largura: 18 },
+            { titulo: 'ACIMA DA NEC. AJUSTADA', chave: 'excede', largura: 14 }
         ], linhasAjustes.map(l => ({ mapp: l.mapp, orgao: l.orgao, fonte: l.fonte, estagio: l.estagio, loa: l.loaPar, necAj: l.necAj, auto: l.auto,
-            proposta: propostaDe(l), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática' })));
+            proposta: propostaDe(l), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática',
+            grade: l.grade === 1 ? 'com necessidade' : 'sem necessidade', excede: propostaExcede(l) ? 'SIM' : '' })));
         adicionarAbaEstudo(wb, 'ALERTAS_FONTES', [
             { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }, { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 },
             { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 }, { titulo: 'PROPOSTA 2027', chave: 'proposta', moeda: true, largura: 20 },
-            { titulo: 'DIFERENÇA (LOA − PROPOSTA)', chave: 'dif', moeda: true, largura: 24 }, { titulo: 'LOA SEM MAPP P/ RECEBER', chave: 'semDestino', moeda: true, largura: 22 },
+            { titulo: 'DIFERENÇA (LOA − PROPOSTA)', chave: 'dif', moeda: true, largura: 24 }, { titulo: 'LOA SEM DESTINO', chave: 'semDestino', moeda: true, largura: 22 },
+            { titulo: 'A DISTRIBUIR', chave: 'difDistribuivel', moeda: true, largura: 20 },
             { titulo: 'MAPPS', chave: 'qtd', largura: 10 }, { titulo: 'EDITADOS', chave: 'editados', largura: 10 }
         ], montarAlertasFontes({ fonte: '', orgao: '' }).map(a => Object.assign({}, a, { sit: ROTULO_ALERTA[a.status] })));
     }

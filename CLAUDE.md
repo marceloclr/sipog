@@ -89,10 +89,17 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
 - Layout: menu lateral com 5 abas (`mostrarAbaEstudo`): Carga, Parâmetros, De-para,
   Consolidado e MAPPs (um filtro para a página toda; clique na linha de fonte filtra e rola
   até os MAPPs) e Ajustes Finais.
-- Ajustes Finais: Proposta de Programado 2027 = LOA do par Órgão × Fonte × (Nec. Ajustada do
-  MAPP ÷ soma do par; negativas = 0). Edições em `propostasManuais` (localStorage por arquivo e
-  no estudo salvo na nuvem); "Distribuir" reparte, por par, LOA − editados entre os não editados.
-  Alerta por fonte: situação pela parte distribuível (diferença − LOA sem MAPP). O aviso de
+- Ajustes Finais: Proposta de Programado 2027 = Nec. Ajustada × mín(1, LOA do par Órgão × Fonte
+  ÷ soma da Nec. Ajustada do par) — proporcional e **nunca acima da Nec. Ajustada**. Duas grades:
+  grade 1 = Nec. Ajustada > 0 (automática; edição acima da necessidade é aceita, mas a linha fica
+  tarjada em vermelho claro, `propostaExcede`), grade 2 = demais MAPPs (proposta só manual, sem
+  teto). Nec. Ajustada negativa não deveria existir (só com Limite/Empenhado 2026 > Programado
+  2026; 0 casos nas bases de 14/07 e 18/09): vai para a grade 2 com aviso. Edições em
+  `propostasManuais` (localStorage por arquivo e no estudo salvo na nuvem); "Distribuir" reparte,
+  por par, LOA − editados entre os não editados, também com o teto da necessidade.
+  Alerta por fonte apurado par a par: estouro (Proposta > LOA), sobra distribuível (cabe nos não
+  editados até a necessidade) e "LOA sem destino" (par sem MAPP com necessidade ou LOA além da
+  necessidade — só a grade 2 recebe, à mão). O aviso de
   "LOA inteira" só aparece quando a LOA veio da planilha (`loaConferencia.origem`).
 - De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
   (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,

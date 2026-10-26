@@ -87,6 +87,8 @@
     input.input-proposta { width: 150px; text-align: right; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
     tr.proposta-editada td { background: rgba(245,156,0,0.10); }
     tr.proposta-editada input.input-proposta { border-color: var(--warning); font-weight: 700; }
+    tr.proposta-excede td { background: rgba(233,79,14,0.14); }
+    tr.proposta-excede input.input-proposta { border-color: var(--danger); color: var(--danger); font-weight: 700; }
     .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
     @media (max-width: 900px) {
         .estudo-layout { flex-direction: column; }
@@ -235,7 +237,7 @@
     <section class="estudo-aba estudo-secao" data-aba="ajustes">
         <h2 class="estudo-aba-titulo">5. Ajustes Finais — Proposta de Programado 2027</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A <strong>Proposta de Programado 2027</strong> distribui automaticamente a LOA 2027 de cada órgão em cada fonte entre os MAPPs ativos daquele órgão e fonte, na proporção da Necessidade 2027 Ajustada. Edite a proposta de qualquer MAPP; as demais linhas não mudam — use "Distribuir diferença" na grade de alerta para reequilibrar a fonte. <strong>O filtro de fonte vale para a tela toda.</strong></p>
+            <p class="estudo-nota">A <strong>Proposta de Programado 2027</strong> distribui automaticamente a LOA 2027 de cada órgão em cada fonte entre os MAPPs ativos daquele órgão e fonte, na proporção da Necessidade 2027 Ajustada, <strong>sem passar da necessidade de cada MAPP</strong> (o excedente vira "LOA sem destino"). Edite a proposta de qualquer MAPP; as demais linhas não mudam — use "Distribuir diferença" na grade de alerta para reequilibrar a fonte. <strong>O filtro de fonte vale para a tela toda.</strong></p>
             <p class="estudo-nota" id="aviso-loa-ajustes" style="color:var(--warning);"></p>
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-aj-fonte" onchange="renderizarAjustesFinais()"><option value="">(todas)</option></select></label>
@@ -249,8 +251,12 @@
             <div class="estudo-tabela-wrap" style="max-height:360px;"><div id="tabela-alertas"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
             <h3 class="estudo-subtitulo">Órgãos (todas as fontes, conforme o filtro)</h3>
             <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-ajustes-orgaos"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
-            <h3 class="estudo-subtitulo">MAPPs — proposta editável</h3>
+            <h3 class="estudo-subtitulo">MAPPs com Necessidade 2027 Ajustada — proposta editável</h3>
+            <p class="estudo-nota">A proposta automática nunca passa da Nec. 2027 Ajustada; linha <span style="background:rgba(233,79,14,0.18); padding:0 4px; border-radius:3px;">tarjada em vermelho</span> = proposta editada acima da necessidade.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+            <h3 class="estudo-subtitulo">Demais MAPPs (sem Necessidade 2027 Ajustada) — programado só manual</h3>
+            <p class="estudo-nota">Não recebem distribuição automática. Digite a proposta quando for preciso programar 2027 para eles — por exemplo, com a "LOA sem destino" da grade de alerta.</p>
+            <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps-sem-nec"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
         </div>
     </section>
 
