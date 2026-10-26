@@ -161,6 +161,83 @@ function carregarLOA(resultado, nomeArquivo) {
 }
 
 // ─── LEITURA DA BASE DE MAPPs (mesmo layout do importar() do SIPOG) ─────────
+// Aceita também o CSV bruto da extração do MAPP (";" e Windows-1252), cujas
+// colunas de valor têm outros nomes — traduzidos para o layout do SIPOG abaixo,
+// só quando a coluna do SIPOG não existir no arquivo.
+const ALIASES_COLUNAS_MAPPS = {
+    VLR_PROGRAMADO_2025: 'VLR_PLANEJADO_25', VLR_EMPENHADO_2025: 'VLR_EMPENHO_25', VLR_PAGO_2025: 'VLR_PAGO_25',
+    VLR_PROGRAMADO_2026: 'VLR_PLANEJADO_26', VLR_LIMITE_2026: 'VLR_LIMITE', VLR_EMPENHADO_2026: 'VLR_EMPENHO_26',
+    VLR_PAGO_2026: 'VLR_PAGO_26', VLR_PROGRAMADO_2027: 'VLR_PLANEJADO_27'
+};
+const COLUNAS_OBRIGATORIAS_MAPPS = ['MAPP', 'ORGAO', 'FONTE', 'ESTAGIO_EXECUCAO', 'VLR_PROGRAMADO_2026', 'VLR_LIMITE_2026', 'VLR_EMPENHADO_2026', 'VLR_PROGRAMADO_2027'];
+const COLUNAS_GRUPO_MAPPS = ['CONTRATO_GESTAO', 'CONTINUIDADE', 'PCF_CONVENIO', 'OPERACAO_CREDITO', 'ENTREGA_PRIORITARIA'];
+
+// Decodifica o arquivo texto: UTF-8 se for válido, senão Windows-1252 (padrão das extrações).
+function decodificarTextoArquivo(buffer) {
+    let texto;
+    try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
+    catch (e) { texto = new TextDecoder('windows-1252').decode(buffer); }
+    return texto.replace(/^﻿/, '');
+}
+
+// Parser CSV com suporte a campos entre aspas (inclusive com separador e quebra de linha).
+function parseCSV(texto, sep) {
+    let linhas = [], campo = '', linha = [], aspas = false;
+    for (let i = 0; i < texto.length; i++) {
+        let c = texto[i];
+        if (aspas) {
+            if (c === '"') {
+                if (texto[i + 1] === '"') { campo += '"'; i++; }
+                else aspas = false;
+            } else campo += c;
+        } else if (c === '"') aspas = true;
+        else if (c === sep) { linha.push(campo); campo = ''; }
+        else if (c === '\n' || c === '\r') {
+            if (c === '\r' && texto[i + 1] === '\n') i++;
+            linha.push(campo); campo = '';
+            linhas.push(linha); linha = [];
+        } else campo += c;
+    }
+    if (campo !== '' || linha.length) { linha.push(campo); linhas.push(linha); }
+    return linhas;
+}
+
+function lerMAPPsDeCSV(texto) {
+    let primeira = texto.slice(0, texto.indexOf('\n') > 0 ? texto.indexOf('\n') : texto.length);
+    let sep = (primeira.split(';').length >= primeira.split(',').length) ? ';' : ',';
+    let tabela = parseCSV(texto, sep);
+    let headers = (tabela[0] || []).map(h => String(h).trim().toUpperCase());
+    let linhas = [];
+    for (let i = 1; i < tabela.length; i++) {
+        let cel = tabela[i];
+        if (cel.every(v => String(v).trim() === '')) continue;
+        let obj = {};
+        headers.forEach((h, j) => { if (h) obj[h] = cel[j] !== undefined ? cel[j] : ''; });
+        linhas.push(obj);
+    }
+    return { linhas, headers };
+}
+
+// Traduz colunas do CSV bruto para o layout do SIPOG e uniformiza a grafia do
+// estágio "FISIC/FINAN.CONCLUÍDA" (extração) → "FISIC/FINAN,CONCLUÍDA" (SIPOG).
+function normalizarLayoutMAPPs(linhas, headers) {
+    let traduzidas = [];
+    for (let destino in ALIASES_COLUNAS_MAPPS) {
+        let origem = ALIASES_COLUNAS_MAPPS[destino];
+        if (!headers.includes(destino) && headers.includes(origem)) traduzidas.push([origem, destino]);
+    }
+    linhas.forEach(l => {
+        traduzidas.forEach(([origem, destino]) => { l[destino] = l[origem]; });
+        if (l.ESTAGIO_EXECUCAO !== undefined) l.ESTAGIO_EXECUCAO = String(l.ESTAGIO_EXECUCAO).replace(/FINAN\.\s*CONCL/i, 'FINAN,CONCL');
+    });
+    let disponiveis = headers.concat(traduzidas.map(t => t[1]));
+    return {
+        traduzidas,
+        faltando: COLUNAS_OBRIGATORIAS_MAPPS.filter(c => !disponiveis.includes(c)),
+        semGrupo: COLUNAS_GRUPO_MAPPS.every(c => !disponiveis.includes(c) && !(c === 'OPERACAO_CREDITO' && disponiveis.includes('OPERACA_CREDITO')))
+    };
+}
+
 function lerMAPPsDeWorkbook(wb) {
     let ws = wb.worksheets[0];
     let headers = [];
@@ -179,8 +256,7 @@ function lerMAPPsDeWorkbook(wb) {
         });
         if (!vazia) linhas.push(obj);
     });
-    let faltando = ['MAPP', 'ORGAO', 'FONTE', 'ESTAGIO_EXECUCAO', 'VLR_PROGRAMADO_2026'].filter(c => !headers.includes(c));
-    return { linhas, faltando };
+    return { linhas, headers: headers.filter(Boolean) };
 }
 
 async function selecionarArquivoMAPPs(input) {
@@ -189,10 +265,16 @@ async function selecionarArquivoMAPPs(input) {
     let status = document.getElementById('status-mapps');
     status.innerHTML = 'Lendo…';
     try {
-        let wb = new ExcelJS.Workbook();
-        await wb.xlsx.load(await lerArquivoComoBuffer(arquivo));
-        let r = lerMAPPsDeWorkbook(wb);
-        carregarMAPPs(r.linhas, arquivo.name, r.faltando);
+        let buffer = await lerArquivoComoBuffer(arquivo);
+        let r;
+        if (/\.(csv|txt)$/i.test(arquivo.name)) {
+            r = lerMAPPsDeCSV(decodificarTextoArquivo(buffer));
+        } else {
+            let wb = new ExcelJS.Workbook();
+            await wb.xlsx.load(buffer);
+            r = lerMAPPsDeWorkbook(wb);
+        }
+        carregarMAPPs(r.linhas, arquivo.name, r.headers);
     } catch (err) {
         console.error(err);
         mappsBrutos = [];
@@ -202,17 +284,26 @@ async function selecionarArquivoMAPPs(input) {
 }
 
 // Também usada nos testes, com as linhas já em memória (ex.: dadosBrutos do SIPOG).
-function carregarMAPPs(linhas, nomeArquivo, faltando) {
+function carregarMAPPs(linhas, nomeArquivo, headers) {
     mappsBrutos = linhas.map(l => {
         let o = {};
         for (let k in l) o[String(k).trim().toUpperCase()] = l[k];
         return o;
     });
+    let cab = (headers && headers.length ? headers : Object.keys(mappsBrutos[0] || {})).map(h => String(h).trim().toUpperCase());
+    let n = normalizarLayoutMAPPs(mappsBrutos, cab);
     mappsArquivo = nomeArquivo || '';
-    let aviso = (faltando && faltando.length)
-        ? `<br><span class="aviso">⚠ Colunas não encontradas: ${faltando.map(escHtml).join(', ')}</span>` : '';
+    let avisos = '';
+    if (n.traduzidas.length)
+        avisos += `<br>Colunas traduzidas para o layout do SIPOG: ${n.traduzidas.map(t => `${escHtml(t[0])} → ${escHtml(t[1])}`).join(', ')}`;
+    if (n.faltando.length)
+        avisos += `<br><span class="erro">✖ Colunas não encontradas: ${n.faltando.map(escHtml).join(', ')}</span>`;
+    if (n.semGrupo)
+        avisos += `<br><span class="aviso">⚠ Sem colunas de grupo (${COLUNAS_GRUPO_MAPPS.join(', ')}): todos os MAPPs seguem a regra por estágio, como "Demais Projetos" — os grupos com 100% do Programado e o expurgo de Entrega Prioritária não se aplicam, e o resultado pode diferir do SIPOG.</span>`;
+    let expurgos = mappsBrutos.filter(r => { let e = N(r.ESTAGIO_EXECUCAO); return e.includes('CONCLUIDO') || e.includes('CANCELADO') || e.includes('TRANSFERIDO'); }).length;
     document.getElementById('status-mapps').innerHTML =
-        `<span class="ok">✅ ${escHtml(mappsArquivo)}</span><br>${mappsBrutos.length.toLocaleString('pt-BR')} MAPPs lidos${aviso}`;
+        `<span class="ok">✅ ${escHtml(mappsArquivo)}</span><br>${mappsBrutos.length.toLocaleString('pt-BR')} linhas lidas ` +
+        `(${expurgos.toLocaleString('pt-BR')} concluídas/canceladas/transferidas, expurgadas)${avisos}`;
     recalcularEstudo();
 }
 
