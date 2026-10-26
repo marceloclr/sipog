@@ -81,6 +81,15 @@ const EST_LICITADO          = 'LICITADO';
 // espaços repetidos e uniformiza "FINAN.CONCLUÍDA" / "FINAN, CONCLUÍDA" (variações
 // vistas nas extrações do MAPP) para "FINAN,CONCLUÍDA". Sem isso, o estágio não é
 // reconhecido e o MAPP cai no padrão de segurança (100% do Programado 2026).
+// Estágios com regra própria em processarDados(). Os demais (Não Definido, Não
+// Informado, vazio ou texto desconhecido) caem no padrão de segurança — e são
+// listados no aviso de qualidade da base (renderizarAvisoQualidadeBase).
+const ESTAGIOS_COM_REGRA = new Set([EST_EM_EXECUCAO, EST_EXEC_FIS_CONCL, EST_PARALISADO, EST_EXEC_FISFIN_CONCL,
+    EST_NAO_INICIADO, EST_EM_LICITACAO, EST_CONTRATADO, EST_ATIV_PREPARATORIAS, EST_CONVENIADO, EST_LICITADO]);
+// { rótulo: { qtd, p26 } } — preenchido a cada processarDados(), só com MAPPs de
+// Demais Projetos (nos grupos o estágio não altera o cálculo).
+let estagiosSemRegra = {};
+
 function normalizarEstagio(v) {
     return N(corrigirMojibake(String(v || '')))
         .replace(/\s+/g, ' ')
@@ -111,6 +120,26 @@ const ESTAGIO_LABEL_MAP = {
 };
 function labelEstagio(estagioNormalizado) {
     return ESTAGIO_LABEL_MAP[estagioNormalizado] || estagioNormalizado || 'NÃO INFORMADO';
+}
+
+// Aviso de qualidade da base, logo abaixo do resumo de importação: acentuação
+// corrigida na carga e MAPPs cujo estágio não tem regra própria (entram com 100%
+// do Programado 2026). Antes isso acontecia em silêncio.
+function renderizarAvisoQualidadeBase() {
+    let el = document.getElementById('aviso-qualidade-base');
+    if (!el) return;
+    let itens = [];
+    if (typeof qtdAcentosCorrigidosBase === 'number' && qtdAcentosCorrigidosBase > 0) {
+        itens.push(`🔤 Acentuação corrompida na extração corrigida em <strong>${qtdAcentosCorrigidosBase.toLocaleString('pt-BR')}</strong> célula(s) da base (ex.: "PREPARATÃ“RIAS" → "PREPARATÓRIAS").`);
+    }
+    let semRegra = Object.entries(estagiosSemRegra).sort((a, b) => b[1].qtd - a[1].qtd);
+    if (semRegra.length > 0) {
+        let total = semRegra.reduce((s, [, v]) => s + v.qtd, 0);
+        let lista = semRegra.map(([rot, v]) => `"${rot}": ${v.qtd.toLocaleString('pt-BR')} MAPP(s), ${F(v.p26)}`).join('; ');
+        itens.push(`⚠️ <strong>${total.toLocaleString('pt-BR')}</strong> MAPP(s) de Demais Projetos com estágio sem regra própria entram com 100% do Programado 2026 (padrão de segurança) — ${lista}.`);
+    }
+    el.style.display = itens.length ? 'block' : 'none';
+    el.innerHTML = itens.join('<br>');
 }
 
 // Calcula, para cada estágio com taxa condicional ao Limite 2026, quantos MAPPs

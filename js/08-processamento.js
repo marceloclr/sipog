@@ -253,6 +253,7 @@ function processarDados() {
 
 
     let cenario = document.getElementById('cenario-opcao').value;
+    estagiosSemRegra = {};
 
     dadosBrutos.forEach((r, idx) => {
         let estagio = normalizarEstagio(r.ESTAGIO_EXECUCAO);
@@ -284,6 +285,15 @@ function processarDados() {
                 isExpurgado: true, regra: "EXPURGO: GRUPO ENTREGA PRIORITÁRIA (grupo oculto do sistema)"
             });
             return;
+        }
+
+        // Estágio sem regra própria: só altera o cálculo em Demais Projetos (os
+        // grupos têm 100% do Programado de qualquer forma) — registra para o aviso.
+        if (classe === 'INVESTIMENTO' && !ESTAGIOS_COM_REGRA.has(estagio)) {
+            let rot = estagio ? labelEstagio(estagio) : '(vazio)';
+            if (!estagiosSemRegra[rot]) estagiosSemRegra[rot] = { qtd: 0, p26: 0 };
+            estagiosSemRegra[rot].qtd++;
+            estagiosSemRegra[rot].p26 += p26;
         }
 
         let execFin = p26 > 0 ? (pg26 / p26) * 100 : 0;
@@ -461,6 +471,7 @@ function processarDados() {
     atualizarSeletorFontePainel();
     atualizarEstadoGateImportacao();
     atualizarResumoParametrizacaoEstagio();
+    renderizarAvisoQualidadeBase();
     atualizarResumoRedutor();
     atualizarResumoPLO();
     atualizarPainelAjustesRealizados();

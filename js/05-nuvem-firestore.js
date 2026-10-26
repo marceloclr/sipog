@@ -393,6 +393,7 @@ function carregarSomenteParametros() {
 function limparBase() {
     if(confirm("Deseja realmente limpar toda a base de dados ativa, contadores, lixeira e tetos definidos?\n\nTodos os ajustes e configurações serão perdidos.")) {
         dadosBrutos = []; dadosProcessados = []; dadosExcluidos = [];
+        estagiosSemRegra = {}; qtdAcentosCorrigidosBase = 0; renderizarAvisoQualidadeBase();
         totalRegistrosBase = 0; totalRegistrosExpurgados = 0;
         tetosPorFonte = {}; subtetosPorFonteGrupo = {}; monFonteSelecionada = '';
         ploGerado = false; ploDataGeracao = null;
