@@ -48,3 +48,17 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 | js/13-exportacao-xlsx.js | 5517–5957 | Exportações ExcelJS |
 | js/14-graficos-dashboard.js | 5958–6370 | Cenário estresse, gráficos, gauge, hover, **inicialização** |
 | js/15-relatorio-pdf.js | 6371–6861 | Relatório PDF por Fonte |
+
+## Página de estudo separada: `estudo-loa.html` + `js/estudo-loa.js`
+
+Cruza a LOA 2027 (xlsx "Fonte x Órgão", coluna C) com a base de MAPPs (layout do
+`importar()`), sem tocar no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).
+Carrega só `js/03` e `js/06` do SIPOG (definições puras) — não incluir outros arquivos js/01–15.
+
+- `calcularPrevisaoEmpenhoEstudo()` é **cópia** da Previsão de Empenho por Estágio de
+  `processarDados()` (js/08, cenário PADRAO). **Mudou a regra no js/08 → atualizar a cópia.**
+  Conferência: processar a base real no SIPOG com parâmetros padrão e comparar MAPP a MAPP
+  (`prevEmp`, `regra`, `nec`); em 2026-10-26 deu 7.300/7.300 iguais.
+- De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
+  (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,
+  ignorando emendas 3xx) e manual. Órgão casa pela sigla entre parênteses.
