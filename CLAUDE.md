@@ -76,6 +76,9 @@ dígitos do código — 01 (AL + FPP), 02 (TCE), 04 (TJ + FERMOJU, FUNSEG, fundo
 15 (MP/PGJ + fundo de reaparelhamento e FDID); a Defensoria (06) fica —
 `loaLinhas` = Executivo, `loaLinhasArquivo` = tudo (vai para a nuvem e para a aba ARQ_ do xlsx,
 com a coluna EXPURGO). O PDF de Investimento de 26/10 não tem nenhum desses órgãos.
+Os MAPPs desses órgãos também são expurgados (`expurgarMAPPForaDoExecutivo`, pela sigla do ORGAO:
+siglas fixas em `LOA_FORA_EXECUTIVO` + as dos órgãos expurgados da LOA carregada); nas bases de
+14/07 e 18/09 não há nenhum.
 Não toca no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).
 Carrega só `js/03`, `js/06` e `js/05` do SIPOG (definições sem efeito ao carregar; o js/05 dá a
 gravação em chunks) — não incluir outros arquivos js/01–15. Nuvem: coleção própria

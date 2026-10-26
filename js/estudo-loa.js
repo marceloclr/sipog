@@ -36,15 +36,32 @@ const PADROES_ESTUDO = {
 // 01 = Assembleia Legislativa e vinculados (FPP); 02 = Tribunal de Contas do Estado;
 // 04 = Tribunal de Justiça e vinculados (FERMOJU, FUNSEG, fundo dos oficiais de justiça);
 // 15 = Ministério Público (PGJ) e vinculados (fundo de reaparelhamento, FDID). A Defensoria (06) fica.
+// Os MAPPs desses órgãos também saem (a base traz só a sigla no ORGAO): siglas abaixo, da LOA
+// 2027, mais as dos órgãos expurgados do arquivo de LOA carregado. Nas bases de 14/07 e 18/09
+// não havia nenhum.
 const LOA_FORA_EXECUTIVO = [
-    { prefixo: '01', nome: 'Assembleia Legislativa (AL) e órgãos vinculados' },
-    { prefixo: '02', nome: 'Tribunal de Contas do Estado (TCE) e órgãos vinculados' },
-    { prefixo: '04', nome: 'Tribunal de Justiça (TJ) e órgãos vinculados' },
-    { prefixo: '15', nome: 'Ministério Público (PGJ) e órgãos vinculados' }
+    { prefixo: '01', nome: 'Assembleia Legislativa (AL) e órgãos vinculados', siglas: ['AL', 'FPP'] },
+    { prefixo: '02', nome: 'Tribunal de Contas do Estado (TCE) e órgãos vinculados', siglas: ['TCE'] },
+    { prefixo: '04', nome: 'Tribunal de Justiça (TJ) e órgãos vinculados', siglas: ['TJ', 'FERMOJU', 'FUNSEG', 'FECDOJ'] },
+    { prefixo: '15', nome: 'Ministério Público (PGJ) e órgãos vinculados', siglas: ['PGJ', 'FRMMP/CE', 'FDID'] }
 ];
 
 function loaForaDoExecutivo(l) {
     return LOA_FORA_EXECUTIVO.some(o => String(l.codOrgao || '').startsWith(o.prefixo));
+}
+
+function siglasForaDoExecutivo() {
+    let s = new Set();
+    LOA_FORA_EXECUTIVO.forEach(o => o.siglas.forEach(x => s.add(N(x))));
+    loaLinhasArquivo.filter(loaForaDoExecutivo).forEach(l => { if (l.sigla) s.add(N(l.sigla)); });
+    return s;
+}
+
+// Mesmo formato dos demais expurgos (valores zerados, fora da LOA e da proposta).
+function expurgarMAPPForaDoExecutivo(m, siglas) {
+    if (m.expurgado || !siglas.has(N(m.orgao))) return m;
+    return Object.assign(m, { expurgado: true, regra: 'EXPURGO: ÓRGÃO FORA DO EXECUTIVO (AL, TCE, TJ, MP)',
+        prevEmp: 0, trf: 0, nec: 0, pctDeliberado: 0, prevEmpAj: 0, trfAj: 0, necAj: 0 });
 }
 
 // Grupos do Valor Deliberado — mesmos de GRUPOS_REDUTOR (js/07-redutor-paradigma.js).
@@ -1048,7 +1065,16 @@ function recalcularEstudo() {
     // A lista de fontes do Valor Deliberado precisa estar pronta antes de ler os parâmetros.
     preencherSelect('vd-fonte', fontesSIPOGDisponiveis(), '(todas as fontes)');
     let prm = lerParametrosEstudo();
-    mappsCalculados = mappsBrutos.map(r => aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte));
+    let siglasFora = siglasForaDoExecutivo();
+    mappsCalculados = mappsBrutos.map(r => expurgarMAPPForaDoExecutivo(
+        aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte), siglasFora));
+    let statusFora = document.getElementById('status-mapps-expurgo');
+    if (statusFora) {
+        let fora = mappsCalculados.filter(m => /FORA DO EXECUTIVO/.test(m.regra));
+        statusFora.innerHTML = !mappsBrutos.length ? '' : fora.length
+            ? `<span class="aviso">Expurgados (fora do Executivo): ${fora.length} MAPP(s) — ${escHtml([...new Set(fora.map(m => m.orgao))].join(', '))}</span>`
+            : 'Nenhum MAPP de AL, TCE, TJ ou MP (e vinculados) na base.';
+    }
     recalcularDeParaSugerido();
     resumoForaCruzamento = montarConsolidado();
     atualizarFiltros();
