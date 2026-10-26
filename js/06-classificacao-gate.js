@@ -76,6 +76,18 @@ const EST_NAO_DEFINIDO      = 'NAO DEFINIDO';
 const EST_NAO_INFORMADO     = 'NAO INFORMADO';
 const EST_LICITADO          = 'LICITADO';
 
+// Normaliza o texto do estágio antes de comparar com as constantes EST_*: além
+// do N() (acento e caixa), corrige acentuação corrompida na extração, junta
+// espaços repetidos e uniformiza "FINAN.CONCLUÍDA" / "FINAN, CONCLUÍDA" (variações
+// vistas nas extrações do MAPP) para "FINAN,CONCLUÍDA". Sem isso, o estágio não é
+// reconhecido e o MAPP cai no padrão de segurança (100% do Programado 2026).
+function normalizarEstagio(v) {
+    return N(corrigirMojibake(String(v || '')))
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\/\s*/g, '/')
+        .replace(/FINAN\s*[.,]\s*CONCL/, 'FINAN,CONCL');
+}
+
 // Rótulo canônico por Estágio de Execução — a planilha MAPP traz variações de
 // acentuação/caixa para o mesmo estágio (ex.: "EM EXECUÇÃO" e "EM EXECUCAO"),
 // que a função N() já unifica para fins de CÁLCULO (comparação com as

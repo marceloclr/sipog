@@ -255,7 +255,7 @@ function processarDados() {
     let cenario = document.getElementById('cenario-opcao').value;
 
     dadosBrutos.forEach((r, idx) => {
-        let estagio = N(r.ESTAGIO_EXECUCAO || r.ESTAGIO_EXECUCAO);
+        let estagio = normalizarEstagio(r.ESTAGIO_EXECUCAO);
         let classe = classificarRegistro(r);
         let p26 = V(r.VLR_PROGRAMADO_2026), l26 = V(r.VLR_LIMITE_2026), e26 = V(r.VLR_EMPENHADO_2026), pg26 = V(r.VLR_PAGO_2026), p27 = V(r.VLR_PROGRAMADO_2027);
 
