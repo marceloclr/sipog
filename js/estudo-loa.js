@@ -16,6 +16,7 @@ let mappsCalculados = [];    // resultado de calcularPrevisaoEmpenhoEstudo por l
 let deParaSugerido = {};     // { subfonte: { fonte, regra } }
 let deParaManual = {};       // { subfonte: fonteSIPOG | '' } — escolhas do usuário
 let consolidadoAtual = [];   // linhas do Órgão × Fonte (para tela e exportação)
+let situacaoPorPar = {};     // { 'ORGAO||fonte': 'OK' | 'SEM_LOA' | 'SEM_MAPP' } — filtro Situação no card 5
 
 const CHAVE_DEPARA_LOCAL = 'sipog_estudo_loa_depara_v1';
 
@@ -628,6 +629,8 @@ function montarConsolidado() {
         });
     }).sort((a, b) => (ORDEM_SITUACAO[a.situacao] - ORDEM_SITUACAO[b.situacao]) || a.fonte.localeCompare(b.fonte) ||
         (b.loa - a.loa) || (b.necAj - a.necAj) || a.orgao.localeCompare(b.orgao));
+    situacaoPorPar = {};
+    consolidadoAtual.forEach(l => { situacaoPorPar[N(l.orgao) + '||' + l.fonte] = l.situacao; });
     return { loaForaCruzamento, paresForaCruzamento };
 }
 
@@ -819,10 +822,13 @@ function renderizarDetalhe() {
     let fOrg = document.getElementById('filtro-det-orgao').value;
     let fFon = document.getElementById('filtro-det-fonte').value;
     let fEst = document.getElementById('filtro-det-estagio').value;
+    let fSit = document.getElementById('filtro-det-situacao').value;
+    let fBuscaOrgaoCard4 = N(document.getElementById('filtro-cons-texto').value); // busca de órgão do card 4 também vale aqui
     let fExp = document.getElementById('filtro-det-expurgo').checked;
     let fTxt = N(document.getElementById('filtro-det-texto').value);
     let linhas = linhasDetalheOrdenadas().filter(m =>
         (fExp || !m.expurgado) && (!fOrg || N(m.orgao) === N(fOrg)) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
+        (!fSit || situacaoPorPar[N(m.orgao) + '||' + m.fonte] === fSit) && (!fBuscaOrgaoCard4 || N(m.orgao).includes(fBuscaOrgaoCard4)) &&
         (!fTxt || N(m.mapp).includes(fTxt) || N(m.regra).includes(fTxt)));
 
     // Totais só dos MAPPs ativos, como no card 4: expurgados exibidos (checkbox)
@@ -863,6 +869,7 @@ function selecionarOpcao(id, valor) {
 function sincronizarDetalheComConsolidado() {
     selecionarOpcao('filtro-det-orgao', document.getElementById('filtro-cons-orgao').value);
     selecionarOpcao('filtro-det-fonte', document.getElementById('filtro-cons-fonte').value);
+    document.getElementById('filtro-det-situacao').value = document.getElementById('filtro-cons-situacao').value;
     renderizarDetalhe();
 }
 
@@ -871,6 +878,7 @@ function abrirMAPPsDoPar(tr) {
     selecionarOpcao('filtro-det-orgao', tr.dataset.orgao);
     selecionarOpcao('filtro-det-fonte', tr.dataset.fonte);
     document.getElementById('filtro-det-estagio').value = '';
+    document.getElementById('filtro-det-situacao').value = '';
     document.getElementById('filtro-det-texto').value = '';
     renderizarDetalhe();
     let secao = document.getElementById('secao-detalhe');

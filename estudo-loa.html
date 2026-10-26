@@ -167,13 +167,13 @@
             <div class="estudo-filtros">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()"><option value="">(todos)</option></select></label>
-                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado()">
+                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()">
                     <option value="">(todas)</option>
                     <option value="OK">LOA e MAPPs</option>
                     <option value="SEM_LOA">MAPPs sem LOA</option>
                     <option value="SEM_MAPP">LOA sem MAPPs</option>
                 </select></label>
-                <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado()">
+                <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado(); renderizarDetalhe()">
             </div>
             <div class="estudo-tabela-wrap"><div id="tabela-consolidado"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
         </div>
@@ -182,11 +182,17 @@
     <details class="estudo-secao" id="secao-detalhe" open>
         <summary>5. Detalhe por MAPP — regra aplicada</summary>
         <div class="estudo-corpo">
-            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos e Entrega Prioritária (como no SIPOG) e, se marcado nos parâmetros, Execução Físic/Finan. Concluída. Os filtros Órgão e Fonte do card 4 são aplicados aqui automaticamente; clique numa linha do card 4 para ver os MAPPs daquele par.</p>
+            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos e Entrega Prioritária (como no SIPOG) e, se marcado nos parâmetros, Execução Físic/Finan. Concluída. Os filtros do card 4 (Fonte, Órgão, Situação e busca de órgão) são aplicados aqui automaticamente; clique numa linha do card 4 para ver os MAPPs daquele par.</p>
             <div class="estudo-filtros">
                 <label>Órgão <select id="filtro-det-orgao" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
                 <label>Fonte <select id="filtro-det-fonte" onchange="renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Estágio <select id="filtro-det-estagio" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
+                <label title="Situação do par Órgão × Fonte no card 4">Situação <select id="filtro-det-situacao" onchange="renderizarDetalhe()">
+                    <option value="">(todas)</option>
+                    <option value="OK">LOA e MAPPs</option>
+                    <option value="SEM_LOA">MAPPs sem LOA</option>
+                    <option value="SEM_MAPP">LOA sem MAPPs</option>
+                </select></label>
                 <label><input type="checkbox" id="filtro-det-expurgo" onchange="renderizarDetalhe()"> mostrar expurgados</label>
                 <input type="search" id="filtro-det-texto" placeholder="Buscar MAPP ou regra…" oninput="renderizarDetalhe()">
             </div>
