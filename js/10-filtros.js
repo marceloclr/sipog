@@ -246,9 +246,13 @@ function checkFiltroPLODetalhado(item) {
            s.classe.has((item.classe || 'NÃO INFORMADO').toString().trim());
 }
 
+// Universo do PLOA Detalhado: ativos + exclusões MANUAIS (lixeira). Os expurgos
+// automáticos (Concluído, Cancelado, Transferido, Entrega Prioritária, Físic/Finan
+// Concluída) não têm Necessidade nem PLOA — entravam como linhas zeradas e
+// inflavam a contagem de MAPPs e os grupos dos gráficos.
 function basePLODetalhado() {
     return dadosProcessados.map(d => Object.assign({}, d, { excluido: false }))
-        .concat(dadosExcluidos.map(d => Object.assign({}, d, { excluido: true })));
+        .concat(dadosExcluidos.filter(d => !d.isExpurgado).map(d => Object.assign({}, d, { excluido: true })));
 }
 
 function construirDropdownsPLODetalhado() {

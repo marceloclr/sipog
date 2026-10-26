@@ -198,7 +198,8 @@ function renderizarPLODetalhado() {
     </tr></tfoot></table>`;
 
     document.getElementById('tab-plodet-pivot').innerHTML = h;
-    renderizarGraficosPLODetalhado(linhas, { tCalc: tCalc, tAj: tAj, tPlo: tPlo, tPloAj: tPloAj });
+    let qtdSemPLOA = filtrados.filter(d => !d.excluido && (d.plo2027Ajustado === null || d.plo2027Ajustado === undefined)).length;
+    renderizarGraficosPLODetalhado(linhas, { tCalc: tCalc, tAj: tAj, tPlo: tPlo, tPloAj: tPloAj, qtdSemPLOA: qtdSemPLOA });
     renderizarPLODetalheMapp(1);
 }
 
@@ -268,6 +269,29 @@ function renderizarPLODetalheMapp(pagina) {
 
 let chartPlodetBarras = null, chartPlodetCascata = null, chartPlodetRanking = null;
 
+// Eixo em reais no formato brasileiro e compacto: R$ 1,8 bi / R$ 80,5 mi / R$ 500 mil.
+function formatarMoedaCompacta(v) {
+    let a = Math.abs(v), s = v < 0 ? '−' : '';
+    let f = (x, casas) => x.toLocaleString('pt-BR', { maximumFractionDigits: casas });
+    if (a >= 1e9) return `${s}R$ ${f(a / 1e9, 2)} bi`;
+    if (a >= 1e6) return `${s}R$ ${f(a / 1e6, 1)} mi`;
+    if (a >= 1e3) return `${s}R$ ${f(a / 1e3, 0)} mil`;
+    return `${s}R$ ${f(a, 0)}`;
+}
+
+// Rótulo de exibição do agrupamento: grupos com o nome usado no Redutor/PLOA.
+function rotuloAgrupamentoPLO(chave, agrupador) {
+    if (agrupador !== 'classe') return chave;
+    let g = GRUPOS_PLO.find(x => x.classe === chave);
+    return g ? g.label : labelClasse(chave);
+}
+
+// Título de aviso dentro do gráfico (Chart.js title), usado quando o gráfico
+// sozinho pareceria "quebrado" (tudo igual, tudo zero, PLOA não gerado).
+function tituloAvisoGrafico(texto, t) {
+    return texto ? { display: true, text: texto, color: t.textColor, font: { size: 11, weight: 'normal' }, padding: { bottom: 8 } } : { display: false };
+}
+
 function criarBarChartAgrupado(ctxEl, labels, datasets) {
     let t = getChartTheme();
     return new Chart(ctxEl, {
@@ -285,15 +309,16 @@ function criarBarChartAgrupado(ctxEl, labels, datasets) {
             },
             scales: {
                 x: { ticks: { color: t.textColor, font: { size: 10 }, maxRotation: 35, minRotation: 20, callback: function (val, idx) { let l = labels[idx] || ''; return l.length > 18 ? l.substring(0, 16) + '…' : l; } }, grid: { color: t.gridColor } },
-                y: { ticks: { color: t.textColor, font: { size: 10 }, callback: v => 'R$ ' + (v / 1e6).toFixed(1) + 'M' }, grid: { color: t.gridColor } }
+                y: { ticks: { color: t.textColor, font: { size: 10 }, callback: v => formatarMoedaCompacta(v) }, grid: { color: t.gridColor } }
             }
         }
     });
 }
 
-function criarWaterfallTotal(ctxEl, tCalc, tAj, tPlo, tPloAj) {
+function criarWaterfallTotal(ctxEl, tCalc, tAj, tPlo, tPloAj, aviso) {
     let t = getChartTheme();
-    let labels = ['Necessidade Real 2027', 'Redutores (Estágio/Transf./Ajustes)', 'Necessidade Ajustada', 'Redutor PLOA', 'PLOA 2027', 'Ajustes em Cascata', 'PLOA 2027 Ajustado'];
+    // Passos intermediários = diferença entre os totais vizinhos (barra flutuante).
+    let labels = ['Necessidade Real 2027', 'Valor Deliberado / subtetos / edições', 'Necessidade Ajustada', 'Redutor do PLOA', 'PLOA 2027', 'Reaplicações em cascata', 'PLOA 2027 Ajustado'];
     let dados = [tCalc, [Math.min(tAj, tCalc), Math.max(tAj, tCalc)], tAj, [Math.min(tPlo, tAj), Math.max(tPlo, tAj)], tPlo, [Math.min(tPloAj, tPlo), Math.max(tPloAj, tPlo)], tPloAj];
     let cores = ['#4aa8ff', (tAj <= tCalc ? '#ff5b5b' : '#00e676'), '#a29bfe', (tPlo <= tAj ? '#ff5b5b' : '#00e676'), '#00e676', (tPloAj <= tPlo ? '#ff5b5b' : '#00e676'), '#1abc9c'];
     return new Chart(ctxEl, {
@@ -303,6 +328,7 @@ function criarWaterfallTotal(ctxEl, tCalc, tAj, tPlo, tPloAj) {
             responsive: true, maintainAspectRatio: false, devicePixelRatio: window.devicePixelRatio || 1,
             plugins: {
                 legend: { display: false },
+                title: tituloAvisoGrafico(aviso, t),
                 tooltip: {
                     backgroundColor: t.tooltipBg, titleColor: t.textColor, bodyColor: t.tooltipText, borderColor: 'rgba(74,168,255,0.3)', borderWidth: 1,
                     callbacks: { label: ctx => { let v = ctx.raw; let val = Array.isArray(v) ? (v[1] - v[0]) : v; return ' ' + val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); } }
@@ -310,13 +336,13 @@ function criarWaterfallTotal(ctxEl, tCalc, tAj, tPlo, tPloAj) {
             },
             scales: {
                 x: { ticks: { color: t.textColor, font: { size: 9 }, maxRotation: 35, minRotation: 15 }, grid: { color: t.gridColor } },
-                y: { ticks: { color: t.textColor, font: { size: 10 }, callback: v => 'R$ ' + (v / 1e6).toFixed(1) + 'M' }, grid: { color: t.gridColor } }
+                y: { ticks: { color: t.textColor, font: { size: 10 }, callback: v => formatarMoedaCompacta(v) }, grid: { color: t.gridColor } }
             }
         }
     });
 }
 
-function criarBarChartRankingPct(ctxEl, labels, pcts, valoresCalc) {
+function criarBarChartRankingPct(ctxEl, labels, pcts, valoresCalc, aviso) {
     let t = getChartTheme();
     return new Chart(ctxEl, {
         type: 'bar',
@@ -325,6 +351,7 @@ function criarBarChartRankingPct(ctxEl, labels, pcts, valoresCalc) {
             indexAxis: 'y', responsive: true, maintainAspectRatio: false, devicePixelRatio: window.devicePixelRatio || 1,
             plugins: {
                 legend: { display: false },
+                title: tituloAvisoGrafico(aviso, t),
                 tooltip: {
                     backgroundColor: t.tooltipBg, titleColor: t.textColor, bodyColor: t.tooltipText, borderColor: 'rgba(74,168,255,0.3)', borderWidth: 1,
                     callbacks: {
@@ -357,18 +384,33 @@ function renderizarGraficosPLODetalhado(linhas, totais) {
     let canvasRanking = document.getElementById('chart-plodet-ranking');
     if (!canvasBarras || !canvasCascata || !canvasRanking) return;
 
-    let labels = linhas.map(l => l.chave);
+    let agrupadorEl = document.getElementById('plodet-agrupador');
+    let agrupador = agrupadorEl ? agrupadorEl.value : 'classe';
+    // Grupos sem nenhum valor (as 4 séries zeradas) só poluem os gráficos.
+    let comValor = linhas.filter(l => l.calc || l.ajustada || l.plo || l.ploAj);
+    let labels = comValor.map(l => rotuloAgrupamentoPLO(l.chave, agrupador));
     chartPlodetBarras = criarBarChartAgrupado(canvasBarras, labels, [
-        { label: 'Necessidade Real 2027', data: linhas.map(l => l.calc), color: '#4aa8ff' },
-        { label: 'Necessidade Ajustada', data: linhas.map(l => l.ajustada), color: '#a29bfe' },
-        { label: 'PLOA 2027', data: linhas.map(l => l.plo), color: '#00e676' },
-        { label: 'PLOA 2027 Ajustado', data: linhas.map(l => l.ploAj), color: '#1abc9c' }
+        { label: 'Necessidade Real 2027', data: comValor.map(l => l.calc), color: '#4aa8ff' },
+        { label: 'Necessidade Ajustada', data: comValor.map(l => l.ajustada), color: '#a29bfe' },
+        { label: 'PLOA 2027', data: comValor.map(l => l.plo), color: '#00e676' },
+        { label: 'PLOA 2027 Ajustado', data: comValor.map(l => l.ploAj), color: '#1abc9c' }
     ]);
 
-    chartPlodetCascata = criarWaterfallTotal(canvasCascata, totais.tCalc, totais.tAj, totais.tPlo, totais.tPloAj);
+    // Avisos: PLOA não gerado para parte dos MAPPs (entram como zero e parecem
+    // "redução"), ou nenhuma redução aplicada (barras iguais / ranking vazio).
+    let semPLOA = totais.qtdSemPLOA || 0;
+    let semReducao = Math.abs(totais.tCalc - totais.tPloAj) < 0.5 && Math.abs(totais.tCalc - totais.tAj) < 0.5;
+    let avisoCascata = semPLOA > 0
+        ? `⚠️ PLOA 2027 não gerado para ${semPLOA.toLocaleString('pt-BR')} MAPP(s) da seleção — contados como zero (gere o PLOA da fonte deles).`
+        : (semReducao ? 'Nenhuma redução aplicada: Necessidade Real, Ajustada, PLOA e PLOA Ajustado são iguais.' : '');
+    chartPlodetCascata = criarWaterfallTotal(canvasCascata, totais.tCalc, totais.tAj, totais.tPlo, totais.tPloAj, avisoCascata);
 
-    let ranking = linhas.map(l => ({ chave: l.chave, pct: l.calc > 0 ? ((l.calc - l.ploAj) / l.calc * 100) : 0, calc: l.calc })).sort((a, b) => b.pct - a.pct);
-    chartPlodetRanking = criarBarChartRankingPct(canvasRanking, ranking.map(r => r.chave), ranking.map(r => r.pct), ranking.map(r => r.calc));
+    let ranking = comValor.filter(l => l.calc > 0)
+        .map(l => ({ chave: rotuloAgrupamentoPLO(l.chave, agrupador), pct: (l.calc - l.ploAj) / l.calc * 100, calc: l.calc }))
+        .sort((a, b) => b.pct - a.pct);
+    let avisoRanking = ranking.length === 0 ? 'Sem Necessidade Real 2027 na seleção.'
+        : (ranking.every(r => Math.abs(r.pct) < 0.05) ? 'Nenhum agrupamento com redução: PLOA 2027 Ajustado = Necessidade Real 2027 em todos.' : '');
+    chartPlodetRanking = criarBarChartRankingPct(canvasRanking, ranking.map(r => r.chave), ranking.map(r => r.pct), ranking.map(r => r.calc), avisoRanking);
 }
 
 async function exportarPLODetalhadoXLSX() {
