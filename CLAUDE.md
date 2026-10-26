@@ -82,6 +82,14 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
 - `aplicarValorDeliberadoEstudo()` é **cópia** da conta de `aplicarValorParadigmaGrupoCore()`
   (js/07): Prev. Emp. × (1 − % do grupo) → TRF e Necessidade Ajustadas, na fonte escolhida ou
   em todas; sem travas/edições manuais. Conferido em 2026-10-26: 7.111/7.111 iguais.
+- Layout: menu lateral com 5 abas (`mostrarAbaEstudo`): Carga, Parâmetros, De-para,
+  Consolidado e MAPPs (um filtro para a página toda; clique na linha de fonte filtra e rola
+  até os MAPPs) e Ajustes Finais.
+- Ajustes Finais: Proposta de Programado 2027 = LOA do par Órgão × Fonte × (Nec. Ajustada do
+  MAPP ÷ soma do par; negativas = 0). Edições em `propostasManuais` (localStorage por arquivo e
+  no estudo salvo na nuvem); "Distribuir" reparte, por par, LOA − editados entre os não editados.
+  Alerta por fonte: situação pela parte distribuível (diferença − LOA sem MAPP). A LOA ainda
+  inclui Pessoal e Custeio — o xlsx/PDF da LOA não tem grupo de despesa (GND).
 - De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
   (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,
   ignorando emendas 3xx) e manual. Órgão casa pela sigla entre parênteses.

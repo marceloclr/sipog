@@ -333,6 +333,8 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
     let corrigidos = corrigirMojibakeLinhas(mappsBrutos);
     let n = normalizarLayoutMAPPs(mappsBrutos, cab);
     mappsArquivo = nomeArquivo || '';
+    // Edições da Proposta (Ajustes Finais) feitas antes com este mesmo arquivo.
+    propostasManuais = lerPropostasLocal(mappsArquivo);
     let avisos = '';
     if (n.traduzidas.length)
         avisos += `<br>Colunas traduzidas para o layout do SIPOG: ${n.traduzidas.map(t => `${escHtml(t[0])} → ${escHtml(t[1])}`).join(', ')}`;
@@ -640,13 +642,15 @@ let resumoForaCruzamento = { loaForaCruzamento: 0, paresForaCruzamento: 0 };
 // ─── ORDENAÇÃO DAS GRADES ───────────────────────────────────────────────────
 // Clique no título ordena pela coluna; novo clique inverte. Vale para a tela e
 // para a exportação (as abas saem na mesma ordem das grades).
-let ordemTabelas = { cons: { chave: null, desc: false }, det: { chave: null, desc: false } };
+let ordemTabelas = { cons: { chave: null, desc: false }, det: { chave: null, desc: false }, aj: { chave: null, desc: false } };
 
 function ordenarTabela(tabela, chave) {
     let o = ordemTabelas[tabela];
     if (o.chave === chave) o.desc = !o.desc;
     else { o.chave = chave; o.desc = false; }
-    if (tabela === 'cons') renderizarConsolidado(); else renderizarDetalhe();
+    if (tabela === 'cons') renderizarConsolidado();
+    else if (tabela === 'aj') renderizarAjustesFinais();
+    else renderizarDetalhe();
 }
 
 function ordenarLinhas(linhas, colunas, ordem) {
@@ -750,16 +754,15 @@ function preencherSelect(id, valores, rotuloTodos) {
 }
 
 function atualizarFiltros() {
-    let orgaos = Array.from(new Set(mappsCalculados.map(m => m.orgao))).sort();
-    let fontes = Array.from(new Set(mappsCalculados.map(m => m.fonte))).sort();
     let estagios = Array.from(new Set(mappsCalculados.map(m => m.estagio))).sort();
     let fontesCons = Array.from(new Set(consolidadoAtual.map(l => l.fonte))).sort();
     let orgaosCons = Array.from(new Set(consolidadoAtual.map(l => l.orgao))).sort();
-    preencherSelect('filtro-det-orgao', orgaos, '(todos)');
-    preencherSelect('filtro-det-fonte', fontes, '(todas)');
     preencherSelect('filtro-det-estagio', estagios, '(todos)');
     preencherSelect('filtro-cons-fonte', fontesCons, '(todas)');
     preencherSelect('filtro-cons-orgao', orgaosCons, '(todos)');
+    // Ajustes Finais: só pares com LOA e MAPPs (onde há o que distribuir) e as fontes com LOA.
+    preencherSelect('filtro-aj-fonte', Array.from(new Set(consolidadoAtual.filter(l => l.temLOA).map(l => l.fonte))).sort(), '(todas)');
+    preencherSelect('filtro-aj-orgao', Array.from(new Set(consolidadoAtual.filter(l => l.temLOA || l.qtd).map(l => l.orgao))).sort(), '(todos)');
 }
 
 // Resumo por grupo do Valor Deliberado (mesmas colunas-base da tabela do Redutor no SIPOG).
@@ -819,11 +822,12 @@ function renderizarDetalhe() {
         cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p>';
         return;
     }
-    let fOrg = document.getElementById('filtro-det-orgao').value;
-    let fFon = document.getElementById('filtro-det-fonte').value;
+    // Filtros da página (aba 4): os mesmos da grade de fontes valem para os MAPPs.
+    let fOrg = document.getElementById('filtro-cons-orgao').value;
+    let fFon = document.getElementById('filtro-cons-fonte').value;
     let fEst = document.getElementById('filtro-det-estagio').value;
-    let fSit = document.getElementById('filtro-det-situacao').value;
-    let fBuscaOrgaoCard4 = N(document.getElementById('filtro-cons-texto').value); // busca de órgão do card 4 também vale aqui
+    let fSit = document.getElementById('filtro-cons-situacao').value;
+    let fBuscaOrgaoCard4 = N(document.getElementById('filtro-cons-texto').value);
     let fExp = document.getElementById('filtro-det-expurgo').checked;
     let fTxt = N(document.getElementById('filtro-det-texto').value);
     let linhas = linhasDetalheOrdenadas().filter(m =>
@@ -852,37 +856,40 @@ function renderizarDetalhe() {
     cont.innerHTML = h;
 }
 
-// ─── LIGAÇÃO CARD 4 → CARD 5 ────────────────────────────────────────────────
-// Escolhe a opção do select pelo valor normalizado (a sigla da LOA pode vir com
-// grafia diferente da do MAPP); se não houver MAPP com esse valor, cria a opção
-// para o card 5 mostrar "nenhum MAPP" em vez de cair em "(todos)".
-function selecionarOpcao(id, valor) {
-    let sel = document.getElementById(id);
-    if (!sel) return;
-    if (!valor) { sel.value = ''; return; }
-    let op = Array.from(sel.options).find(o => o.value && N(o.value) === N(valor));
-    if (!op) { op = new Option(valor, valor); sel.add(op); }
-    sel.value = op.value;
-}
-
-// Filtros Órgão/Fonte do Consolidado valem também para o Detalhe por MAPP.
-function sincronizarDetalheComConsolidado() {
-    selecionarOpcao('filtro-det-orgao', document.getElementById('filtro-cons-orgao').value);
-    selecionarOpcao('filtro-det-fonte', document.getElementById('filtro-cons-fonte').value);
-    document.getElementById('filtro-det-situacao').value = document.getElementById('filtro-cons-situacao').value;
-    renderizarDetalhe();
-}
-
-// Clique numa linha do Consolidado: abre no Detalhe os MAPPs daquele Órgão × Fonte.
+// ─── ABA 4: FILTRO ÚNICO DA PÁGINA ──────────────────────────────────────────
+// Clique numa linha de fonte: aplica Órgão e Fonte da linha ao filtro da página
+// (fontes e MAPPs) e rola até a lista de MAPPs, logo abaixo, na mesma aba.
 function abrirMAPPsDoPar(tr) {
-    selecionarOpcao('filtro-det-orgao', tr.dataset.orgao);
-    selecionarOpcao('filtro-det-fonte', tr.dataset.fonte);
+    document.getElementById('filtro-cons-orgao').value = tr.dataset.orgao;
+    document.getElementById('filtro-cons-fonte').value = tr.dataset.fonte;
+    document.getElementById('filtro-cons-situacao').value = '';
+    document.getElementById('filtro-cons-texto').value = '';
     document.getElementById('filtro-det-estagio').value = '';
-    document.getElementById('filtro-det-situacao').value = '';
     document.getElementById('filtro-det-texto').value = '';
+    renderizarConsolidado();
     renderizarDetalhe();
-    let secao = document.getElementById('secao-detalhe');
-    if (secao) { secao.open = true; secao.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    let alvo = document.getElementById('secao-detalhe');
+    if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function limparFiltrosConsolidado() {
+    ['filtro-cons-fonte', 'filtro-cons-orgao', 'filtro-cons-situacao', 'filtro-det-estagio', 'filtro-cons-texto', 'filtro-det-texto']
+        .forEach(id => { let el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('filtro-det-expurgo').checked = false;
+    renderizarConsolidado();
+    renderizarDetalhe();
+}
+
+// ─── MENU LATERAL (ABAS) ────────────────────────────────────────────────────
+const CHAVE_ABA_LOCAL = 'sipog_estudo_loa_aba_v1';
+
+function mostrarAbaEstudo(aba) {
+    let existe = document.querySelector(`.estudo-aba[data-aba="${aba}"]`);
+    if (!existe) aba = 'carga';
+    document.querySelectorAll('.estudo-aba').forEach(s => s.classList.toggle('ativa', s.dataset.aba === aba));
+    document.querySelectorAll('.estudo-menu-item').forEach(b => b.classList.toggle('ativo', b.dataset.aba === aba));
+    try { localStorage.setItem(CHAVE_ABA_LOCAL, aba); } catch (e) {}
+    window.scrollTo({ top: 0 });
 }
 
 // ─── ORQUESTRAÇÃO ───────────────────────────────────────────────────────────
@@ -898,12 +905,288 @@ function recalcularEstudo() {
     renderizarDePara();
     renderizarConsolidado();
     renderizarDetalhe();
+    calcularPropostasAutomaticas();
+    renderizarAjustesFinais();
     let semDados = (loaLinhas.length === 0 && mappsCalculados.length === 0);
     ['btn-exportar-estudo', 'btn-salvar-estudo'].forEach(id => {
         let btn = document.getElementById(id);
         if (btn) btn.disabled = semDados;
     });
 }
+
+// ─── AJUSTES FINAIS: PROPOSTA DE PROGRAMADO 2027 ────────────────────────────
+// Distribuição automática: a LOA 2027 de cada par Órgão × Fonte vai para os MAPPs
+// ativos daquele par, na proporção da Necessidade 2027 Ajustada (necessidades
+// negativas contam como zero). Edições ficam em propostasManuais e não mexem nas
+// demais linhas; "Distribuir diferença" reequilibra os pares de uma fonte.
+let linhasAjustes = [];        // MAPPs ativos com chave, par, LOA do par e proposta automática
+let propostasManuais = {};     // { chave: { valor, origem: 'manual' | 'redistribuicao' } }
+const CHAVE_PROPOSTAS_LOCAL = 'sipog_estudo_loa_propostas_v1';
+const TOLERANCIA_ALERTA = 1;   // R$ 1: abaixo disso a fonte "confere"
+
+function chaveParAj(orgao, fonte) { return N(orgao) + '||' + fonte; }
+
+function lerPropostasLocal(arquivo) {
+    try {
+        let s = JSON.parse(localStorage.getItem(CHAVE_PROPOSTAS_LOCAL) || 'null');
+        return (s && s.arquivo === arquivo && s.propostas) ? s.propostas : {};
+    } catch (e) { return {}; }
+}
+
+function salvarPropostasLocal() {
+    try { localStorage.setItem(CHAVE_PROPOSTAS_LOCAL, JSON.stringify({ arquivo: mappsArquivo, propostas: propostasManuais })); } catch (e) {}
+}
+
+function calcularPropostasAutomaticas() {
+    let loaPar = {};
+    consolidadoAtual.forEach(l => { if (l.temLOA) loaPar[chaveParAj(l.orgao, l.fonte)] = l.loa; });
+    let somaNecPar = {}, ocorrencias = {};
+    linhasAjustes = mappsCalculados.filter(m => !m.expurgado).map(m => {
+        let base = N(m.mapp) + '||' + m.fonte + '||' + N(m.orgao);
+        ocorrencias[base] = (ocorrencias[base] || 0) + 1;
+        let par = chaveParAj(m.orgao, m.fonte);
+        let peso = Math.max(m.necAj || 0, 0);
+        somaNecPar[par] = (somaNecPar[par] || 0) + peso;
+        return { chave: base + '#' + ocorrencias[base], par, peso, mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio,
+            classe: m.classe, necAj: m.necAj, loaPar: loaPar[par] !== undefined ? loaPar[par] : null };
+    });
+    linhasAjustes.forEach(l => {
+        let soma = somaNecPar[l.par] || 0;
+        l.auto = (l.loaPar > 0 && soma > 0) ? l.loaPar * l.peso / soma : 0;
+    });
+}
+
+function propostaDe(l) {
+    let m = propostasManuais[l.chave];
+    return m ? m.valor : l.auto;
+}
+
+function editarProposta(input) {
+    let chave = input.dataset.chave;
+    let txt = String(input.value || '').trim();
+    if (txt === '') delete propostasManuais[chave];
+    else propostasManuais[chave] = { valor: Math.max(V(txt.replace(/R\$\s?/g, '')), 0), origem: 'manual' };
+    salvarPropostasLocal();
+    renderizarAjustesFinais();
+}
+
+function restaurarProposta(chave) {
+    delete propostasManuais[chave];
+    salvarPropostasLocal();
+    renderizarAjustesFinais();
+}
+
+function restaurarTodasPropostas() {
+    if (Object.keys(propostasManuais).length && !confirm('Descartar todas as edições da Proposta e voltar à distribuição automática?')) return;
+    propostasManuais = {};
+    salvarPropostasLocal();
+    renderizarAjustesFinais();
+}
+
+function filtrosAjustes() {
+    return {
+        fonte: (document.getElementById('filtro-aj-fonte') || {}).value || '',
+        orgao: (document.getElementById('filtro-aj-orgao') || {}).value || '',
+        texto: N((document.getElementById('filtro-aj-texto') || {}).value || ''),
+        soEditados: !!(document.getElementById('filtro-aj-editados') || {}).checked
+    };
+}
+
+// Fontes: LOA (pares do filtro) × soma das propostas. "Sem destino" = LOA de pares
+// sem MAPP ou com Necessidade Ajustada total zero (não há onde distribuir).
+function montarAlertasFontes(f) {
+    let porFonte = {};
+    let obter = fonte => porFonte[fonte] || (porFonte[fonte] = { fonte, loa: 0, proposta: 0, semDestino: 0, qtd: 0, editados: 0 });
+    let pesoPar = {};
+    linhasAjustes.forEach(l => { pesoPar[l.par] = (pesoPar[l.par] || 0) + l.peso; });
+    consolidadoAtual.forEach(c => {
+        if (!c.temLOA) return;
+        if ((f.fonte && c.fonte !== f.fonte) || (f.orgao && N(c.orgao) !== N(f.orgao))) return;
+        let a = obter(c.fonte);
+        a.loa += c.loa;
+        if (!(pesoPar[chaveParAj(c.orgao, c.fonte)] > 0)) a.semDestino += c.loa;
+    });
+    linhasAjustes.forEach(l => {
+        if ((f.fonte && l.fonte !== f.fonte) || (f.orgao && N(l.orgao) !== N(f.orgao))) return;
+        let a = obter(l.fonte);
+        a.proposta += propostaDe(l);
+        a.qtd++;
+        if (propostasManuais[l.chave]) a.editados++;
+    });
+    // A situação olha a parte que DÁ para distribuir (diferença − LOA sem MAPP): assim um
+    // estouro causado por edição não fica escondido atrás de LOA que não tem MAPP.
+    let ordem = { estouro: 0, sobra: 1, semdestino: 2, ok: 3 };
+    return Object.values(porFonte).map(a => {
+        a.dif = a.loa - a.proposta;
+        a.difDistribuivel = a.dif - a.semDestino;
+        a.distribuivel = Math.abs(a.difDistribuivel) >= TOLERANCIA_ALERTA;
+        a.status = a.distribuivel ? (a.difDistribuivel > 0 ? 'sobra' : 'estouro')
+            : (Math.abs(a.dif) < TOLERANCIA_ALERTA ? 'ok' : 'semdestino');
+        return a;
+    }).sort((x, y) => (ordem[x.status] - ordem[y.status]) || Math.abs(y.dif) - Math.abs(x.dif));
+}
+
+// Reequilibra cada par da fonte: os MAPPs NÃO editados recebem (LOA do par − soma
+// dos editados) na proporção da Necessidade Ajustada. Grava como "redistribuição".
+function distribuirDiferencaFonte(fonte) {
+    let f = filtrosAjustes();
+    let pares = {};
+    linhasAjustes.filter(l => l.fonte === fonte && l.loaPar !== null && (!f.orgao || N(l.orgao) === N(f.orgao)))
+        .forEach(l => { (pares[l.par] = pares[l.par] || []).push(l); });
+    let alterados = 0;
+    Object.values(pares).forEach(linhas => {
+        let livres = linhas.filter(l => !propostasManuais[l.chave] || propostasManuais[l.chave].origem === 'redistribuicao');
+        let fixos = linhas.filter(l => propostasManuais[l.chave] && propostasManuais[l.chave].origem === 'manual');
+        let pesoLivre = livres.reduce((s, l) => s + l.peso, 0);
+        if (!livres.length || pesoLivre <= 0) return;
+        let alvo = Math.max(linhas[0].loaPar - fixos.reduce((s, l) => s + propostaDe(l), 0), 0);
+        livres.forEach(l => {
+            // Sem necessidade (peso 0) a proposta é zero de qualquer forma: volta ao automático.
+            if (l.peso <= 0) { delete propostasManuais[l.chave]; return; }
+            propostasManuais[l.chave] = { valor: alvo * l.peso / pesoLivre, origem: 'redistribuicao' };
+            alterados++;
+        });
+    });
+    salvarPropostasLocal();
+    renderizarAjustesFinais();
+    if (!alterados) alert('Não há MAPPs não editados com Necessidade Ajustada para receber a diferença nesta fonte.');
+}
+
+const ROTULO_ALERTA = { ok: 'Confere', sobra: 'LOA sobrando', estouro: 'Acima da LOA', semdestino: 'LOA sem MAPP' };
+
+function celulaDiferenca(dif) {
+    if (Math.abs(dif) < TOLERANCIA_ALERTA) return `<td class="num">—</td>`;
+    return `<td class="num ${dif > 0 ? 'valor-sobra' : 'valor-estouro'}">${dif > 0 ? '+' : '−'}${F(Math.abs(dif))}</td>`;
+}
+
+function renderizarAjustesFinais() {
+    let contA = document.getElementById('tabela-alertas');
+    if (!contA) return;
+    let contO = document.getElementById('tabela-ajustes-orgaos');
+    let contM = document.getElementById('tabela-ajustes-mapps');
+    let resumo = document.getElementById('resumo-ajustes');
+    let aviso = document.getElementById('aviso-loa-ajustes');
+    if (aviso) aviso.innerHTML = loaLinhas.length ? '⚠️ A LOA 2027 usada é o total do órgão na fonte e <strong>ainda inclui Pessoal e Custeio</strong>: o arquivo da LOA (aba "Fonte x Órgão") não traz grupo de despesa. Para excluí-los é preciso a LOA aberta por grupo de despesa (GND).' : '';
+
+    // Selo do menu: fontes divergentes no total (sem filtro).
+    let todas = montarAlertasFontes({ fonte: '', orgao: '' });
+    let badge = document.getElementById('badge-ajustes');
+    let qtdDiv = todas.filter(a => a.status === 'estouro' || a.status === 'sobra').length;
+    if (badge) badge.textContent = qtdDiv ? `${qtdDiv} a resolver` : '';
+
+    if (!loaLinhas.length || !mappsCalculados.length) {
+        let msg = '<p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p>';
+        contA.innerHTML = msg; contO.innerHTML = msg; contM.innerHTML = msg; resumo.innerHTML = '';
+        return;
+    }
+    let f = filtrosAjustes();
+    let alertas = montarAlertasFontes(f);
+    let divergentes = alertas.filter(a => a.status !== 'ok');
+
+    // Linhas de MAPP no filtro
+    let linhas = linhasAjustes.filter(l => (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao)) &&
+        (!f.texto || N(l.mapp).includes(f.texto)) && (!f.soEditados || propostasManuais[l.chave]));
+
+    let tLOA = alertas.reduce((s, a) => s + a.loa, 0), tProp = alertas.reduce((s, a) => s + a.proposta, 0);
+    let tSemDest = alertas.reduce((s, a) => s + a.semDestino, 0);
+    let qtdEditados = linhasAjustes.filter(l => propostasManuais[l.chave] && (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao))).length;
+    resumo.innerHTML = `
+        <div><span>LOA 2027 (filtro)</span><b>${F(tLOA)}</b></div>
+        <div><span>Proposta de Programado 2027</span><b>${F(tProp)}</b></div>
+        <div><span>Diferença (LOA − Proposta)</span><b class="${Math.abs(tLOA - tProp) < TOLERANCIA_ALERTA ? '' : (tLOA > tProp ? 'valor-sobra' : 'valor-estouro')}">${F(tLOA - tProp)}</b></div>
+        <div><span>Fontes a resolver (Proposta ≠ LOA distribuível)</span><b class="${divergentes.some(a => a.status === 'estouro' || a.status === 'sobra') ? 'valor-estouro' : ''}">${divergentes.filter(a => a.status === 'estouro' || a.status === 'sobra').length} de ${alertas.length}</b><small style="color:var(--muted);">${divergentes.filter(a => a.status === 'semdestino').length} só com LOA sem MAPP</small></div>
+        <div><span>LOA sem MAPP para receber</span><b>${F(tSemDest)}</b></div>
+        <div><span>MAPPs com proposta editada</span><b>${qtdEditados.toLocaleString('pt-BR')}</b></div>`;
+
+    // Grade de alerta (só fontes com diferença)
+    if (!divergentes.length) {
+        contA.innerHTML = `<p class="estudo-nota" style="padding:12px; color:var(--success); font-weight:700;">✔ Todas as ${alertas.length} fonte(s) do filtro conferem: Proposta = LOA 2027.</p>`;
+    } else {
+        let h = `<table><thead><tr><th class="sem-ordem" style="width:86px;"></th><th class="sem-ordem">Fonte do SIPOG</th><th class="sem-ordem">Situação</th><th class="sem-ordem num">LOA 2027</th>
+            <th class="sem-ordem num">Proposta 2027</th><th class="sem-ordem num" title="LOA − Proposta">Diferença</th><th class="sem-ordem num" title="LOA de órgãos sem MAPP (ou com Necessidade zero) nesta fonte — não há onde distribuir">LOA sem MAPP</th>
+            <th class="sem-ordem num" title="Diferença − LOA sem MAPP: o que a Proposta dos MAPPs ainda precisa absorver (+) ou devolver (−)">A distribuir</th>
+            <th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">Editados</th></tr></thead><tbody>`;
+        divergentes.forEach(a => {
+            let fonteJs = escHtml(a.fonte.replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+            h += `<tr class="alerta-${a.status}">
+                <td>${a.distribuivel ? `<button class="btn-mini-header" style="padding:4px 8px; font-size:11px;" onclick="distribuirDiferencaFonte('${fonteJs}')" title="Reparte a diferença de cada órgão desta fonte entre os MAPPs não editados, pela Necessidade Ajustada">⚖ Distribuir</button>` : ''}</td>
+                <td class="col-fonte">${escHtml(a.fonte)}</td>
+                <td><span class="estudo-tag tag-${a.status}">${ROTULO_ALERTA[a.status]}</span></td>
+                <td class="num">${F(a.loa)}</td><td class="num"><strong>${F(a.proposta)}</strong></td>${celulaDiferenca(a.dif)}
+                <td class="num">${a.semDestino ? F(a.semDestino) : '—'}</td>${celulaDiferenca(a.difDistribuivel)}
+                <td class="num">${a.qtd}</td><td class="num">${a.editados || '—'}</td>
+            </tr>`;
+        });
+        let okQtd = alertas.length - divergentes.length;
+        h += `</tbody><tfoot><tr><td colspan="3">${divergentes.length} fonte(s) com diferença${okQtd ? ` · ${okQtd} conferem` : ''}</td>
+            <td class="num">${F(divergentes.reduce((s, a) => s + a.loa, 0))}</td><td class="num">${F(divergentes.reduce((s, a) => s + a.proposta, 0))}</td>
+            ${celulaDiferenca(divergentes.reduce((s, a) => s + a.dif, 0))}<td class="num">${F(divergentes.reduce((s, a) => s + a.semDestino, 0))}</td>
+            ${celulaDiferenca(divergentes.reduce((s, a) => s + a.difDistribuivel, 0))}<td></td><td></td></tr></tfoot></table>`;
+        contA.innerHTML = h;
+    }
+
+    // Órgãos (todas as fontes do filtro)
+    let porOrgao = {};
+    consolidadoAtual.forEach(c => {
+        if (!c.temLOA || (f.fonte && c.fonte !== f.fonte) || (f.orgao && N(c.orgao) !== N(f.orgao))) return;
+        let o = porOrgao[N(c.orgao)] || (porOrgao[N(c.orgao)] = { orgao: c.orgao, loa: 0, necAj: 0, proposta: 0, qtd: 0, fontes: new Set() });
+        o.loa += c.loa; o.fontes.add(c.fonte);
+    });
+    linhasAjustes.forEach(l => {
+        if ((f.fonte && l.fonte !== f.fonte) || (f.orgao && N(l.orgao) !== N(f.orgao))) return;
+        let o = porOrgao[N(l.orgao)] || (porOrgao[N(l.orgao)] = { orgao: l.orgao, loa: 0, necAj: 0, proposta: 0, qtd: 0, fontes: new Set() });
+        o.necAj += l.necAj; o.proposta += propostaDe(l); o.qtd++; o.fontes.add(l.fonte);
+    });
+    // Órgãos com MAPPs primeiro (onde há proposta a ajustar), depois os só com LOA.
+    let orgaos = Object.values(porOrgao).map(o => Object.assign(o, { dif: o.loa - o.proposta }))
+        .sort((a, b) => ((b.qtd > 0) - (a.qtd > 0)) || b.loa - a.loa || b.proposta - a.proposta);
+    let ho = `<table><thead><tr><th class="sem-ordem">Órgão</th><th class="sem-ordem num">Fontes</th><th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">LOA 2027</th>
+        <th class="sem-ordem num">Nec. 2027 Ajustada</th><th class="sem-ordem num">Proposta 2027</th><th class="sem-ordem num">Diferença</th></tr></thead><tbody>`;
+    orgaos.forEach(o => {
+        let st = Math.abs(o.dif) < TOLERANCIA_ALERTA ? 'ok' : (o.dif > 0 ? 'sobra' : 'estouro');
+        ho += `<tr class="linha-clicavel alerta-${st}" data-orgao="${escHtml(o.orgao)}" onclick="document.getElementById('filtro-aj-orgao').value=this.dataset.orgao; renderizarAjustesFinais(); document.getElementById('tabela-ajustes-mapps').scrollIntoView({behavior:'smooth'});" title="Ver os MAPPs de ${escHtml(o.orgao)}">
+            <td><strong>${escHtml(o.orgao)}</strong></td><td class="num">${o.fontes.size}</td><td class="num">${o.qtd || '—'}</td><td class="num">${o.loa ? F(o.loa) : '—'}</td>
+            <td class="num">${F(o.necAj)}</td><td class="num"><strong>${F(o.proposta)}</strong></td>${celulaDiferenca(o.dif)}</tr>`;
+    });
+    let to = orgaos.reduce((t, o) => { t.loa += o.loa; t.necAj += o.necAj; t.proposta += o.proposta; t.qtd += o.qtd; return t; }, { loa: 0, necAj: 0, proposta: 0, qtd: 0 });
+    ho += `</tbody><tfoot><tr><td colspan="2">TOTAL (${orgaos.length} órgãos)</td><td class="num">${to.qtd.toLocaleString('pt-BR')}</td><td class="num">${F(to.loa)}</td>
+        <td class="num">${F(to.necAj)}</td><td class="num">${F(to.proposta)}</td>${celulaDiferenca(to.loa - to.proposta)}</tr></tfoot></table>`;
+    contO.innerHTML = orgaos.length ? ho : '<p class="estudo-nota" style="padding:12px;">Nenhum órgão para o filtro.</p>';
+
+    // MAPPs — proposta editável
+    let ordenadas = ordenarLinhas(linhas.map(l => Object.assign(l, { proposta: propostaDe(l) })), COLUNAS_AJUSTES, ordemTabelas.aj);
+    let exibidas = ordenadas.slice(0, LIMITE_LINHAS_DETALHE);
+    let hm = `<table><thead>${cabecalhoOrdenavel('aj', COLUNAS_AJUSTES)}</thead><tbody>`;
+    exibidas.forEach(l => {
+        let man = propostasManuais[l.chave];
+        let valorTxt = propostaDe(l).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        hm += `<tr class="${man ? 'proposta-editada' : ''}">
+            <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>
+            <td class="col-fonte" style="font-size:11px;">${escHtml(l.fonte)}</td><td style="font-size:11px;">${escHtml(l.estagio)}</td>
+            <td class="num">${l.loaPar === null ? '<span title="Órgão sem LOA nesta fonte">sem LOA</span>' : F(l.loaPar)}</td>
+            <td class="num">${F(l.necAj)}</td>
+            <td class="num"><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="Automático: ${escHtml(F(l.auto))}">
+                ${man ? `<button class="btn-link" onclick="restaurarProposta('${escHtml(l.chave.replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" title="${man.origem === 'redistribuicao' ? 'Valor da redistribuição' : 'Editado'} — voltar ao automático (${escHtml(F(l.auto))})">↺</button>` : ''}</td>
+        </tr>`;
+    });
+    let tm = linhas.reduce((t, l) => { t.necAj += l.necAj; t.proposta += propostaDe(l); return t; }, { necAj: 0, proposta: 0 });
+    let paresVistos = {}; linhas.forEach(l => { if (l.loaPar !== null) paresVistos[l.par] = l.loaPar; });
+    let loaPares = Object.values(paresVistos).reduce((s, v) => s + v, 0);
+    let avisoLim = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; filtre por fonte ou órgão para ver todas` : '';
+    hm += `</tbody><tfoot><tr><td colspan="4">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${avisoLim})</td>
+        <td class="num" title="Soma da LOA dos pares Órgão × Fonte destes MAPPs">${F(loaPares)}</td><td class="num">${F(tm.necAj)}</td><td class="num">${F(tm.proposta)}</td></tr></tfoot></table>`;
+    contM.innerHTML = linhas.length ? hm : '<p class="estudo-nota" style="padding:12px;">Nenhum MAPP para o filtro.</p>';
+}
+
+const COLUNAS_AJUSTES = [
+    { chave: 'mapp', titulo: 'MAPP', valor: l => l.mapp },
+    { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao },
+    { chave: 'fonte', titulo: 'Fonte SIPOG', valor: l => l.fonte },
+    { chave: 'estagio', titulo: 'Estágio', valor: l => l.estagio },
+    { chave: 'loaPar', titulo: 'LOA 2027 (órgão na fonte)', num: true, valor: l => l.loaPar },
+    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj },
+    { chave: 'proposta', titulo: 'Proposta Programado 2027', num: true, valor: l => l.proposta }
+];
 
 // ─── NOMEAÇÃO ───────────────────────────────────────────────────────────────
 // Regra dos demais sistemas: nome + data e hora no formato DDMMAAAA-HHMM.
@@ -947,6 +1230,7 @@ async function salvarEstudoNuvem() {
             parametros: coletarParametrosEstudoTela(),
             deParaManual: deParaManual,
             ordemTabelas: ordemTabelas,
+            propostasManuais: propostasManuais,
             // "dadosBrutos" alimenta o totalRegistros dos metadados (gravarPacoteFragmentado).
             dados: { loaLinhas, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
         };
@@ -1000,6 +1284,9 @@ async function carregarEstudoNuvemPorId(id) {
         loaLinhas = []; mappsBrutos = []; mappsOriginais = [];
         if (Array.isArray(dados.loaLinhas) && dados.loaLinhas.length) carregarLOA(Object.assign({ linhas: dados.loaLinhas }, dados.loaConferencia || { conferido: false, divergencias: [] }), (pacote.arquivos || {}).loa);
         if (Array.isArray(dados.dadosBrutos) && dados.dadosBrutos.length) carregarMAPPs(dados.dadosBrutos, (pacote.arquivos || {}).mapps, dados.colunasMapps);
+        // As edições da Proposta salvas com o estudo prevalecem sobre as deste navegador.
+        propostasManuais = pacote.propostasManuais || {};
+        salvarPropostasLocal();
         // Fonte do Valor Deliberado só existe na lista depois que a base foi carregada.
         if (pacote.parametros && pacote.parametros.vdFonte) { let sel = document.getElementById('vd-fonte'); if (sel) sel.value = pacote.parametros.vdFonte; }
         recalcularEstudo();
@@ -1112,6 +1399,24 @@ async function exportarEstudoXLSX() {
         }));
     }
 
+    // Ajustes Finais: todas as linhas e todas as fontes (sem os filtros da tela).
+    if (linhasAjustes.length) {
+        adicionarAbaEstudo(wb, 'AJUSTES_FINAIS', [
+            { titulo: 'MAPP', chave: 'mapp', largura: 60 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
+            { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
+            { titulo: 'LOA 2027 (ÓRGÃO NA FONTE)', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
+            { titulo: 'PROPOSTA AUTOMÁTICA', chave: 'auto', moeda: true, largura: 20 }, { titulo: 'PROPOSTA PROGRAMADO 2027', chave: 'proposta', moeda: true, largura: 22 },
+            { titulo: 'ORIGEM', chave: 'origem', largura: 16 }
+        ], linhasAjustes.map(l => ({ mapp: l.mapp, orgao: l.orgao, fonte: l.fonte, estagio: l.estagio, loa: l.loaPar, necAj: l.necAj, auto: l.auto,
+            proposta: propostaDe(l), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática' })));
+        adicionarAbaEstudo(wb, 'ALERTAS_FONTES', [
+            { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }, { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 },
+            { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 }, { titulo: 'PROPOSTA 2027', chave: 'proposta', moeda: true, largura: 20 },
+            { titulo: 'DIFERENÇA (LOA − PROPOSTA)', chave: 'dif', moeda: true, largura: 24 }, { titulo: 'LOA SEM MAPP P/ RECEBER', chave: 'semDestino', moeda: true, largura: 22 },
+            { titulo: 'MAPPS', chave: 'qtd', largura: 10 }, { titulo: 'EDITADOS', chave: 'editados', largura: 10 }
+        ], montarAlertasFontes({ fonte: '', orgao: '' }).map(a => Object.assign({}, a, { sit: ROTULO_ALERTA[a.status] })));
+    }
+
     let wsP = wb.addWorksheet('PARAMETROS');
     wsP.getColumn(1).width = 46; wsP.getColumn(2).width = 30;
     [
@@ -1148,3 +1453,8 @@ async function exportarEstudoXLSX() {
 // ─── INICIALIZAÇÃO ──────────────────────────────────────────────────────────
 carregarDeParaManual();
 restaurarParametrosEstudo();
+(function abrirAbaInicial() {
+    let aba = 'carga';
+    try { aba = localStorage.getItem(CHAVE_ABA_LOCAL) || 'carga'; } catch (e) {}
+    mostrarAbaEstudo(aba);
+})();

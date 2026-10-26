@@ -59,6 +59,40 @@
     .estudo-resumo b { display: block; font-size: 16px; margin-top: 2px; }
     .estudo-resumo span { font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
     .pct-alto { color: var(--danger); font-weight: 700; }
+    /* Layout com menu lateral (abas) */
+    .estudo-layout { display: flex; align-items: flex-start; min-height: calc(100vh - 90px); }
+    .estudo-menu { position: sticky; top: 0; flex: 0 0 230px; display: flex; flex-direction: column; gap: 4px; padding: 18px 12px; background: var(--panel); border-right: 1px solid var(--border); min-height: calc(100vh - 90px); }
+    .estudo-menu-item { display: flex; align-items: center; gap: 8px; text-align: left; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text); font-family: var(--ceara-font-ui); font-size: 13px; font-weight: 600; cursor: pointer; flex-wrap: wrap; }
+    .estudo-menu-item:hover { background: var(--panel2); }
+    .estudo-menu-item.ativo { background: rgba(38,167,55,0.12); border-color: var(--accent); color: var(--accent); }
+    .estudo-menu-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--panel2); color: var(--muted); font-size: 11px; font-weight: 700; }
+    .estudo-menu-item.ativo .estudo-menu-num { background: var(--accent); color: #fff; }
+    .estudo-conteudo { flex: 1 1 auto; min-width: 0; }
+    .estudo-aba { display: none; }
+    .estudo-aba.ativa { display: block; }
+    .estudo-aba-titulo { font-size: 16px; padding: 16px 18px 6px; }
+    .estudo-subtitulo { font-size: 13px; margin: 18px 0 8px; }
+    .estudo-filtros-pagina { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; position: sticky; top: 0; z-index: 3; }
+    /* Ajustes Finais: cores do SIPOG (sucesso / atenção / estouro) */
+    tr.alerta-ok td { background: rgba(38,167,55,0.08); }
+    tr.alerta-sobra td { background: rgba(245,156,0,0.12); }
+    tr.alerta-estouro td { background: rgba(233,79,14,0.12); }
+    .tag-ok { background: rgba(38,167,55,0.15); color: var(--success); }
+    .tag-sobra { background: rgba(245,156,0,0.18); color: var(--warning); }
+    .tag-estouro { background: rgba(233,79,14,0.15); color: var(--danger); }
+    .tag-semdestino { background: rgba(100,116,139,0.15); color: var(--muted); }
+    tr.alerta-semdestino td { background: rgba(100,116,139,0.06); }
+    .valor-sobra { color: var(--warning); font-weight: 700; }
+    .valor-estouro { color: var(--danger); font-weight: 700; }
+    input.input-proposta { width: 150px; text-align: right; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+    tr.proposta-editada td { background: rgba(245,156,0,0.10); }
+    tr.proposta-editada input.input-proposta { border-color: var(--warning); font-weight: 700; }
+    .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
+    @media (max-width: 900px) {
+        .estudo-layout { flex-direction: column; }
+        .estudo-menu { position: static; flex: none; width: 100%; min-height: 0; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; }
+        .estudo-menu-item { white-space: nowrap; flex: 0 0 auto; }
+    }
     @media (max-width: 640px) {
         .top-header { padding: 14px 16px; }
         .wrap { padding: 16px; }
@@ -84,12 +118,21 @@
     </div>
 </header>
 
-<main class="wrap">
+<div class="estudo-layout">
+<nav class="estudo-menu" aria-label="Etapas do estudo">
+    <button class="estudo-menu-item" data-aba="carga" onclick="mostrarAbaEstudo('carga')"><span class="estudo-menu-num">1</span> Carga dos arquivos</button>
+    <button class="estudo-menu-item" data-aba="parametros" onclick="mostrarAbaEstudo('parametros')"><span class="estudo-menu-num">2</span> Parâmetros</button>
+    <button class="estudo-menu-item" data-aba="depara" onclick="mostrarAbaEstudo('depara')"><span class="estudo-menu-num">3</span> De-para de fontes <span class="estudo-tag tag-manual" id="badge-depara"></span></button>
+    <button class="estudo-menu-item" data-aba="consolidado" onclick="mostrarAbaEstudo('consolidado')"><span class="estudo-menu-num">4</span> Consolidado e MAPPs</button>
+    <button class="estudo-menu-item" data-aba="ajustes" onclick="mostrarAbaEstudo('ajustes')"><span class="estudo-menu-num">5</span> Ajustes Finais <span class="estudo-tag tag-sem" id="badge-ajustes"></span></button>
+</nav>
 
-    <details class="estudo-secao" open>
-        <summary>1. Carga dos arquivos</summary>
+<main class="wrap estudo-conteudo">
+
+    <section class="estudo-aba estudo-secao" data-aba="carga">
+        <h2 class="estudo-aba-titulo">1. Carga dos arquivos</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">Os arquivos são lidos só neste navegador — nada é enviado à nuvem nem altera o SIPOG.</p>
+            <p class="estudo-nota">Os arquivos são lidos só neste navegador — nada é enviado à nuvem nem altera o SIPOG (a não ser que você use "Salvar na nuvem").</p>
             <div class="estudo-grid-carga">
                 <div class="estudo-carga">
                     <h3>LOA 2027 — Fonte × Órgão</h3>
@@ -105,10 +148,10 @@
                 </div>
             </div>
         </div>
-    </details>
+    </section>
 
-    <details class="estudo-secao" open>
-        <summary>2. Parâmetros de estudo — Previsão de Empenho por Estágio</summary>
+    <section class="estudo-aba estudo-secao" data-aba="parametros">
+        <h2 class="estudo-aba-titulo">2. Parâmetros de estudo — Previsão de Empenho por Estágio</h2>
         <div class="estudo-corpo">
             <p class="estudo-nota">Mesmos percentuais e mesma regra da etapa "Previsão de Empenho por Estágio" do SIPOG (padrões da regra vigente). Os estágios com percentual só usam o % quando o Limite 2026 é zero; com Limite, a previsão é o próprio Limite 2026. Alterar um valor recalcula tudo.</p>
             <div class="estudo-params">
@@ -138,11 +181,12 @@
             <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
                 <button class="btn-mini-header" onclick="restaurarParametrosEstudo()" title="Padrões do SIPOG: percentuais por estágio, limiar 40%, 5 meses, expurgo de Físic/Finan. Concluída ligado e Valor Deliberado 0%">↺ Restaurar padrões do SIPOG</button>
             </div>
+        
         </div>
-    </details>
+    </section>
 
-    <details class="estudo-secao" id="secao-depara">
-        <summary>3. De-para de fontes (Sub fonte da LOA → Fonte do SIPOG) <span class="estudo-tag tag-manual" id="badge-depara"></span></summary>
+    <section class="estudo-aba estudo-secao" data-aba="depara" id="secao-depara">
+        <h2 class="estudo-aba-titulo">3. De-para de fontes (Sub fonte da LOA → Fonte do SIPOG)</h2>
         <div class="estudo-corpo">
             <p class="estudo-nota">
                 Sugestão automática:
@@ -156,51 +200,62 @@
                 <label>Grupo de Fonte <select id="filtro-dp-grupo" onchange="renderizarDePara()"><option value="">(todos)</option></select></label>
             </div>
             <div class="estudo-tabela-wrap"><div id="tabela-depara"><p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p></div></div>
+        
         </div>
-    </details>
+    </section>
 
-    <details class="estudo-secao" open>
-        <summary>4. Consolidado Órgão × Fonte</summary>
+    <section class="estudo-aba estudo-secao" data-aba="consolidado">
+        <h2 class="estudo-aba-titulo">4. Consolidado Órgão × Fonte e MAPPs</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" e "Saldo" usam a Necessidade 2027 Ajustada (igual à Calculada quando o Valor Deliberado é 0%) — referência, não teto rígido.</p>
-            <div class="estudo-resumo" id="resumo-consolidado"></div>
-            <div class="estudo-filtros">
-                <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()"><option value="">(todas)</option></select></label>
-                <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()"><option value="">(todos)</option></select></label>
-                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()">
+            <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs); clique numa linha de fonte para ver os MAPPs dela logo abaixo.</p>
+            <div class="estudo-filtros estudo-filtros-pagina">
+                <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
+                <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
+                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado(); renderizarDetalhe()">
                     <option value="">(todas)</option>
                     <option value="OK">LOA e MAPPs</option>
                     <option value="SEM_LOA">MAPPs sem LOA</option>
                     <option value="SEM_MAPP">LOA sem MAPPs</option>
                 </select></label>
-                <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado(); renderizarDetalhe()">
-            </div>
-            <div class="estudo-tabela-wrap"><div id="tabela-consolidado"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
-        </div>
-    </details>
-
-    <details class="estudo-secao" id="secao-detalhe" open>
-        <summary>5. Detalhe por MAPP — regra aplicada</summary>
-        <div class="estudo-corpo">
-            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos e Entrega Prioritária (como no SIPOG) e, se marcado nos parâmetros, Execução Físic/Finan. Concluída. Os filtros do card 4 (Fonte, Órgão, Situação e busca de órgão) são aplicados aqui automaticamente; clique numa linha do card 4 para ver os MAPPs daquele par.</p>
-            <div class="estudo-filtros">
-                <label>Órgão <select id="filtro-det-orgao" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
-                <label>Fonte <select id="filtro-det-fonte" onchange="renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Estágio <select id="filtro-det-estagio" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
-                <label title="Situação do par Órgão × Fonte no card 4">Situação <select id="filtro-det-situacao" onchange="renderizarDetalhe()">
-                    <option value="">(todas)</option>
-                    <option value="OK">LOA e MAPPs</option>
-                    <option value="SEM_LOA">MAPPs sem LOA</option>
-                    <option value="SEM_MAPP">LOA sem MAPPs</option>
-                </select></label>
-                <label><input type="checkbox" id="filtro-det-expurgo" onchange="renderizarDetalhe()"> mostrar expurgados</label>
+                <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado(); renderizarDetalhe()">
                 <input type="search" id="filtro-det-texto" placeholder="Buscar MAPP ou regra…" oninput="renderizarDetalhe()">
+                <label><input type="checkbox" id="filtro-det-expurgo" onchange="renderizarDetalhe()"> mostrar expurgados</label>
+                <button class="btn-mini-header" onclick="limparFiltrosConsolidado()">✕ Limpar filtros</button>
             </div>
+            <div class="estudo-resumo" id="resumo-consolidado"></div>
+            <h3 class="estudo-subtitulo">Fontes por órgão</h3>
+            <div class="estudo-tabela-wrap"><div id="tabela-consolidado"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+            <h3 class="estudo-subtitulo" id="secao-detalhe">MAPPs — regra aplicada</h3>
+            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos, Entrega Prioritária e, se marcado nos parâmetros, Execução Físic/Finan. Concluída.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-detalhe"><p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p></div></div>
         </div>
-    </details>
+    </section>
+
+    <section class="estudo-aba estudo-secao" data-aba="ajustes">
+        <h2 class="estudo-aba-titulo">5. Ajustes Finais — Proposta de Programado 2027</h2>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">A <strong>Proposta de Programado 2027</strong> distribui automaticamente a LOA 2027 de cada órgão em cada fonte entre os MAPPs ativos daquele órgão e fonte, na proporção da Necessidade 2027 Ajustada. Edite a proposta de qualquer MAPP; as demais linhas não mudam — use "Distribuir diferença" na grade de alerta para reequilibrar a fonte. <strong>O filtro de fonte vale para a tela toda.</strong></p>
+            <p class="estudo-nota" id="aviso-loa-ajustes" style="color:var(--warning);"></p>
+            <div class="estudo-filtros estudo-filtros-pagina">
+                <label>Fonte <select id="filtro-aj-fonte" onchange="renderizarAjustesFinais()"><option value="">(todas)</option></select></label>
+                <label>Órgão <select id="filtro-aj-orgao" onchange="renderizarAjustesFinais()"><option value="">(todos)</option></select></label>
+                <input type="search" id="filtro-aj-texto" placeholder="Buscar MAPP…" oninput="renderizarAjustesFinais()">
+                <label><input type="checkbox" id="filtro-aj-editados" onchange="renderizarAjustesFinais()"> só editados</label>
+                <button class="btn-mini-header" onclick="restaurarTodasPropostas()" title="Descarta todas as edições e volta à distribuição automática">↺ Voltar tudo ao automático</button>
+            </div>
+            <div class="estudo-resumo" id="resumo-ajustes"></div>
+            <h3 class="estudo-subtitulo">Alerta por fonte — LOA 2027 × Proposta de Programado 2027</h3>
+            <div class="estudo-tabela-wrap" style="max-height:360px;"><div id="tabela-alertas"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+            <h3 class="estudo-subtitulo">Órgãos (todas as fontes, conforme o filtro)</h3>
+            <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-ajustes-orgaos"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+            <h3 class="estudo-subtitulo">MAPPs — proposta editável</h3>
+            <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+        </div>
+    </section>
 
 </main>
+</div>
 
 <!-- Estudos salvos na nuvem (lista para carregar/excluir) -->
 <div id="modal-estudos-nuvem" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; align-items:center; justify-content:center; padding:16px;">
