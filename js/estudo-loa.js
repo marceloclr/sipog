@@ -35,6 +35,12 @@ const GRUPOS_VD_ESTUDO = [
     { sufixo: 'investimento',     label: 'DEMAIS PROJETOS',  classe: 'INVESTIMENTO' }
 ];
 
+// Rótulo de exibição do grupo (o de Entrega Prioritária só aparece em expurgados).
+function rotuloGrupo(classe) {
+    let g = GRUPOS_VD_ESTUDO.find(x => x.classe === classe);
+    return g ? g.label : (classe === 'ENTREGA_PRIORITARIA' ? 'ENTREGA PRIORITÁRIA' : labelClasse(classe));
+}
+
 // ─── TEMA ───────────────────────────────────────────────────────────────────
 // Mesma chave de tema do SIPOG, para as duas páginas abrirem iguais.
 (function aplicarTemaSalvoEstudo() {
@@ -575,6 +581,64 @@ function montarConsolidado() {
 const ROTULO_SITUACAO = { OK: 'LOA e MAPPs', SEM_LOA: 'MAPPs sem LOA', SEM_MAPP: 'LOA sem MAPPs' };
 let resumoForaCruzamento = { loaForaCruzamento: 0, paresForaCruzamento: 0 };
 
+// ─── ORDENAÇÃO DAS GRADES ───────────────────────────────────────────────────
+// Clique no título ordena pela coluna; novo clique inverte. Vale para a tela e
+// para a exportação (as abas saem na mesma ordem das grades).
+let ordemTabelas = { cons: { chave: null, desc: false }, det: { chave: null, desc: false } };
+
+function ordenarTabela(tabela, chave) {
+    let o = ordemTabelas[tabela];
+    if (o.chave === chave) o.desc = !o.desc;
+    else { o.chave = chave; o.desc = false; }
+    if (tabela === 'cons') renderizarConsolidado(); else renderizarDetalhe();
+}
+
+function ordenarLinhas(linhas, colunas, ordem) {
+    let col = colunas.find(c => c.chave === ordem.chave);
+    if (!col) return linhas;
+    let valor = col.ordem || col.valor;
+    let sinal = ordem.desc ? -1 : 1;
+    return linhas.slice().sort((a, b) => {
+        let va = valor(a), vb = valor(b);
+        let na = va === null || va === undefined || va === '', nb = vb === null || vb === undefined || vb === '';
+        if (na || nb) return na === nb ? 0 : (na ? 1 : -1); // vazios sempre no fim
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sinal;
+        return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true }) * sinal;
+    });
+}
+
+function cabecalhoOrdenavel(tabela, colunas) {
+    let o = ordemTabelas[tabela];
+    return '<tr>' + colunas.map(c => {
+        let cls = [c.num ? 'num' : '', o.chave === c.chave ? (o.desc ? 'ordem-desc' : 'ordem-asc') : ''].join(' ').trim();
+        return `<th class="${cls}" onclick="ordenarTabela('${tabela}', '${c.chave}')" title="Ordenar por ${escHtml(c.titulo)}">${escHtml(c.titulo)}</th>`;
+    }).join('') + '</tr>';
+}
+
+// ─── CONSOLIDADO ÓRGÃO × FONTE (grade) ──────────────────────────────────────
+const COLUNAS_CONSOLIDADO = [
+    { chave: 'fonte', titulo: 'Fonte do SIPOG', valor: l => l.fonte, celula: l => `<td class="col-fonte">${escHtml(l.fonte)}</td>` },
+    { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao, celula: l => `<td><strong>${escHtml(l.orgao)}</strong></td>` },
+    { chave: 'situacao', titulo: 'Situação', valor: l => ROTULO_SITUACAO[l.situacao], ordem: l => ORDEM_SITUACAO[l.situacao],
+      celula: l => `<td><span class="estudo-tag ${l.situacao === 'OK' ? 'tag-exata' : (l.situacao === 'SEM_LOA' ? 'tag-sem' : 'tag-prefixo')}">${ROTULO_SITUACAO[l.situacao]}</span></td>` },
+    { chave: 'loa', titulo: 'LOA 2027', num: true, valor: l => l.temLOA ? l.loa : null, celula: l => `<td class="num">${l.temLOA ? F(l.loa) : '—'}</td>` },
+    { chave: 'qtd', titulo: 'MAPPs', num: true, valor: l => l.qtd, celula: l => `<td class="num">${l.qtd || '—'}</td>` },
+    { chave: 'p26', titulo: 'Programado 2026', num: true, valor: l => l.p26 },
+    { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: l => l.prevEmp },
+    { chave: 'prevEmpAj', titulo: 'Prev. Empenho Ajustada', num: true, valor: l => l.prevEmpAj },
+    { chave: 'nec', titulo: 'Nec. 2027 Calculada', num: true, valor: l => l.nec },
+    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj, celula: l => `<td class="num"><strong>${F(l.necAj)}</strong></td>` },
+    { chave: 'pctLOA', titulo: '% da LOA', num: true, valor: l => l.pctLOA,
+      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}">${fmtPct(l.pctLOA)}</td>` },
+    { chave: 'saldo', titulo: 'Saldo (LOA − Nec. Aj.)', num: true, valor: l => l.saldo,
+      celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}">${l.saldo === null ? '—' : F(l.saldo)}</td>` },
+    { chave: 'subfontes', titulo: 'Sub fontes da LOA', valor: l => l.subfontesTxt, celula: l => `<td style="font-size:11px; color:var(--muted);">${escHtml(l.subfontesTxt)}</td>` }
+];
+
+function linhasConsolidadoOrdenadas() {
+    return ordenarLinhas(consolidadoAtual, COLUNAS_CONSOLIDADO, ordemTabelas.cons);
+}
+
 function renderizarConsolidado() {
     let cont = document.getElementById('tabela-consolidado');
     let resumoEl = document.getElementById('resumo-consolidado');
@@ -584,10 +648,11 @@ function renderizarConsolidado() {
         return;
     }
     let fFonte = document.getElementById('filtro-cons-fonte').value;
+    let fOrg = document.getElementById('filtro-cons-orgao').value;
     let fSit = document.getElementById('filtro-cons-situacao').value;
     let fTxt = N(document.getElementById('filtro-cons-texto').value);
-    let linhas = consolidadoAtual.filter(l =>
-        (!fFonte || l.fonte === fFonte) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
+    let linhas = linhasConsolidadoOrdenadas().filter(l =>
+        (!fFonte || l.fonte === fFonte) && (!fOrg || l.orgao === fOrg) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
 
     let tot = linhas.reduce((t, l) => {
         t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.prevEmp += l.prevEmp; t.prevEmpAj += l.prevEmpAj; t.nec += l.nec; t.necAj += l.necAj;
@@ -604,25 +669,9 @@ function renderizarConsolidado() {
         <div><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
 
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
-    let h = `<table><thead><tr>
-        <th class="sem-ordem">Fonte do SIPOG</th><th class="sem-ordem">Órgão</th><th class="sem-ordem">Situação</th>
-        <th class="sem-ordem num">LOA 2027</th><th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">Programado 2026</th>
-        <th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">Prev. Empenho Ajustada</th>
-        <th class="sem-ordem num">Nec. 2027 Calculada</th><th class="sem-ordem num">Nec. 2027 Ajustada</th>
-        <th class="sem-ordem num">% da LOA</th><th class="sem-ordem num">Saldo (LOA − Nec. Aj.)</th><th class="sem-ordem">Sub fontes da LOA</th>
-        </tr></thead><tbody>`;
+    let h = `<table><thead>${cabecalhoOrdenavel('cons', COLUNAS_CONSOLIDADO)}</thead><tbody>`;
     linhas.forEach(l => {
-        let tag = l.situacao === 'OK' ? 'tag-exata' : (l.situacao === 'SEM_LOA' ? 'tag-sem' : 'tag-prefixo');
-        h += `<tr>
-            <td style="min-width:220px;">${escHtml(l.fonte)}</td><td><strong>${escHtml(l.orgao)}</strong></td>
-            <td><span class="estudo-tag ${tag}">${ROTULO_SITUACAO[l.situacao]}</span></td>
-            <td class="num">${l.temLOA ? F(l.loa) : '—'}</td><td class="num">${l.qtd || '—'}</td>
-            <td class="num">${F(l.p26)}</td><td class="num">${F(l.prevEmp)}</td><td class="num">${F(l.prevEmpAj)}</td>
-            <td class="num">${F(l.nec)}</td><td class="num"><strong>${F(l.necAj)}</strong></td>
-            <td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}">${fmtPct(l.pctLOA)}</td>
-            <td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}">${l.saldo === null ? '—' : F(l.saldo)}</td>
-            <td style="font-size:11px; color:var(--muted);">${escHtml(l.subfontesTxt)}</td>
-        </tr>`;
+        h += '<tr>' + COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : `<td class="num">${F(c.valor(l))}</td>`).join('') + '</tr>';
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL (${linhas.length} linhas)</td>
         <td class="num">${F(tot.loa)}</td><td class="num">${tot.qtd}</td><td class="num">${F(tot.p26)}</td>
@@ -648,10 +697,12 @@ function atualizarFiltros() {
     let fontes = Array.from(new Set(mappsCalculados.map(m => m.fonte))).sort();
     let estagios = Array.from(new Set(mappsCalculados.map(m => m.estagio))).sort();
     let fontesCons = Array.from(new Set(consolidadoAtual.map(l => l.fonte))).sort();
+    let orgaosCons = Array.from(new Set(consolidadoAtual.map(l => l.orgao))).sort();
     preencherSelect('filtro-det-orgao', orgaos, '(todos)');
     preencherSelect('filtro-det-fonte', fontes, '(todas)');
     preencherSelect('filtro-det-estagio', estagios, '(todos)');
     preencherSelect('filtro-cons-fonte', fontesCons, '(todas)');
+    preencherSelect('filtro-cons-orgao', orgaosCons, '(todos)');
 }
 
 // Resumo por grupo do Valor Deliberado (mesmas colunas-base da tabela do Redutor no SIPOG).
@@ -680,6 +731,31 @@ function renderizarGrupos() {
     cont.innerHTML = h;
 }
 
+const COLUNAS_DETALHE = [
+    { chave: 'mapp', titulo: 'MAPP', valor: m => m.mapp,
+      celula: m => `<td class="col-mapp" title="${escHtml(m.mapp)}"><span>${escHtml(m.mapp)}</span></td>` },
+    { chave: 'orgao', titulo: 'Órgão', valor: m => m.orgao, celula: m => `<td>${escHtml(m.orgao)}</td>` },
+    { chave: 'fonte', titulo: 'Fonte', valor: m => m.fonte, celula: m => `<td class="col-fonte" style="font-size:11px;">${escHtml(m.fonte)}</td>` },
+    { chave: 'estagio', titulo: 'Estágio', valor: m => m.estagio, celula: m => `<td style="font-size:11px;">${escHtml(m.estagio)}</td>` },
+    { chave: 'grupo', titulo: 'Grupo', valor: m => rotuloGrupo(m.classe), celula: m => `<td style="font-size:11px;">${escHtml(rotuloGrupo(m.classe))}</td>` },
+    { chave: 'p26', titulo: 'Programado 2026', num: true, valor: m => m.p26 },
+    { chave: 'l26', titulo: 'Limite 2026', num: true, valor: m => m.l26 },
+    { chave: 'e26', titulo: 'Empenhado 2026', num: true, valor: m => m.e26 },
+    { chave: 'regra', titulo: 'Regra aplicada', valor: m => m.regra, celula: m => `<td class="col-regra">${escHtml(m.regra)}</td>` },
+    { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: m => m.prevEmp },
+    { chave: 'trf', titulo: 'TRF 2026', num: true, valor: m => m.trf },
+    { chave: 'p27', titulo: 'Programado 2027', num: true, valor: m => m.p27 },
+    { chave: 'nec', titulo: 'Nec. 2027 Calculada', num: true, valor: m => m.nec },
+    { chave: 'pctDel', titulo: '% deliberado', num: true, valor: m => m.pctDeliberado,
+      celula: m => `<td class="num">${m.pctDeliberado > 0 ? fmtPct(m.pctDeliberado) : '—'}</td>` },
+    { chave: 'prevEmpAj', titulo: 'Prev. Empenho Ajustada', num: true, valor: m => m.prevEmpAj },
+    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: m => m.necAj, celula: m => `<td class="num"><strong>${F(m.necAj)}</strong></td>` }
+];
+
+function linhasDetalheOrdenadas() {
+    return ordenarLinhas(mappsCalculados, COLUNAS_DETALHE, ordemTabelas.det);
+}
+
 function renderizarDetalhe() {
     let cont = document.getElementById('tabela-detalhe');
     if (mappsCalculados.length === 0) {
@@ -691,28 +767,17 @@ function renderizarDetalhe() {
     let fEst = document.getElementById('filtro-det-estagio').value;
     let fExp = document.getElementById('filtro-det-expurgo').checked;
     let fTxt = N(document.getElementById('filtro-det-texto').value);
-    let linhas = mappsCalculados.filter(m =>
+    let linhas = linhasDetalheOrdenadas().filter(m =>
         (fExp || !m.expurgado) && (!fOrg || m.orgao === fOrg) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
         (!fTxt || N(m.mapp).includes(fTxt) || N(m.regra).includes(fTxt)));
 
     let tot = linhas.reduce((t, m) => { t.p26 += m.p26; t.l26 += m.l26; t.e26 += m.e26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.trf += m.trf; t.p27 += m.p27; t.nec += m.nec; t.necAj += m.necAj; return t; },
         { p26: 0, l26: 0, e26: 0, prevEmp: 0, prevEmpAj: 0, trf: 0, p27: 0, nec: 0, necAj: 0 });
     let exibidas = linhas.slice(0, LIMITE_LINHAS_DETALHE);
-    let h = `<table><thead><tr>
-        <th class="sem-ordem">MAPP</th><th class="sem-ordem">Órgão</th><th class="sem-ordem">Fonte</th><th class="sem-ordem">Estágio</th><th class="sem-ordem">Grupo</th>
-        <th class="sem-ordem num">Programado 2026</th><th class="sem-ordem num">Limite 2026</th><th class="sem-ordem num">Empenhado 2026</th>
-        <th class="sem-ordem">Regra aplicada</th><th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">TRF 2026</th>
-        <th class="sem-ordem num">Programado 2027</th><th class="sem-ordem num">Nec. 2027 Calculada</th>
-        <th class="sem-ordem num">% deliberado</th><th class="sem-ordem num">Prev. Empenho Ajustada</th><th class="sem-ordem num">Nec. 2027 Ajustada</th></tr></thead><tbody>`;
+    let h = `<table><thead>${cabecalhoOrdenavel('det', COLUNAS_DETALHE)}</thead><tbody>`;
     exibidas.forEach(m => {
-        h += `<tr${m.expurgado ? ' style="opacity:0.55;"' : ''}>
-            <td style="white-space:nowrap;">${escHtml(m.mapp)}</td><td>${escHtml(m.orgao)}</td><td style="font-size:11px;">${escHtml(m.fonte)}</td>
-            <td style="font-size:11px;">${escHtml(m.estagio)}</td><td style="font-size:11px;">${escHtml(labelClasse(m.classe))}</td>
-            <td class="num">${F(m.p26)}</td><td class="num">${F(m.l26)}</td><td class="num">${F(m.e26)}</td>
-            <td style="font-size:11px;">${escHtml(m.regra)}</td>
-            <td class="num">${F(m.prevEmp)}</td><td class="num">${F(m.trf)}</td><td class="num">${F(m.p27)}</td><td class="num">${F(m.nec)}</td>
-            <td class="num">${m.pctDeliberado > 0 ? fmtPct(m.pctDeliberado) : '—'}</td><td class="num">${F(m.prevEmpAj)}</td><td class="num"><strong>${F(m.necAj)}</strong></td>
-        </tr>`;
+        h += `<tr${m.expurgado ? ' style="opacity:0.55;"' : ''}>` +
+            COLUNAS_DETALHE.map(c => c.celula ? c.celula(m) : `<td class="num">${F(c.valor(m))}</td>`).join('') + '</tr>';
     });
     let aviso = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; use os filtros ou exporte o XLSX para ver todas` : '';
     h += `</tbody><tfoot><tr><td colspan="5">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${aviso})</td>
@@ -768,7 +833,7 @@ async function exportarEstudoXLSX() {
         { titulo: 'NEC. 2027 CALCULADA', chave: 'nec', moeda: true, largura: 20 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
         { titulo: '% DA LOA (NEC. AJ.)', chave: 'pct', pct: true, largura: 13 }, { titulo: 'SALDO (LOA − NEC. AJ.)', chave: 'saldo', moeda: true, largura: 20 },
         { titulo: 'SUB FONTES DA LOA', chave: 'sfs', largura: 40 }
-    ], consolidadoAtual.map(l => ({
+    ], linhasConsolidadoOrdenadas().map(l => ({
         fonte: l.fonte, orgao: l.orgao, sit: ROTULO_SITUACAO[l.situacao], loa: l.temLOA ? l.loa : null, qtd: l.qtd,
         p26: l.p26, prevEmp: l.prevEmp, prevEmpAj: l.prevEmpAj, nec: l.nec, necAj: l.necAj, pct: l.pctLOA === null ? null : Number(l.pctLOA.toFixed(4)),
         saldo: l.saldo, sfs: l.subfontesTxt
@@ -784,8 +849,8 @@ async function exportarEstudoXLSX() {
         { titulo: 'PROGRAMADO 2027', chave: 'p27', moeda: true, largura: 18 }, { titulo: 'NEC. 2027 CALCULADA', chave: 'nec', moeda: true, largura: 18 },
         { titulo: '% DELIBERADO', chave: 'pctDel', pct: true, largura: 12 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 18 },
         { titulo: 'TRF 2026 AJUSTADA', chave: 'trfAj', moeda: true, largura: 18 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 18 }
-    ], mappsCalculados.map(m => ({
-        mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio, grupo: labelClasse(m.classe), exp: m.expurgado ? 'SIM' : 'NÃO',
+    ], linhasDetalheOrdenadas().map(m => ({
+        mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio, grupo: rotuloGrupo(m.classe), exp: m.expurgado ? 'SIM' : 'NÃO',
         p26: m.p26, l26: m.l26, e26: m.e26, regra: m.regra, prevEmp: m.prevEmp, trf: m.trf, p27: m.p27, nec: m.nec,
         pctDel: m.pctDeliberado, prevEmpAj: m.prevEmpAj, trfAj: m.trfAj, necAj: m.necAj
     })));
