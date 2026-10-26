@@ -505,10 +505,21 @@ function renderizarDePara() {
         porSubfonte[l.subfonte].orgaos++;
     });
     let fontes = fontesSIPOGDisponiveis();
-    let lista = Object.values(porSubfonte).sort((a, b) => a.subfonte.localeCompare(b.subfonte));
-    let semPar = lista.filter(s => !fonteEfetiva(s.subfonte).fonte).length;
+    let todas = Object.values(porSubfonte).sort((a, b) => a.subfonte.localeCompare(b.subfonte));
+    let semPar = todas.filter(s => !fonteEfetiva(s.subfonte).fonte).length;
     badge.textContent = semPar > 0 ? `${semPar} sem fonte` : '';
     badge.className = 'estudo-tag ' + (semPar > 0 ? 'tag-sem' : 'tag-exata');
+
+    // Filtro Grupo de Fonte (Tesouro / Outras Fontes, como na aba "Fonte x Órgão")
+    preencherSelect('filtro-dp-grupo', Array.from(new Set(todas.map(s => s.grupo).filter(Boolean))).sort((a, b) => b.localeCompare(a)), '(todos)');
+    let fGrupo = document.getElementById('filtro-dp-grupo').value;
+    let lista = todas.filter(s => !fGrupo || s.grupo === fGrupo);
+    if (lista.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma sub fonte para o filtro.</p>'; return; }
+    let tot = lista.reduce((t, s) => {
+        t.orgaos += s.orgaos; t.valor += s.valor;
+        if (fonteEfetiva(s.subfonte).fonte) { t.qtdCom++; t.valorCom += s.valor; } else { t.qtdSem++; t.valorSem += s.valor; }
+        return t;
+    }, { orgaos: 0, valor: 0, qtdCom: 0, valorCom: 0, qtdSem: 0, valorSem: 0 });
 
     let h = `<table><thead><tr>
         <th class="sem-ordem">Grupo</th><th class="sem-ordem">Sub fonte</th><th class="sem-ordem">Descrição</th>
@@ -530,7 +541,10 @@ function renderizarDePara() {
             <td><select data-subfonte="${escHtml(s.subfonte)}" onchange="alterarDePara(this)" style="max-width:340px;">${opcoes}</select></td>
         </tr>`;
     });
-    h += '</tbody></table>';
+    h += `</tbody><tfoot><tr><td colspan="3">TOTAL${fGrupo ? ' ' + escHtml(fGrupo).toUpperCase() : ''} (${lista.length} sub fontes)</td>
+        <td class="num">${tot.orgaos}</td><td class="num">${F(tot.valor)}</td>
+        <td colspan="2" style="font-weight:600; font-size:11px; white-space:normal;">Com fonte: ${tot.qtdCom} · ${F(tot.valorCom)} &nbsp;|&nbsp; Sem fonte: ${tot.qtdSem} · ${F(tot.valorSem)}</td>
+        </tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
