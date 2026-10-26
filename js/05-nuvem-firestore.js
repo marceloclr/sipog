@@ -119,6 +119,7 @@ async function aplicarPacoteNuvem(pacote, origemTexto) {
         return;
     }
     dadosBrutos = pacote.dados.dadosBrutos;
+    corrigirAcentosBase(dadosBrutos);
     totalRegistrosBase = pacote.dados.totalRegistrosBase || dadosBrutos.length;
     dadosExcluidos = [];
 
@@ -300,6 +301,7 @@ function carregarJSON() {
         }
 
         dadosBrutos = pacote.dados.dadosBrutos;
+        corrigirAcentosBase(dadosBrutos);
         totalRegistrosBase = pacote.dados.totalRegistrosBase || dadosBrutos.length;
         dadosExcluidos = [];
 

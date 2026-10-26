@@ -32,6 +32,7 @@ function importar() {
             for (let chave in linha) { linhaNormalizada[chave.trim().toUpperCase()] = linha[chave]; }
             return linhaNormalizada;
         });
+        corrigirAcentosBase(dadosBrutos);
 
         dadosExcluidos = [];
         window._filtrosPendentesRestore = null; // Importação XLSX sempre usa filtros padrão (Tesouro)
@@ -42,6 +43,32 @@ function importar() {
         processarDados();
     };
     r.readAsArrayBuffer(f);
+}
+
+// Corrige acentuação corrompida (corrigirMojibake, js/03) em todas as células de
+// texto da base — vale para a importação do XLSX e para estados/cenários já salvos
+// (nuvem e JSON), que podem ter vindo de uma extração com o problema. Guarda a
+// contagem para o aviso de qualidade da base exibido após o processamento.
+let qtdAcentosCorrigidosBase = 0;
+function corrigirAcentosBase(linhas) {
+    qtdAcentosCorrigidosBase = 0;
+    linhas.forEach(l => {
+        for (let k in l) {
+            if (typeof l[k] !== 'string') continue;
+            let c = corrigirMojibake(l[k]);
+            if (c !== l[k]) { l[k] = c; qtdAcentosCorrigidosBase++; }
+        }
+    });
+    return qtdAcentosCorrigidosBase;
+}
+
+// Mesmo conserto nas chaves de objetos salvos por nome de Fonte (tetos/subtetos),
+// para continuarem casando com a base depois da correção acima.
+function corrigirAcentosChaves(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    let novo = {};
+    for (let k in obj) novo[corrigirMojibake(k)] = obj[k];
+    return novo;
 }
 
 function nomeArquivoSeguro(nome) {
@@ -170,12 +197,12 @@ function aplicarParametros(p) {
         if (typeof sincronizarCenario === 'function') sincronizarCenario();
     }
     if (p.tetosPorFonte && typeof p.tetosPorFonte === 'object') {
-        tetosPorFonte = p.tetosPorFonte;
+        tetosPorFonte = corrigirAcentosChaves(p.tetosPorFonte);
     } else if (p.tetoDisponibilizado !== undefined && p.tetoDisponibilizado > 0) {
         tetosPorFonte['(500)-(501) Tesouro'] = p.tetoDisponibilizado;
     }
     if (p.subtetosPorFonteGrupo && typeof p.subtetosPorFonteGrupo === 'object') {
-        subtetosPorFonteGrupo = p.subtetosPorFonteGrupo;
+        subtetosPorFonteGrupo = corrigirAcentosChaves(p.subtetosPorFonteGrupo);
     }
     renderizarTabelaTetosPorFonte(false);
     atualizarSeletorFontePainel();
@@ -206,13 +233,22 @@ function restaurarFiltrosSalvos(filtros) {
         ['orgao', 'estagio', 'fonte', 'classe'].forEach(tipo => {
             let savedArr = filtros[aba][tipo];
             if (!Array.isArray(savedArr)) return;
+            // Textos salvos antes da correção de acentos/estágios: aplica a mesma correção.
+            savedArr = savedArr.map(v => tipo === 'estagio' ? labelEstagio(normalizarEstagio(v)) : corrigirMojibake(v));
             let savedSet = new Set(savedArr);
-            seletoresAtivos[aba][tipo] = new Set(savedSet);
             let idContainer = `m-${aba}-${tipo}`;
             let container = document.getElementById(idContainer);
-            if (!container) return;
+            if (!container) { seletoresAtivos[aba][tipo] = new Set(savedSet); return; }
             let dropdownMenu = container.querySelector('.multiselect-dropdown');
             let items = dropdownMenu.querySelectorAll('.multiselect-item');
+            // Estágio salvo com texto que não existe mais (ex.: rótulo corrompido que
+            // agora é reconhecido): os estágios novos da base entram selecionados, para
+            // os MAPPs reclassificados não sumirem do filtro.
+            if (tipo === 'estagio') {
+                let atuais = Array.from(items).map(i => i.querySelector('span').textContent);
+                if (savedArr.some(v => !atuais.includes(v))) atuais.forEach(v => savedSet.add(v));
+            }
+            seletoresAtivos[aba][tipo] = new Set(savedSet);
             let totalItens = items.length;
             items.forEach(item => {
                 let chk = item.querySelector('input[type="checkbox"]');
