@@ -72,7 +72,8 @@ pdf.js 3.11.174 do cdnjs baixado sob demanda; grupo Tesouro/Outras Fontes pela c
 valor; conferido por órgão e TOTAL GERAL — em 26/10: 205 pares, R$ 6.671.837.045); a planilha
 "Fonte x Órgão" (coluna C) ainda é aceita, mas traz a LOA inteira (pessoal, custeio, dívida).
 **Só o Executivo**: `carregarLOA` expurga os órgãos de `LOA_FORA_EXECUTIVO` pelos 2 primeiros
-dígitos do código — 01 (AL + FPP) e 04 (TJ + FERMOJU, FUNSEG, fundo dos oficiais) —
+dígitos do código — 01 (AL + FPP), 02 (TCE), 04 (TJ + FERMOJU, FUNSEG, fundo dos oficiais) e
+15 (MP/PGJ + fundo de reaparelhamento e FDID); a Defensoria (06) fica —
 `loaLinhas` = Executivo, `loaLinhasArquivo` = tudo (vai para a nuvem e para a aba ARQ_ do xlsx,
 com a coluna EXPURGO). O PDF de Investimento de 26/10 não tem nenhum desses órgãos.
 Não toca no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).

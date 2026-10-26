@@ -33,11 +33,14 @@ const PADROES_ESTUDO = {
 
 // Regra do estudo: a LOA só vale para o Executivo estadual. Os órgãos dos outros Poderes saem
 // pelos 2 primeiros dígitos do código (o do Poder/órgão, comum aos fundos vinculados):
-// 01 = Assembleia Legislativa e vinculados (FPP); 04 = Tribunal de Justiça e vinculados
-// (FERMOJU, FUNSEG, fundo dos oficiais de justiça).
+// 01 = Assembleia Legislativa e vinculados (FPP); 02 = Tribunal de Contas do Estado;
+// 04 = Tribunal de Justiça e vinculados (FERMOJU, FUNSEG, fundo dos oficiais de justiça);
+// 15 = Ministério Público (PGJ) e vinculados (fundo de reaparelhamento, FDID). A Defensoria (06) fica.
 const LOA_FORA_EXECUTIVO = [
     { prefixo: '01', nome: 'Assembleia Legislativa (AL) e órgãos vinculados' },
-    { prefixo: '04', nome: 'Tribunal de Justiça (TJ) e órgãos vinculados' }
+    { prefixo: '02', nome: 'Tribunal de Contas do Estado (TCE) e órgãos vinculados' },
+    { prefixo: '04', nome: 'Tribunal de Justiça (TJ) e órgãos vinculados' },
+    { prefixo: '15', nome: 'Ministério Público (PGJ) e órgãos vinculados' }
 ];
 
 function loaForaDoExecutivo(l) {
