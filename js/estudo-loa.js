@@ -5,7 +5,8 @@
 // valorCelulaExcelJS, labelClasse) e js/06 (classificarRegistro, EST_*, labelEstagio).
 
 // ─── ESTADO ─────────────────────────────────────────────────────────────────
-let loaLinhas = [];          // [{ grupo, subfonte, descSubfonte, codOrgao, orgao, sigla, valor }]
+let loaLinhas = [];          // [{ grupo, subfonte, descSubfonte, codOrgao, orgao, sigla, valor }] — só o Executivo
+let loaLinhasArquivo = [];   // todas as linhas lidas (inclui os órgãos expurgados), p/ salvar e exportar
 let loaArquivo = '';
 let loaConferencia = { conferido: false, divergencias: [] }; // resultado da conferência com o Resumo (vai junto ao salvar na nuvem)
 let mappsBrutos = [];        // linhas da planilha de MAPPs, cabeçalho em maiúsculas
@@ -29,6 +30,19 @@ const PADROES_ESTUDO = {
     'vd-contrato-gestao': 0, 'vd-continuidade': 0, 'vd-pcf-convenio': 0,
     'vd-operacao-credito': 0, 'vd-investimento': 0
 };
+
+// Regra do estudo: a LOA só vale para o Executivo estadual. Os órgãos dos outros Poderes saem
+// pelos 2 primeiros dígitos do código (o do Poder/órgão, comum aos fundos vinculados):
+// 01 = Assembleia Legislativa e vinculados (FPP); 04 = Tribunal de Justiça e vinculados
+// (FERMOJU, FUNSEG, fundo dos oficiais de justiça).
+const LOA_FORA_EXECUTIVO = [
+    { prefixo: '01', nome: 'Assembleia Legislativa (AL) e órgãos vinculados' },
+    { prefixo: '04', nome: 'Tribunal de Justiça (TJ) e órgãos vinculados' }
+];
+
+function loaForaDoExecutivo(l) {
+    return LOA_FORA_EXECUTIVO.some(o => String(l.codOrgao || '').startsWith(o.prefixo));
+}
 
 // Grupos do Valor Deliberado — mesmos de GRUPOS_REDUTOR (js/07-redutor-paradigma.js).
 const GRUPOS_VD_ESTUDO = [
@@ -281,14 +295,16 @@ async function selecionarArquivoLOA(input) {
         carregarLOA(lerLOADeWorkbook(wb), arquivo.name);
     } catch (err) {
         console.error(err);
-        loaLinhas = [];
+        loaLinhas = []; loaLinhasArquivo = [];
         status.innerHTML = `<span class="erro">❌ ${escHtml(err.message || err)}</span>`;
         recalcularEstudo();
     }
 }
 
 function carregarLOA(resultado, nomeArquivo) {
-    loaLinhas = resultado.linhas;
+    loaLinhasArquivo = resultado.linhas;
+    loaLinhas = loaLinhasArquivo.filter(l => !loaForaDoExecutivo(l));
+    let expurgadas = loaLinhasArquivo.filter(loaForaDoExecutivo);
     let origem = resultado.origem || (/\.pdf$/i.test(nomeArquivo || '') ? 'pdf' : 'xlsx');
     loaConferencia = { conferido: !!resultado.conferido, divergencias: resultado.divergencias || [], origem };
     loaArquivo = nomeArquivo || '';
@@ -306,7 +322,11 @@ function carregarLOA(resultado, nomeArquivo) {
     document.getElementById('status-loa').innerHTML =
         `<span class="ok">✅ ${escHtml(loaArquivo)}</span><br>` +
         `${loaLinhas.length.toLocaleString('pt-BR')} pares Sub fonte × Órgão · ${subfontes} sub fontes · ${orgaos} órgãos<br>` +
-        `Total LOA: <strong>${F(total)}</strong><br>${conf}` +
+        `Total LOA (Executivo): <strong>${F(total)}</strong><br>` +
+        (expurgadas.length
+            ? `<span class="aviso">Expurgados (fora do Executivo): ${expurgadas.length} par(es), ${new Set(expurgadas.map(l => l.codOrgao)).size} órgão(s), ${F(expurgadas.reduce((s, l) => s + l.valor, 0))} — ${escHtml([...new Set(expurgadas.map(l => l.sigla || l.orgao))].join(', '))}</span><br>`
+            : `Expurgo fora do Executivo (${escHtml(LOA_FORA_EXECUTIVO.map(o => o.nome.split(' (')[0]).join(', '))}): nenhum órgão no arquivo.<br>`) +
+        conf +
         (origem === 'xlsx' ? '<br><span class="aviso">⚠ A planilha "Fonte x Órgão" traz a LOA inteira (pessoal, custeio e dívida). Para o estudo, use o PDF emitido só com Investimento.</span>' : '');
     recalcularEstudo();
 }
@@ -1394,7 +1414,7 @@ async function salvarEstudoNuvem() {
             ordemTabelas: ordemTabelas,
             propostasManuais: propostasManuais,
             // "dadosBrutos" alimenta o totalRegistros dos metadados (gravarPacoteFragmentado).
-            dados: { loaLinhas, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
+            dados: { loaLinhas: loaLinhasArquivo, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
         };
         await gravarPacoteFragmentado(fb, COLECAO_ESTUDOS, pacote);
         window.__setStatusNuvem('☁️ Estudo salvo na nuvem', true);
@@ -1443,7 +1463,7 @@ async function carregarEstudoNuvemPorId(id) {
         salvarDeParaManual();
         if (pacote.ordemTabelas) ordemTabelas = pacote.ordemTabelas;
         let dados = pacote.dados;
-        loaLinhas = []; mappsBrutos = []; mappsOriginais = [];
+        loaLinhas = []; loaLinhasArquivo = []; mappsBrutos = []; mappsOriginais = [];
         if (Array.isArray(dados.loaLinhas) && dados.loaLinhas.length) carregarLOA(Object.assign({ linhas: dados.loaLinhas }, dados.loaConferencia || { conferido: false, divergencias: [] }), (pacote.arquivos || {}).loa);
         if (Array.isArray(dados.dadosBrutos) && dados.dadosBrutos.length) carregarMAPPs(dados.dadosBrutos, (pacote.arquivos || {}).mapps, dados.colunasMapps);
         // As edições da Proposta salvas com o estudo prevalecem sobre as deste navegador.
@@ -1543,13 +1563,14 @@ async function exportarEstudoXLSX() {
     }));
 
     // Abas com o conteúdo de cada arquivo carregado, para o xlsx ficar autossuficiente.
-    if (loaLinhas.length) {
+    if (loaLinhasArquivo.length) {
         adicionarAbaEstudo(wb, 'ARQ_LOA_FONTE_X_ORGAO', [
             { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'SUB FONTE', chave: 'subfonte', largura: 18 },
             { titulo: 'DESCRIÇÃO DA SUB FONTE', chave: 'descSubfonte', largura: 60 }, { titulo: 'CÓDIGO ÓRGÃO', chave: 'codOrgao', largura: 14 },
             { titulo: 'ÓRGÃO', chave: 'orgao', largura: 60 }, { titulo: 'SIGLA', chave: 'sigla', largura: 14 },
-            { titulo: 'VALOR LOA (R$)', chave: 'valor', moeda: true, largura: 20 }
-        ], loaLinhas);
+            { titulo: 'VALOR LOA (R$)', chave: 'valor', moeda: true, largura: 20 },
+            { titulo: 'EXPURGO', chave: 'expurgo', largura: 22 }
+        ], loaLinhasArquivo.map(l => Object.assign({}, l, { expurgo: loaForaDoExecutivo(l) ? 'FORA DO EXECUTIVO' : '' })));
     }
     if (mappsOriginais.length) {
         // Colunas VLR_* viram número (o CSV traz texto com vírgula decimal).
@@ -1588,6 +1609,7 @@ async function exportarEstudoXLSX() {
         ['Estudo LOA 2027 × MAPPs — SIPOG', ''],
         ['Gerado em', new Date().toLocaleString('pt-BR')],
         ['Arquivo LOA', loaArquivo || '—'],
+        ['LOA expurgada (fora do Executivo)', LOA_FORA_EXECUTIVO.map(o => `${o.prefixo}xxxxxx ${o.nome}`).join('; ')],
         ['Arquivo MAPPs', mappsArquivo || '—'],
         ['Conveniado (%)', prm.pcts.conveniado * 100], ['Licitado (%)', prm.pcts.licitado * 100],
         ['Em Licitação (%)', prm.pcts.emlicitacao * 100], ['Contratado (%)', prm.pcts.contratado * 100],

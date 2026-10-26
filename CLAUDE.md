@@ -71,6 +71,10 @@ Cruza a LOA 2027 com a base de MAPPs (layout do `importar()`). LOA: de preferên
 pdf.js 3.11.174 do cdnjs baixado sob demanda; grupo Tesouro/Outras Fontes pela coluna do
 valor; conferido por órgão e TOTAL GERAL — em 26/10: 205 pares, R$ 6.671.837.045); a planilha
 "Fonte x Órgão" (coluna C) ainda é aceita, mas traz a LOA inteira (pessoal, custeio, dívida).
+**Só o Executivo**: `carregarLOA` expurga os órgãos de `LOA_FORA_EXECUTIVO` pelos 2 primeiros
+dígitos do código — 01 (AL + FPP) e 04 (TJ + FERMOJU, FUNSEG, fundo dos oficiais) —
+`loaLinhas` = Executivo, `loaLinhasArquivo` = tudo (vai para a nuvem e para a aba ARQ_ do xlsx,
+com a coluna EXPURGO). O PDF de Investimento de 26/10 não tem nenhum desses órgãos.
 Não toca no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).
 Carrega só `js/03`, `js/06` e `js/05` do SIPOG (definições sem efeito ao carregar; o js/05 dá a
 gravação em chunks) — não incluir outros arquivos js/01–15. Nuvem: coleção própria
