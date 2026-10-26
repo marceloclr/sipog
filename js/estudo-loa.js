@@ -825,7 +825,11 @@ function renderizarDetalhe() {
         (fExp || !m.expurgado) && (!fOrg || N(m.orgao) === N(fOrg)) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
         (!fTxt || N(m.mapp).includes(fTxt) || N(m.regra).includes(fTxt)));
 
-    let tot = linhas.reduce((t, m) => { t.p26 += m.p26; t.l26 += m.l26; t.e26 += m.e26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.trf += m.trf; t.p27 += m.p27; t.nec += m.nec; t.necAj += m.necAj; return t; },
+    // Totais só dos MAPPs ativos, como no card 4: expurgados exibidos (checkbox)
+    // aparecem na grade, mas não entram no cálculo nem no total.
+    let ativosExibidos = linhas.filter(m => !m.expurgado);
+    let qtdExpurgadosExibidos = linhas.length - ativosExibidos.length;
+    let tot = ativosExibidos.reduce((t, m) => { t.p26 += m.p26; t.l26 += m.l26; t.e26 += m.e26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.trf += m.trf; t.p27 += m.p27; t.nec += m.nec; t.necAj += m.necAj; return t; },
         { p26: 0, l26: 0, e26: 0, prevEmp: 0, prevEmpAj: 0, trf: 0, p27: 0, nec: 0, necAj: 0 });
     let exibidas = linhas.slice(0, LIMITE_LINHAS_DETALHE);
     let h = `<table><thead>${cabecalhoOrdenavel('det', COLUNAS_DETALHE)}</thead><tbody>`;
@@ -834,7 +838,8 @@ function renderizarDetalhe() {
             COLUNAS_DETALHE.map(c => c.celula ? c.celula(m) : `<td class="num">${F(c.valor(m))}</td>`).join('') + '</tr>';
     });
     let aviso = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; use os filtros ou exporte o XLSX para ver todas` : '';
-    h += `</tbody><tfoot><tr><td colspan="5">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${aviso})</td>
+    let notaExpurgo = qtdExpurgadosExibidos ? `; ${qtdExpurgadosExibidos.toLocaleString('pt-BR')} expurgado(s) exibido(s), fora do total` : '';
+    h += `</tbody><tfoot><tr><td colspan="5">TOTAL (${ativosExibidos.length.toLocaleString('pt-BR')} MAPPs${notaExpurgo}${aviso})</td>
         <td class="num">${F(tot.p26)}</td><td class="num">${F(tot.l26)}</td><td class="num">${F(tot.e26)}</td><td></td>
         <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.trf)}</td><td class="num">${F(tot.p27)}</td><td class="num">${F(tot.nec)}</td>
         <td></td><td class="num">${F(tot.prevEmpAj)}</td><td class="num">${F(tot.necAj)}</td></tr></tfoot></table>`;
