@@ -59,6 +59,9 @@ Carrega só `js/03` e `js/06` do SIPOG (definições puras) — não incluir out
   `processarDados()` (js/08, cenário PADRAO). **Mudou a regra no js/08 → atualizar a cópia.**
   Conferência: processar a base real no SIPOG com parâmetros padrão e comparar MAPP a MAPP
   (`prevEmp`, `regra`, `nec`); em 2026-10-26 deu 7.300/7.300 iguais.
+- `aplicarValorDeliberadoEstudo()` é **cópia** da conta de `aplicarValorParadigmaGrupoCore()`
+  (js/07): Prev. Emp. × (1 − % do grupo) → TRF e Necessidade Ajustadas, na fonte escolhida ou
+  em todas; sem travas/edições manuais. Conferido em 2026-10-26: 7.111/7.111 iguais.
 - De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
   (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,
   ignorando emendas 3xx) e manual. Órgão casa pela sigla entre parênteses.

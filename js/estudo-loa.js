@@ -20,8 +20,20 @@ const CHAVE_DEPARA_LOCAL = 'sipog_estudo_loa_depara_v1';
 const PADROES_ESTUDO = {
     'ep-conveniado': 20, 'ep-licitado': 20, 'ep-emlicitacao': 15,
     'ep-contratado': 20, 'ep-preparatorias': 5, 'ep-naoiniciado': 0,
-    'ep-limiar': 40
+    'ep-limiar': 40,
+    // Valor Deliberado por grupo (DEFAULTS_PARAMETROS.classes, pc-*): redução da Prev. Empenho.
+    'vd-contrato-gestao': 0, 'vd-continuidade': 0, 'vd-pcf-convenio': 0,
+    'vd-operacao-credito': 0, 'vd-investimento': 0
 };
+
+// Grupos do Valor Deliberado — mesmos de GRUPOS_REDUTOR (js/07-redutor-paradigma.js).
+const GRUPOS_VD_ESTUDO = [
+    { sufixo: 'contrato-gestao',  label: 'CONTRATO GESTÃO',  classe: 'CONTRATO_GESTAO' },
+    { sufixo: 'continuidade',     label: 'CONTINUIDADE',     classe: 'CONTINUIDADE' },
+    { sufixo: 'pcf-convenio',     label: 'PCF CONVÊNIO',     classe: 'PCF_CONVENIO' },
+    { sufixo: 'operacao-credito', label: 'OPERAÇÃO CRÉDITO', classe: 'OPERACAO_CREDITO' },
+    { sufixo: 'investimento',     label: 'DEMAIS PROJETOS',  classe: 'INVESTIMENTO' }
+];
 
 // ─── TEMA ───────────────────────────────────────────────────────────────────
 // Mesma chave de tema do SIPOG, para as duas páginas abrirem iguais.
@@ -383,8 +395,21 @@ function lerParametrosEstudo() {
             conveniado: v('ep-conveniado') / 100, licitado: v('ep-licitado') / 100, emlicitacao: v('ep-emlicitacao') / 100,
             contratado: v('ep-contratado') / 100, preparatorias: v('ep-preparatorias') / 100, naoiniciado: v('ep-naoiniciado') / 100
         },
-        limiar: v('ep-limiar')
+        limiar: v('ep-limiar'),
+        vd: Object.fromEntries(GRUPOS_VD_ESTUDO.map(g => [g.classe, Math.min(Math.max(v('vd-' + g.sufixo), 0), 100) / 100])),
+        vdFonte: (document.getElementById('vd-fonte') || {}).value || ''
     };
+}
+
+// Valor Deliberado: mesma conta de aplicarValorParadigmaGrupoCore() (js/07), para
+// todos os MAPPs do grupo na fonte escolhida (ou em todas). Sem travas manuais.
+function aplicarValorDeliberadoEstudo(m, vd, vdFonte) {
+    let fator = (!m.expurgado && (!vdFonte || N(m.fonte) === N(vdFonte))) ? (vd[m.classe] || 0) : 0;
+    m.pctDeliberado = fator * 100;
+    m.prevEmpAj = fator > 0 ? m.prevEmp * (1 - fator) : m.prevEmp;
+    m.trfAj = m.expurgado ? 0 : m.p26 - m.prevEmpAj;
+    m.necAj = m.expurgado ? 0 : m.p27 + m.trfAj;
+    return m;
 }
 
 function restaurarParametrosEstudo() {
@@ -512,7 +537,7 @@ function montarConsolidado() {
     let chave = (orgaoN, fonte) => orgaoN + '||' + fonte;
     let obter = (orgaoN, rotulo, fonte) => {
         let k = chave(orgaoN, fonte);
-        if (!mapa[k]) mapa[k] = { orgao: rotulo, fonte, loa: 0, temLOA: false, qtd: 0, p26: 0, prevEmp: 0, nec: 0, subfontes: new Set() };
+        if (!mapa[k]) mapa[k] = { orgao: rotulo, fonte, loa: 0, temLOA: false, qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, subfontes: new Set() };
         return mapa[k];
     };
     let loaForaCruzamento = 0, paresForaCruzamento = 0;
@@ -530,18 +555,20 @@ function montarConsolidado() {
         item.qtd++;
         item.p26 += m.p26;
         item.prevEmp += m.prevEmp;
+        item.prevEmpAj += m.prevEmpAj;
         item.nec += m.nec;
+        item.necAj += m.necAj;
     });
     consolidadoAtual = Object.values(mapa).map(i => {
         let situacao = i.temLOA && i.qtd > 0 ? 'OK' : (i.temLOA ? 'SEM_MAPP' : 'SEM_LOA');
         return Object.assign(i, {
             situacao,
             subfontesTxt: Array.from(i.subfontes).sort().join(', '),
-            pctLOA: i.loa > 0 ? (i.nec / i.loa) * 100 : null,
-            saldo: i.temLOA ? i.loa - i.nec : null
+            pctLOA: i.loa > 0 ? (i.necAj / i.loa) * 100 : null,
+            saldo: i.temLOA ? i.loa - i.necAj : null
         });
     }).sort((a, b) => (ORDEM_SITUACAO[a.situacao] - ORDEM_SITUACAO[b.situacao]) || a.fonte.localeCompare(b.fonte) ||
-        (b.loa - a.loa) || (b.nec - a.nec) || a.orgao.localeCompare(b.orgao));
+        (b.loa - a.loa) || (b.necAj - a.necAj) || a.orgao.localeCompare(b.orgao));
     return { loaForaCruzamento, paresForaCruzamento };
 }
 
@@ -563,24 +590,26 @@ function renderizarConsolidado() {
         (!fFonte || l.fonte === fFonte) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
 
     let tot = linhas.reduce((t, l) => {
-        t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.prevEmp += l.prevEmp; t.nec += l.nec;
-        if (l.temLOA) t.necComLOA += l.nec;
+        t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.prevEmp += l.prevEmp; t.prevEmpAj += l.prevEmpAj; t.nec += l.nec; t.necAj += l.necAj;
+        if (l.temLOA) t.necAjComLOA += l.necAj;
         return t;
-    }, { loa: 0, qtd: 0, p26: 0, prevEmp: 0, nec: 0, necComLOA: 0 });
-    let necSemLOA = linhas.filter(l => l.situacao === 'SEM_LOA').reduce((s, l) => s + l.nec, 0);
+    }, { loa: 0, qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, necAjComLOA: 0 });
+    let necSemLOA = linhas.filter(l => l.situacao === 'SEM_LOA').reduce((s, l) => s + l.necAj, 0);
     resumoEl.innerHTML = `
         <div><span>LOA 2027 (filtro)</span><b>${F(tot.loa)}</b></div>
-        <div><span>Necessidade 2027 dos MAPPs</span><b>${F(tot.nec)}</b></div>
-        <div><span>% da LOA (só pares com LOA)</span><b>${fmtPct(tot.loa > 0 ? tot.necComLOA / tot.loa * 100 : null)}</b></div>
-        <div><span>Necessidade em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
+        <div><span>Necessidade 2027 Calculada</span><b>${F(tot.nec)}</b></div>
+        <div><span>Necessidade 2027 Ajustada</span><b>${F(tot.necAj)}</b></div>
+        <div><span>% da LOA (Ajustada, só pares com LOA)</span><b>${fmtPct(tot.loa > 0 ? tot.necAjComLOA / tot.loa * 100 : null)}</b></div>
+        <div><span>Nec. Ajustada em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
         <div><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
 
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
     let h = `<table><thead><tr>
         <th class="sem-ordem">Fonte do SIPOG</th><th class="sem-ordem">Órgão</th><th class="sem-ordem">Situação</th>
         <th class="sem-ordem num">LOA 2027</th><th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">Programado 2026</th>
-        <th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">Necessidade 2027</th>
-        <th class="sem-ordem num">% da LOA</th><th class="sem-ordem num">Saldo (LOA − Nec.)</th><th class="sem-ordem">Sub fontes da LOA</th>
+        <th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">Prev. Empenho Ajustada</th>
+        <th class="sem-ordem num">Nec. 2027 Calculada</th><th class="sem-ordem num">Nec. 2027 Ajustada</th>
+        <th class="sem-ordem num">% da LOA</th><th class="sem-ordem num">Saldo (LOA − Nec. Aj.)</th><th class="sem-ordem">Sub fontes da LOA</th>
         </tr></thead><tbody>`;
     linhas.forEach(l => {
         let tag = l.situacao === 'OK' ? 'tag-exata' : (l.situacao === 'SEM_LOA' ? 'tag-sem' : 'tag-prefixo');
@@ -588,7 +617,8 @@ function renderizarConsolidado() {
             <td style="min-width:220px;">${escHtml(l.fonte)}</td><td><strong>${escHtml(l.orgao)}</strong></td>
             <td><span class="estudo-tag ${tag}">${ROTULO_SITUACAO[l.situacao]}</span></td>
             <td class="num">${l.temLOA ? F(l.loa) : '—'}</td><td class="num">${l.qtd || '—'}</td>
-            <td class="num">${F(l.p26)}</td><td class="num">${F(l.prevEmp)}</td><td class="num">${F(l.nec)}</td>
+            <td class="num">${F(l.p26)}</td><td class="num">${F(l.prevEmp)}</td><td class="num">${F(l.prevEmpAj)}</td>
+            <td class="num">${F(l.nec)}</td><td class="num"><strong>${F(l.necAj)}</strong></td>
             <td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}">${fmtPct(l.pctLOA)}</td>
             <td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}">${l.saldo === null ? '—' : F(l.saldo)}</td>
             <td style="font-size:11px; color:var(--muted);">${escHtml(l.subfontesTxt)}</td>
@@ -596,8 +626,8 @@ function renderizarConsolidado() {
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL (${linhas.length} linhas)</td>
         <td class="num">${F(tot.loa)}</td><td class="num">${tot.qtd}</td><td class="num">${F(tot.p26)}</td>
-        <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.nec)}</td>
-        <td class="num">${fmtPct(tot.loa > 0 ? tot.necComLOA / tot.loa * 100 : null)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
+        <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.prevEmpAj)}</td><td class="num">${F(tot.nec)}</td><td class="num">${F(tot.necAj)}</td>
+        <td class="num">${fmtPct(tot.loa > 0 ? tot.necAjComLOA / tot.loa * 100 : null)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
@@ -624,6 +654,32 @@ function atualizarFiltros() {
     preencherSelect('filtro-cons-fonte', fontesCons, '(todas)');
 }
 
+// Resumo por grupo do Valor Deliberado (mesmas colunas-base da tabela do Redutor no SIPOG).
+function renderizarGrupos() {
+    let cont = document.getElementById('tabela-grupos');
+    if (!cont) return;
+    let ativos = mappsCalculados.filter(m => !m.expurgado);
+    if (ativos.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p>'; return; }
+    let prm = lerParametrosEstudo();
+    let tot = { qtd: 0, p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0 };
+    let h = `<table><thead><tr><th class="sem-ordem">Grupo</th><th class="sem-ordem num">MAPPs</th><th class="sem-ordem num">Programado 2026</th>
+        <th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">% deliberado</th><th class="sem-ordem num">Prev. Empenho Ajustada</th>
+        <th class="sem-ordem num">Nec. 2027 Calculada</th><th class="sem-ordem num">Nec. 2027 Ajustada</th></tr></thead><tbody>`;
+    GRUPOS_VD_ESTUDO.forEach(g => {
+        let doGrupo = ativos.filter(m => m.classe === g.classe);
+        let s = doGrupo.reduce((t, m) => { t.p26 += m.p26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.nec += m.nec; t.necAj += m.necAj; return t; },
+            { p26: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0 });
+        tot.qtd += doGrupo.length; for (let k in s) tot[k] += s[k];
+        h += `<tr><td>${escHtml(g.label)}</td><td class="num">${doGrupo.length.toLocaleString('pt-BR')}</td><td class="num">${F(s.p26)}</td>
+            <td class="num">${F(s.prevEmp)}</td><td class="num">${fmtPct(prm.vd[g.classe] * 100)}</td><td class="num">${F(s.prevEmpAj)}</td>
+            <td class="num">${F(s.nec)}</td><td class="num"><strong>${F(s.necAj)}</strong></td></tr>`;
+    });
+    h += `</tbody><tfoot><tr><td>TOTAL${prm.vdFonte ? ' — % aplicado só em ' + escHtml(prm.vdFonte) : ''}</td><td class="num">${tot.qtd.toLocaleString('pt-BR')}</td>
+        <td class="num">${F(tot.p26)}</td><td class="num">${F(tot.prevEmp)}</td><td></td><td class="num">${F(tot.prevEmpAj)}</td>
+        <td class="num">${F(tot.nec)}</td><td class="num">${F(tot.necAj)}</td></tr></tfoot></table>`;
+    cont.innerHTML = h;
+}
+
 function renderizarDetalhe() {
     let cont = document.getElementById('tabela-detalhe');
     if (mappsCalculados.length === 0) {
@@ -639,37 +695,43 @@ function renderizarDetalhe() {
         (fExp || !m.expurgado) && (!fOrg || m.orgao === fOrg) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
         (!fTxt || N(m.mapp).includes(fTxt) || N(m.regra).includes(fTxt)));
 
-    let tot = linhas.reduce((t, m) => { t.p26 += m.p26; t.l26 += m.l26; t.e26 += m.e26; t.prevEmp += m.prevEmp; t.trf += m.trf; t.p27 += m.p27; t.nec += m.nec; return t; },
-        { p26: 0, l26: 0, e26: 0, prevEmp: 0, trf: 0, p27: 0, nec: 0 });
+    let tot = linhas.reduce((t, m) => { t.p26 += m.p26; t.l26 += m.l26; t.e26 += m.e26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.trf += m.trf; t.p27 += m.p27; t.nec += m.nec; t.necAj += m.necAj; return t; },
+        { p26: 0, l26: 0, e26: 0, prevEmp: 0, prevEmpAj: 0, trf: 0, p27: 0, nec: 0, necAj: 0 });
     let exibidas = linhas.slice(0, LIMITE_LINHAS_DETALHE);
     let h = `<table><thead><tr>
         <th class="sem-ordem">MAPP</th><th class="sem-ordem">Órgão</th><th class="sem-ordem">Fonte</th><th class="sem-ordem">Estágio</th><th class="sem-ordem">Grupo</th>
         <th class="sem-ordem num">Programado 2026</th><th class="sem-ordem num">Limite 2026</th><th class="sem-ordem num">Empenhado 2026</th>
         <th class="sem-ordem">Regra aplicada</th><th class="sem-ordem num">Prev. Empenho 2026</th><th class="sem-ordem num">TRF 2026</th>
-        <th class="sem-ordem num">Programado 2027</th><th class="sem-ordem num">Necessidade 2027</th></tr></thead><tbody>`;
+        <th class="sem-ordem num">Programado 2027</th><th class="sem-ordem num">Nec. 2027 Calculada</th>
+        <th class="sem-ordem num">% deliberado</th><th class="sem-ordem num">Prev. Empenho Ajustada</th><th class="sem-ordem num">Nec. 2027 Ajustada</th></tr></thead><tbody>`;
     exibidas.forEach(m => {
         h += `<tr${m.expurgado ? ' style="opacity:0.55;"' : ''}>
             <td style="white-space:nowrap;">${escHtml(m.mapp)}</td><td>${escHtml(m.orgao)}</td><td style="font-size:11px;">${escHtml(m.fonte)}</td>
             <td style="font-size:11px;">${escHtml(m.estagio)}</td><td style="font-size:11px;">${escHtml(labelClasse(m.classe))}</td>
             <td class="num">${F(m.p26)}</td><td class="num">${F(m.l26)}</td><td class="num">${F(m.e26)}</td>
             <td style="font-size:11px;">${escHtml(m.regra)}</td>
-            <td class="num">${F(m.prevEmp)}</td><td class="num">${F(m.trf)}</td><td class="num">${F(m.p27)}</td><td class="num"><strong>${F(m.nec)}</strong></td>
+            <td class="num">${F(m.prevEmp)}</td><td class="num">${F(m.trf)}</td><td class="num">${F(m.p27)}</td><td class="num">${F(m.nec)}</td>
+            <td class="num">${m.pctDeliberado > 0 ? fmtPct(m.pctDeliberado) : '—'}</td><td class="num">${F(m.prevEmpAj)}</td><td class="num"><strong>${F(m.necAj)}</strong></td>
         </tr>`;
     });
     let aviso = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; use os filtros ou exporte o XLSX para ver todas` : '';
     h += `</tbody><tfoot><tr><td colspan="5">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${aviso})</td>
         <td class="num">${F(tot.p26)}</td><td class="num">${F(tot.l26)}</td><td class="num">${F(tot.e26)}</td><td></td>
-        <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.trf)}</td><td class="num">${F(tot.p27)}</td><td class="num">${F(tot.nec)}</td></tr></tfoot></table>`;
+        <td class="num">${F(tot.prevEmp)}</td><td class="num">${F(tot.trf)}</td><td class="num">${F(tot.p27)}</td><td class="num">${F(tot.nec)}</td>
+        <td></td><td class="num">${F(tot.prevEmpAj)}</td><td class="num">${F(tot.necAj)}</td></tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
 // ─── ORQUESTRAÇÃO ───────────────────────────────────────────────────────────
 function recalcularEstudo() {
+    // A lista de fontes do Valor Deliberado precisa estar pronta antes de ler os parâmetros.
+    preencherSelect('vd-fonte', fontesSIPOGDisponiveis(), '(todas as fontes)');
     let prm = lerParametrosEstudo();
-    mappsCalculados = mappsBrutos.map(r => calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar));
+    mappsCalculados = mappsBrutos.map(r => aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar), prm.vd, prm.vdFonte));
     recalcularDeParaSugerido();
     resumoForaCruzamento = montarConsolidado();
     atualizarFiltros();
+    renderizarGrupos();
     renderizarDePara();
     renderizarConsolidado();
     renderizarDetalhe();
@@ -702,12 +764,13 @@ async function exportarEstudoXLSX() {
         { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 16 },
         { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 }, { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 },
         { titulo: 'QTD MAPPS', chave: 'qtd', largura: 11 }, { titulo: 'PROGRAMADO 2026', chave: 'p26', moeda: true, largura: 20 },
-        { titulo: 'PREV. EMPENHO 2026', chave: 'prevEmp', moeda: true, largura: 20 }, { titulo: 'NECESSIDADE 2027', chave: 'nec', moeda: true, largura: 20 },
-        { titulo: '% DA LOA', chave: 'pct', pct: true, largura: 11 }, { titulo: 'SALDO (LOA − NEC.)', chave: 'saldo', moeda: true, largura: 20 },
+        { titulo: 'PREV. EMPENHO 2026', chave: 'prevEmp', moeda: true, largura: 20 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 20 },
+        { titulo: 'NEC. 2027 CALCULADA', chave: 'nec', moeda: true, largura: 20 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
+        { titulo: '% DA LOA (NEC. AJ.)', chave: 'pct', pct: true, largura: 13 }, { titulo: 'SALDO (LOA − NEC. AJ.)', chave: 'saldo', moeda: true, largura: 20 },
         { titulo: 'SUB FONTES DA LOA', chave: 'sfs', largura: 40 }
     ], consolidadoAtual.map(l => ({
         fonte: l.fonte, orgao: l.orgao, sit: ROTULO_SITUACAO[l.situacao], loa: l.temLOA ? l.loa : null, qtd: l.qtd,
-        p26: l.p26, prevEmp: l.prevEmp, nec: l.nec, pct: l.pctLOA === null ? null : Number(l.pctLOA.toFixed(4)),
+        p26: l.p26, prevEmp: l.prevEmp, prevEmpAj: l.prevEmpAj, nec: l.nec, necAj: l.necAj, pct: l.pctLOA === null ? null : Number(l.pctLOA.toFixed(4)),
         saldo: l.saldo, sfs: l.subfontesTxt
     })));
 
@@ -718,10 +781,13 @@ async function exportarEstudoXLSX() {
         { titulo: 'PROGRAMADO 2026', chave: 'p26', moeda: true, largura: 18 }, { titulo: 'LIMITE 2026', chave: 'l26', moeda: true, largura: 18 },
         { titulo: 'EMPENHADO 2026', chave: 'e26', moeda: true, largura: 18 }, { titulo: 'REGRA APLICADA', chave: 'regra', largura: 48 },
         { titulo: 'PREV. EMPENHO 2026', chave: 'prevEmp', moeda: true, largura: 18 }, { titulo: 'TRF 2026', chave: 'trf', moeda: true, largura: 18 },
-        { titulo: 'PROGRAMADO 2027', chave: 'p27', moeda: true, largura: 18 }, { titulo: 'NECESSIDADE 2027', chave: 'nec', moeda: true, largura: 18 }
+        { titulo: 'PROGRAMADO 2027', chave: 'p27', moeda: true, largura: 18 }, { titulo: 'NEC. 2027 CALCULADA', chave: 'nec', moeda: true, largura: 18 },
+        { titulo: '% DELIBERADO', chave: 'pctDel', pct: true, largura: 12 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 18 },
+        { titulo: 'TRF 2026 AJUSTADA', chave: 'trfAj', moeda: true, largura: 18 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 18 }
     ], mappsCalculados.map(m => ({
         mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio, grupo: labelClasse(m.classe), exp: m.expurgado ? 'SIM' : 'NÃO',
-        p26: m.p26, l26: m.l26, e26: m.e26, regra: m.regra, prevEmp: m.prevEmp, trf: m.trf, p27: m.p27, nec: m.nec
+        p26: m.p26, l26: m.l26, e26: m.e26, regra: m.regra, prevEmp: m.prevEmp, trf: m.trf, p27: m.p27, nec: m.nec,
+        pctDel: m.pctDeliberado, prevEmpAj: m.prevEmpAj, trfAj: m.trfAj, necAj: m.necAj
     })));
 
     let porSubfonte = {};
@@ -749,9 +815,12 @@ async function exportarEstudoXLSX() {
         ['Em Licitação (%)', prm.pcts.emlicitacao * 100], ['Contratado (%)', prm.pcts.contratado * 100],
         ['Atividades Preparatórias (%)', prm.pcts.preparatorias * 100], ['Não Iniciado (%)', prm.pcts.naoiniciado * 100],
         ['Em Execução — limiar (% do Programado 2026)', prm.limiar],
+        ...GRUPOS_VD_ESTUDO.map(g => [`Valor Deliberado — ${g.label} (%)`, prm.vd[g.classe] * 100]),
+        ['Valor Deliberado — fonte de aplicação', prm.vdFonte || '(todas as fontes)'],
         ['', ''],
-        ['Regra', 'Cópia da Previsão de Empenho por Estágio do SIPOG (cenário PADRÃO, sem Valor Deliberado, subtetos ou edições manuais).'],
-        ['% da LOA', 'Necessidade 2027 dos MAPPs ÷ LOA 2027 do órgão na fonte (a LOA inclui pessoal, custeio e dívida).']
+        ['Regra', 'Cópia da Previsão de Empenho por Estágio do SIPOG (cenário PADRÃO) e do Valor Deliberado por grupo; sem subtetos, PLOA ou edições/travas manuais.'],
+        ['Necessidade Ajustada', 'Programado 2027 + (Programado 2026 − Prev. Empenho × (1 − % deliberado do grupo)).'],
+        ['% da LOA', 'Necessidade 2027 Ajustada dos MAPPs ÷ LOA 2027 do órgão na fonte (a LOA inclui pessoal, custeio e dívida).']
     ].forEach((r, i) => { wsP.addRow(r); if (i === 0) wsP.getRow(1).font = { bold: true, size: 13 }; });
 
     let buffer = await wb.xlsx.writeBuffer();

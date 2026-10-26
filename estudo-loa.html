@@ -106,6 +106,17 @@
                 <div><label for="ep-naoiniciado">Não Iniciado (%)</label><input type="number" id="ep-naoiniciado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-limiar">Em Execução — limiar (% do Prog.)</label><input type="number" id="ep-limiar" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
             </div>
+            <h3 style="font-size:13px; margin:18px 0 4px;">Valor Deliberado por grupo — redução da Previsão de Empenho 2026</h3>
+            <p class="estudo-nota">Mesma regra do bloco "Valor Deliberado Máximo do Empenho 2026 por Grupo de Projetos" do SIPOG: Prev. Empenho Ajustada = Prev. Empenho × (1 − %); TRF Ajustada = Programado 2026 − Prev. Empenho Ajustada; Necessidade 2027 Ajustada = Programado 2027 + TRF Ajustada. No SIPOG o percentual vale só para a Fonte selecionada no momento do "Aplicar" — escolha abaixo a fonte (ou todas). Edições manuais e travas por MAPP do SIPOG não entram no estudo.</p>
+            <div class="estudo-params">
+                <div><label for="vd-contrato-gestao">Contrato Gestão (%)</label><input type="number" id="vd-contrato-gestao" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="vd-continuidade">Continuidade (%)</label><input type="number" id="vd-continuidade" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="vd-pcf-convenio">PCF Convênio (%)</label><input type="number" id="vd-pcf-convenio" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="vd-operacao-credito">Operação Crédito (%)</label><input type="number" id="vd-operacao-credito" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="vd-investimento">Demais Projetos (%)</label><input type="number" id="vd-investimento" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="vd-fonte">Aplicar na fonte</label><select id="vd-fonte" onchange="recalcularEstudo()" style="width:100%; padding:7px 9px; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px;"><option value="">(todas as fontes)</option></select></div>
+            </div>
+            <div class="estudo-tabela-wrap" style="margin-top:12px; max-height:none;"><div id="tabela-grupos"><p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p></div></div>
             <div style="margin-top:12px;"><button class="btn-mini-header" onclick="restaurarParametrosEstudo()">↺ Restaurar padrões do SIPOG</button></div>
         </div>
     </details>
@@ -128,7 +139,7 @@
     <details class="estudo-secao" open>
         <summary>4. Consolidado Órgão × Fonte</summary>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" é a participação da Necessidade 2027 dos MAPPs na LOA — referência, não teto rígido.</p>
+            <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" e "Saldo" usam a Necessidade 2027 Ajustada (igual à Calculada quando o Valor Deliberado é 0%) — referência, não teto rígido.</p>
             <div class="estudo-resumo" id="resumo-consolidado"></div>
             <div class="estudo-filtros">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado()"><option value="">(todas)</option></select></label>
@@ -147,7 +158,7 @@
     <details class="estudo-secao" open>
         <summary>5. Detalhe por MAPP — regra aplicada</summary>
         <div class="estudo-corpo">
-            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 = Programado 2027 + TRF 2026. MAPPs Concluídos, Cancelados, Transferidos e de Entrega Prioritária são expurgados, como no SIPOG.</p>
+            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. MAPPs Concluídos, Cancelados, Transferidos e de Entrega Prioritária são expurgados, como no SIPOG.</p>
             <div class="estudo-filtros">
                 <label>Órgão <select id="filtro-det-orgao" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
                 <label>Fonte <select id="filtro-det-fonte" onchange="renderizarDetalhe()"><option value="">(todas)</option></select></label>
