@@ -7,6 +7,7 @@
 // ─── ESTADO ─────────────────────────────────────────────────────────────────
 let loaLinhas = [];          // [{ grupo, subfonte, descSubfonte, codOrgao, orgao, sigla, valor }]
 let loaArquivo = '';
+let loaConferencia = { conferido: false, divergencias: [] }; // resultado da conferência com o Resumo (vai junto ao salvar na nuvem)
 let mappsBrutos = [];        // linhas da planilha de MAPPs, cabeçalho em maiúsculas
 let mappsArquivo = '';
 let mappsOriginais = [];     // linhas como vieram do arquivo (antes da tradução de colunas), p/ exportação
@@ -164,6 +165,7 @@ async function selecionarArquivoLOA(input) {
 
 function carregarLOA(resultado, nomeArquivo) {
     loaLinhas = resultado.linhas;
+    loaConferencia = { conferido: !!resultado.conferido, divergencias: resultado.divergencias || [] };
     loaArquivo = nomeArquivo || '';
     let total = loaLinhas.reduce((s, l) => s + l.valor, 0);
     let subfontes = new Set(loaLinhas.map(l => l.subfonte)).size;
@@ -883,8 +885,134 @@ function recalcularEstudo() {
     renderizarDePara();
     renderizarConsolidado();
     renderizarDetalhe();
-    let btn = document.getElementById('btn-exportar-estudo');
-    if (btn) btn.disabled = (loaLinhas.length === 0 && mappsCalculados.length === 0);
+    let semDados = (loaLinhas.length === 0 && mappsCalculados.length === 0);
+    ['btn-exportar-estudo', 'btn-salvar-estudo'].forEach(id => {
+        let btn = document.getElementById(id);
+        if (btn) btn.disabled = semDados;
+    });
+}
+
+// ─── NOMEAÇÃO ───────────────────────────────────────────────────────────────
+// Regra dos demais sistemas: nome + data e hora no formato DDMMAAAA-HHMM.
+function carimboDataHora(data) {
+    let d = data || new Date();
+    let p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}${p(d.getMonth() + 1)}${d.getFullYear()}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+// ─── NUVEM (coleção própria "estudos_loa", separada dos cenários do SIPOG) ──
+// Grava os dois arquivos como vieram (para recarregar exatamente o mesmo estudo),
+// os parâmetros, o de-para manual e as ordenações, em chunks (js/05).
+const COLECAO_ESTUDOS = 'estudos_loa';
+
+function coletarParametrosEstudoTela() {
+    let campos = {};
+    for (let id in PADROES_ESTUDO) { let el = document.getElementById(id); if (el) campos[id] = el.value; }
+    let elExp = document.getElementById('ep-expurgar-fisfin');
+    return { campos, expurgarFisFin: elExp ? elExp.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '' };
+}
+
+function aplicarParametrosEstudoTela(p) {
+    if (!p) return;
+    for (let id in (p.campos || {})) { let el = document.getElementById(id); if (el) el.value = p.campos[id]; }
+    let elExp = document.getElementById('ep-expurgar-fisfin');
+    if (elExp && typeof p.expurgarFisFin === 'boolean') elExp.checked = p.expurgarFisFin;
+}
+
+async function salvarEstudoNuvem() {
+    if (loaLinhas.length === 0 && mappsOriginais.length === 0) return alert('Carregue a LOA e/ou a base de MAPPs antes de salvar.');
+    let base = prompt('Nome do estudo (a data e hora DDMMAAAA-HHMM são acrescentadas ao final):', 'Estudo LOA x MAPPs');
+    if (base === null) return;
+    let nome = `${(base.trim() || 'Estudo LOA x MAPPs')} ${carimboDataHora()}`;
+    try {
+        window.__setStatusNuvem('☁️ Salvando estudo...', true);
+        let fb = await aguardarNuvemPronta();
+        let pacote = {
+            sistema: 'SIPOG', tipo: 'estudo-loa', versao_schema: 1,
+            nome, salvo_em: new Date().toISOString(), criado_em: fb.serverTimestamp(),
+            arquivos: { loa: loaArquivo || null, mapps: mappsArquivo || null },
+            parametros: coletarParametrosEstudoTela(),
+            deParaManual: deParaManual,
+            ordemTabelas: ordemTabelas,
+            // "dadosBrutos" alimenta o totalRegistros dos metadados (gravarPacoteFragmentado).
+            dados: { loaLinhas, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
+        };
+        await gravarPacoteFragmentado(fb, COLECAO_ESTUDOS, pacote);
+        window.__setStatusNuvem('☁️ Estudo salvo na nuvem', true);
+        alert(`Estudo "${nome}" salvo na nuvem.`);
+    } catch (err) {
+        console.error(err);
+        window.__setStatusNuvem('☁️ Falha ao salvar estudo', false);
+        alert('Não foi possível salvar o estudo na nuvem. Verifique a conexão e tente novamente.');
+    }
+}
+
+async function listarEstudosNuvem() {
+    let lista = document.getElementById('lista-estudos-nuvem');
+    document.getElementById('modal-estudos-nuvem').style.display = 'flex';
+    lista.innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregando estudos salvos...</p>';
+    try {
+        let fb = await aguardarNuvemPronta();
+        let snap = await fb.getDocs(fb.query(fb.collection(fb.db, COLECAO_ESTUDOS), fb.orderBy('criado_em', 'desc')));
+        if (snap.empty) { lista.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhum estudo salvo na nuvem ainda.</p>'; return; }
+        let h = `<table><thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">Salvo em</th><th class="sem-ordem num">MAPPs</th><th class="sem-ordem" style="width:190px;">Ações</th></tr></thead><tbody>`;
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let quando = (d.criado_em && typeof d.criado_em.toDate === 'function') ? d.criado_em.toDate().toLocaleString('pt-BR')
+                : (d.salvo_em ? new Date(d.salvo_em).toLocaleString('pt-BR') : '—');
+            h += `<tr><td><strong>${escHtml(d.nome || 'Sem nome')}</strong></td><td>${escHtml(quando)}</td>
+                <td class="num">${typeof d.totalRegistros === 'number' ? d.totalRegistros.toLocaleString('pt-BR') : '—'}</td>
+                <td><button class="btn-mini-header" onclick="carregarEstudoNuvemPorId('${docSnap.id}')">⚡ Carregar</button>
+                    <button class="btn-mini-header" onclick="excluirEstudoNuvemPorId('${docSnap.id}')">🗑️ Excluir</button></td></tr>`;
+        });
+        lista.innerHTML = h + '</tbody></table>';
+    } catch (err) {
+        console.error(err);
+        lista.innerHTML = '<p class="estudo-nota" style="padding:12px; color:var(--danger);">Falha ao carregar a lista de estudos. Verifique a conexão.</p>';
+    }
+}
+
+async function carregarEstudoNuvemPorId(id) {
+    if ((loaLinhas.length || mappsOriginais.length) && !confirm('Isso vai substituir os arquivos e parâmetros atuais pelo estudo selecionado. Continuar?')) return;
+    try {
+        window.__setStatusNuvem('☁️ Carregando estudo...', true);
+        let fb = await aguardarNuvemPronta();
+        let pacote = await lerPacoteFragmentado(fb, COLECAO_ESTUDOS, id);
+        if (!pacote || !pacote.dados) { alert('Estudo não encontrado ou vazio — pode ter sido excluído.'); return; }
+        aplicarParametrosEstudoTela(pacote.parametros);
+        deParaManual = pacote.deParaManual || {};
+        salvarDeParaManual();
+        if (pacote.ordemTabelas) ordemTabelas = pacote.ordemTabelas;
+        let dados = pacote.dados;
+        loaLinhas = []; mappsBrutos = []; mappsOriginais = [];
+        if (Array.isArray(dados.loaLinhas) && dados.loaLinhas.length) carregarLOA(Object.assign({ linhas: dados.loaLinhas }, dados.loaConferencia || { conferido: false, divergencias: [] }), (pacote.arquivos || {}).loa);
+        if (Array.isArray(dados.dadosBrutos) && dados.dadosBrutos.length) carregarMAPPs(dados.dadosBrutos, (pacote.arquivos || {}).mapps, dados.colunasMapps);
+        // Fonte do Valor Deliberado só existe na lista depois que a base foi carregada.
+        if (pacote.parametros && pacote.parametros.vdFonte) { let sel = document.getElementById('vd-fonte'); if (sel) sel.value = pacote.parametros.vdFonte; }
+        recalcularEstudo();
+        fecharModalEstudos();
+        window.__setStatusNuvem(`☁️ Estudo carregado: ${pacote.nome || ''}`, true);
+    } catch (err) {
+        console.error(err);
+        window.__setStatusNuvem('☁️ Falha ao carregar estudo', false);
+        alert('Não foi possível carregar o estudo selecionado. Verifique a conexão.');
+    }
+}
+
+async function excluirEstudoNuvemPorId(id) {
+    if (!confirm('Excluir definitivamente este estudo da nuvem? Esta ação não pode ser desfeita.')) return;
+    try {
+        let fb = await aguardarNuvemPronta();
+        await excluirPacoteFragmentado(fb, COLECAO_ESTUDOS, id);
+        listarEstudosNuvem();
+    } catch (err) {
+        console.error(err);
+        alert('Não foi possível excluir o estudo selecionado. Verifique a conexão.');
+    }
+}
+
+function fecharModalEstudos() {
+    document.getElementById('modal-estudos-nuvem').style.display = 'none';
 }
 
 // ─── EXPORTAÇÃO XLSX ────────────────────────────────────────────────────────
@@ -997,7 +1125,7 @@ async function exportarEstudoXLSX() {
     let url = URL.createObjectURL(blob);
     let a = document.createElement('a');
     a.href = url;
-    a.download = `SIPOG_Estudo_LOA_MAPPs_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
+    a.download = `SIPOG_Estudo_LOA_MAPPs_${carimboDataHora()}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -76,6 +76,9 @@
         <div class="header-actions">
             <a class="btn-mini-header" href="index.html" style="text-decoration:none;" title="Volta ao SIPOG">↩ Voltar ao SIPOG</a>
             <button class="btn-mini-header" onclick="alternarTemaEstudo()" title="Alterna entre tema claro e escuro">🌗 Tema</button>
+            <span id="status-nuvem" class="status-badge" style="font-size:11px;">☁️ Conectando...</span>
+            <button class="btn-mini-header" id="btn-salvar-estudo" onclick="salvarEstudoNuvem()" disabled title="Salva na nuvem os dois arquivos carregados, os parâmetros e o de-para; o nome recebe a data e hora (DDMMAAAA-HHMM)">☁️ Salvar na nuvem</button>
+            <button class="btn-mini-header" onclick="listarEstudosNuvem()" title="Lista os estudos salvos na nuvem para carregar ou excluir">☁️ Estudos salvos</button>
             <button class="btn-mini-header" id="btn-exportar-estudo" onclick="exportarEstudoXLSX()" disabled title="Exporta o estado no momento do clique (percentuais, Valor Deliberado, de-para e ordenação das grades), com todas as linhas — os filtros de tela não se aplicam">📥 Exportar XLSX</button>
         </div>
     </div>
@@ -193,10 +196,66 @@
 
 </main>
 
+<!-- Estudos salvos na nuvem (lista para carregar/excluir) -->
+<div id="modal-estudos-nuvem" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; align-items:center; justify-content:center; padding:16px;">
+    <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; width:min(900px, 100%); max-height:85vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--border);">
+            <strong>☁️ Estudos LOA × MAPPs salvos na nuvem</strong>
+            <button class="btn-mini-header" onclick="fecharModalEstudos()">✕ Fechar</button>
+        </div>
+        <div id="lista-estudos-nuvem" style="overflow:auto; padding:8px 12px 14px;"></div>
+    </div>
+</div>
+
+<!-- Firebase (mesmo projeto do SIPOG). Cache em memória: o index.html usa cache
+     persistente, e os dois abertos em abas diferentes disputariam o mesmo cache. -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+    import {
+        initializeFirestore, doc, getDoc, setDoc,
+        collection, addDoc, getDocs, deleteDoc, query, orderBy, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDNLn1986HlOwoJod0lr8w_yn0tUezJjKM",
+        authDomain: "sipog-cofip.firebaseapp.com",
+        projectId: "sipog-cofip",
+        storageBucket: "sipog-cofip.firebasestorage.app",
+        messagingSenderId: "630816191022",
+        appId: "1:630816191022:web:56cbb750d0fa143ceda5bf"
+    };
+
+    const firebaseApp = initializeApp(firebaseConfig);
+    const db = initializeFirestore(firebaseApp, {});
+    const auth = getAuth(firebaseApp);
+
+    window.__fb = {
+        db, doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, query, orderBy, serverTimestamp,
+        authReady: new Promise((resolve, reject) => {
+            let unsubscribe = onAuthStateChanged(auth, (user) => {
+                if (user) { unsubscribe(); resolve(true); }
+            }, reject);
+        })
+    };
+
+    signInAnonymously(auth).catch((err) => {
+        console.error("Falha na autenticação anônima do Firebase:", err);
+        if (typeof window.__setStatusNuvem === 'function') window.__setStatusNuvem('☁️ Nuvem indisponível (autenticação falhou)', false);
+    });
+
+    onAuthStateChanged(auth, (user) => {
+        if (typeof window.__setStatusNuvem === 'function') window.__setStatusNuvem(user ? '☁️ Conectado à nuvem' : '☁️ Conectando...', !!user);
+    });
+</script>
+
 <!-- Utilitários do SIPOG reaproveitados (só definições, sem efeito ao carregar):
-     js/03 → N, S, V, F, valorCelulaExcelJS, labelClasse; js/06 → classificarRegistro, EST_*, labelEstagio. -->
+     js/03 → N, S, V, F, valorCelulaExcelJS, labelClasse, corrigirMojibake;
+     js/06 → classificarRegistro, EST_*, labelEstagio, normalizarEstagio;
+     js/05 → aguardarNuvemPronta, gravar/ler/excluirPacoteFragmentado (nuvem em chunks). -->
 <script src="js/03-utils-formatacao.js"></script>
 <script src="js/06-classificacao-gate.js"></script>
+<script src="js/05-nuvem-firestore.js"></script>
 <script src="js/estudo-loa.js"></script>
 </body>
 </html>

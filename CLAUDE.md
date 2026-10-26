@@ -68,7 +68,10 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 
 Cruza a LOA 2027 (xlsx "Fonte x Órgão", coluna C) com a base de MAPPs (layout do
 `importar()`), sem tocar no estado do SIPOG e sem nuvem (de-para manual em `localStorage`).
-Carrega só `js/03` e `js/06` do SIPOG (definições puras) — não incluir outros arquivos js/01–15.
+Carrega só `js/03`, `js/06` e `js/05` do SIPOG (definições sem efeito ao carregar; o js/05 dá a
+gravação em chunks) — não incluir outros arquivos js/01–15. Nuvem: coleção própria
+`estudos_loa` (separada de `cenarios`), Firebase com cache em memória. Nomes de estudos salvos
+e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos demais sistemas.
 
 - `calcularPrevisaoEmpenhoEstudo()` é **cópia** da Previsão de Empenho por Estágio de
   `processarDados()` (js/08, cenário PADRAO). **Mudou a regra no js/08 → atualizar a cópia.**
