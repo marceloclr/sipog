@@ -22,7 +22,7 @@ const CHAVE_DEPARA_LOCAL = 'sipog_estudo_loa_depara_v1';
 const PADROES_ESTUDO = {
     'ep-conveniado': 20, 'ep-licitado': 20, 'ep-emlicitacao': 15,
     'ep-contratado': 20, 'ep-preparatorias': 5, 'ep-naoiniciado': 0,
-    'ep-limiar': 40,
+    'ep-limiar': 40, 'ep-meses': 5,
     // Valor Deliberado por grupo (DEFAULTS_PARAMETROS.classes, pc-*): redução da Prev. Empenho.
     'vd-contrato-gestao': 0, 'vd-continuidade': 0, 'vd-pcf-convenio': 0,
     'vd-operacao-credito': 0, 'vd-investimento': 0
@@ -258,6 +258,39 @@ function normalizarLayoutMAPPs(linhas, headers) {
     };
 }
 
+// Texto UTF-8 lido como Windows-1252 ("PREPARATÃ“RIAS" em vez de "PREPARATÓRIAS"):
+// regrava os caracteres como bytes 1252 e decodifica de novo como UTF-8. Só troca
+// quando o resultado é UTF-8 válido — "NÃO", "SÃO" etc. continuam intactos.
+const CP1252_ALTOS = { '€': 0x80, '‚': 0x82, 'ƒ': 0x83, '„': 0x84, '…': 0x85, '†': 0x86, '‡': 0x87, 'ˆ': 0x88, '‰': 0x89, 'Š': 0x8A, '‹': 0x8B, 'Œ': 0x8C,
+    'Ž': 0x8E, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '˜': 0x98, '™': 0x99, 'š': 0x9A, '›': 0x9B, 'œ': 0x9C, 'ž': 0x9E, 'Ÿ': 0x9F };
+const DECODIFICADOR_UTF8_ESTRITO = new TextDecoder('utf-8', { fatal: true });
+
+function corrigirMojibake(texto) {
+    if (typeof texto !== 'string' || !/[ÃÂ]/.test(texto)) return texto;
+    let bytes = [];
+    for (let ch of texto) {
+        let c = ch.codePointAt(0);
+        if (c < 0x100) bytes.push(c);
+        else if (CP1252_ALTOS[ch] !== undefined) bytes.push(CP1252_ALTOS[ch]);
+        else return texto;
+    }
+    try { return DECODIFICADOR_UTF8_ESTRITO.decode(new Uint8Array(bytes)); }
+    catch (e) { return texto; }
+}
+
+function corrigirMojibakeLinhas(linhas) {
+    let celulas = 0, exemplo = '';
+    linhas.forEach(l => {
+        for (let k in l) {
+            let v = l[k];
+            if (typeof v !== 'string') continue;
+            let c = corrigirMojibake(v);
+            if (c !== v) { l[k] = c; celulas++; if (!exemplo) exemplo = `${v} → ${c}`; }
+        }
+    });
+    return { celulas, exemplo };
+}
+
 function lerMAPPsDeWorkbook(wb) {
     let ws = wb.worksheets[0];
     let headers = [];
@@ -314,6 +347,7 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
     // Cópia do arquivo como veio (as linhas de mappsBrutos recebem as colunas traduzidas).
     mappsOriginais = mappsBrutos.map(o => Object.assign({}, o));
     mappsColunasOriginais = cab;
+    let corrigidos = corrigirMojibakeLinhas(mappsBrutos);
     let n = normalizarLayoutMAPPs(mappsBrutos, cab);
     mappsArquivo = nomeArquivo || '';
     let avisos = '';
@@ -321,6 +355,8 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
         avisos += `<br>Colunas traduzidas para o layout do SIPOG: ${n.traduzidas.map(t => `${escHtml(t[0])} → ${escHtml(t[1])}`).join(', ')}`;
     if (n.faltando.length)
         avisos += `<br><span class="erro">✖ Colunas não encontradas: ${n.faltando.map(escHtml).join(', ')}</span>`;
+    if (corrigidos.celulas)
+        avisos += `<br><span class="aviso">⚠ Acentuação corrompida corrigida em ${corrigidos.celulas.toLocaleString('pt-BR')} célula(s) (ex.: ${escHtml(corrigidos.exemplo)}) — sem a correção, o estágio não seria reconhecido.</span>`;
     if (n.semGrupo)
         avisos += `<br><span class="aviso">⚠ Sem colunas de grupo (${COLUNAS_GRUPO_MAPPS.join(', ')}): todos os MAPPs seguem a regra por estágio, como "Demais Projetos" — os grupos com 100% do Programado e o expurgo de Entrega Prioritária não se aplicam, e o resultado pode diferir do SIPOG.</span>`;
     let expurgos = mappsBrutos.filter(r => { let e = N(r.ESTAGIO_EXECUCAO); return e.includes('CONCLUIDO') || e.includes('CANCELADO') || e.includes('TRANSFERIDO'); }).length;
@@ -335,7 +371,11 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
 // Simulação PADRAO (o único usado na prática no SIPOG) e sem Valor Deliberado,
 // subtetos ou edições manuais. Se a regra mudar no js/08, atualizar aqui também.
 // pcts: frações (0,20 = 20%); limiar: percentual do Programado 2026 em Em Execução.
-function calcularPrevisaoEmpenhoEstudo(r, pcts, limiar) {
+// opcoes (diferenças do estudo em relação ao SIPOG, desligáveis para comparar):
+//   expurgarFisFin: expurga "EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA" (no SIPOG entra com 100% do Programado);
+//   meses: meses de execução decorridos na anualização de Em Execução (SIPOG fixa 5).
+function calcularPrevisaoEmpenhoEstudo(r, pcts, limiar, opcoes) {
+    let meses = (opcoes && opcoes.meses > 0) ? opcoes.meses : 5;
     let estagio = N(r.ESTAGIO_EXECUCAO);
     let classe = classificarRegistro(r);
     let p26 = V(r.VLR_PROGRAMADO_2026), l26 = V(r.VLR_LIMITE_2026), e26 = V(r.VLR_EMPENHADO_2026), p27 = V(r.VLR_PROGRAMADO_2027);
@@ -350,6 +390,10 @@ function calcularPrevisaoEmpenhoEstudo(r, pcts, limiar) {
         if (estagio.includes('CANCELADO')) motivo += 'MAPP CANCELADO';
         if (estagio.includes('TRANSFERIDO')) motivo += 'MAPP TRANSFERIDO';
         return Object.assign(base, { expurgado: true, regra: motivo, prevEmp: 0, trf: 0, nec: 0 });
+    }
+    // Concluída física e financeiramente: sai do cálculo antes dos grupos (como os expurgos acima).
+    if (opcoes && opcoes.expurgarFisFin && estagio === EST_EXEC_FISFIN_CONCL) {
+        return Object.assign(base, { expurgado: true, regra: 'EXPURGO: EXECUÇÃO FÍSIC/FINAN CONCLUÍDA', prevEmp: 0, trf: 0, nec: 0 });
     }
     if (classe === 'ENTREGA_PRIORITARIA') {
         return Object.assign(base, { expurgado: true, regra: 'EXPURGO: GRUPO ENTREGA PRIORITÁRIA (grupo oculto do sistema)', prevEmp: 0, trf: 0, nec: 0 });
@@ -387,7 +431,7 @@ function calcularPrevisaoEmpenhoEstudo(r, pcts, limiar) {
     else if (estagio === EST_EM_EXECUCAO) {
         let parametro = p26 * (limiar / 100);
         if (e26 === 0) { prevEmp = l26; justificativa = 'EM EXECUÇÃO: EMP=0 → LIMITE 2026'; }
-        else if (e26 > 0 && e26 < parametro) { prevEmp = (e26 / 5) * 12; justificativa = `EM EXECUÇÃO: (EMP/5)×12 [EMP < ${limiar}% PROG]`; }
+        else if (e26 > 0 && e26 < parametro) { prevEmp = (e26 / meses) * 12; justificativa = `EM EXECUÇÃO: (EMP/${meses})×12 [EMP < ${limiar}% PROG]`; }
         else { prevEmp = p26; justificativa = `EM EXECUÇÃO: EMP >= ${limiar}% PROG → PROGRAMADO`; }
         if (prevEmp > p26) { prevEmp = p26; justificativa += ' [CAP: PROG 2026]'; }
     } else { prevEmp = p26; justificativa = 'PADRÃO DE SEGURANÇA (100% PROGRAMADO)'; }
@@ -407,6 +451,10 @@ function lerParametrosEstudo() {
             contratado: v('ep-contratado') / 100, preparatorias: v('ep-preparatorias') / 100, naoiniciado: v('ep-naoiniciado') / 100
         },
         limiar: v('ep-limiar'),
+        opcoes: {
+            expurgarFisFin: !!(document.getElementById('ep-expurgar-fisfin') || {}).checked,
+            meses: v('ep-meses')
+        },
         vd: Object.fromEntries(GRUPOS_VD_ESTUDO.map(g => [g.classe, Math.min(Math.max(v('vd-' + g.sufixo), 0), 100) / 100])),
         vdFonte: (document.getElementById('vd-fonte') || {}).value || ''
     };
@@ -428,6 +476,20 @@ function restaurarParametrosEstudo() {
         let el = document.getElementById(id);
         if (el) el.value = PADROES_ESTUDO[id];
     }
+    // Revisão das regras do estudo: Físic/Finan Concluída expurgada por padrão.
+    let elExp = document.getElementById('ep-expurgar-fisfin');
+    if (elExp) elExp.checked = true;
+    recalcularEstudo();
+}
+
+// Modo de comparação: deixa o estudo idêntico ao SIPOG (sem expurgo extra, 5 meses).
+function igualarAoSIPOG() {
+    for (let id in PADROES_ESTUDO) {
+        let el = document.getElementById(id);
+        if (el) el.value = PADROES_ESTUDO[id];
+    }
+    let elExp = document.getElementById('ep-expurgar-fisfin');
+    if (elExp) elExp.checked = false;
     recalcularEstudo();
 }
 
@@ -690,7 +752,8 @@ function renderizarConsolidado() {
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
     let h = `<table><thead>${cabecalhoOrdenavel('cons', COLUNAS_CONSOLIDADO)}</thead><tbody>`;
     linhas.forEach(l => {
-        h += '<tr>' + COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : `<td class="num">${F(c.valor(l))}</td>`).join('') + '</tr>';
+        h += `<tr class="linha-clicavel" data-orgao="${escHtml(l.orgao)}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)" title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte no card 5">` +
+            COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : `<td class="num">${F(c.valor(l))}</td>`).join('') + '</tr>';
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL (${linhas.length} linhas)</td>
         <td class="num">${F(tot.loa)}</td><td class="num">${tot.qtd}</td><td class="num">${F(tot.p26)}</td>
@@ -787,7 +850,7 @@ function renderizarDetalhe() {
     let fExp = document.getElementById('filtro-det-expurgo').checked;
     let fTxt = N(document.getElementById('filtro-det-texto').value);
     let linhas = linhasDetalheOrdenadas().filter(m =>
-        (fExp || !m.expurgado) && (!fOrg || m.orgao === fOrg) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
+        (fExp || !m.expurgado) && (!fOrg || N(m.orgao) === N(fOrg)) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
         (!fTxt || N(m.mapp).includes(fTxt) || N(m.regra).includes(fTxt)));
 
     let tot = linhas.reduce((t, m) => { t.p26 += m.p26; t.l26 += m.l26; t.e26 += m.e26; t.prevEmp += m.prevEmp; t.prevEmpAj += m.prevEmpAj; t.trf += m.trf; t.p27 += m.p27; t.nec += m.nec; t.necAj += m.necAj; return t; },
@@ -806,12 +869,43 @@ function renderizarDetalhe() {
     cont.innerHTML = h;
 }
 
+// ─── LIGAÇÃO CARD 4 → CARD 5 ────────────────────────────────────────────────
+// Escolhe a opção do select pelo valor normalizado (a sigla da LOA pode vir com
+// grafia diferente da do MAPP); se não houver MAPP com esse valor, cria a opção
+// para o card 5 mostrar "nenhum MAPP" em vez de cair em "(todos)".
+function selecionarOpcao(id, valor) {
+    let sel = document.getElementById(id);
+    if (!sel) return;
+    if (!valor) { sel.value = ''; return; }
+    let op = Array.from(sel.options).find(o => o.value && N(o.value) === N(valor));
+    if (!op) { op = new Option(valor, valor); sel.add(op); }
+    sel.value = op.value;
+}
+
+// Filtros Órgão/Fonte do Consolidado valem também para o Detalhe por MAPP.
+function sincronizarDetalheComConsolidado() {
+    selecionarOpcao('filtro-det-orgao', document.getElementById('filtro-cons-orgao').value);
+    selecionarOpcao('filtro-det-fonte', document.getElementById('filtro-cons-fonte').value);
+    renderizarDetalhe();
+}
+
+// Clique numa linha do Consolidado: abre no Detalhe os MAPPs daquele Órgão × Fonte.
+function abrirMAPPsDoPar(tr) {
+    selecionarOpcao('filtro-det-orgao', tr.dataset.orgao);
+    selecionarOpcao('filtro-det-fonte', tr.dataset.fonte);
+    document.getElementById('filtro-det-estagio').value = '';
+    document.getElementById('filtro-det-texto').value = '';
+    renderizarDetalhe();
+    let secao = document.getElementById('secao-detalhe');
+    if (secao) { secao.open = true; secao.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+}
+
 // ─── ORQUESTRAÇÃO ───────────────────────────────────────────────────────────
 function recalcularEstudo() {
     // A lista de fontes do Valor Deliberado precisa estar pronta antes de ler os parâmetros.
     preencherSelect('vd-fonte', fontesSIPOGDisponiveis(), '(todas as fontes)');
     let prm = lerParametrosEstudo();
-    mappsCalculados = mappsBrutos.map(r => aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar), prm.vd, prm.vdFonte));
+    mappsCalculados = mappsBrutos.map(r => aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte));
     recalcularDeParaSugerido();
     resumoForaCruzamento = montarConsolidado();
     atualizarFiltros();
@@ -918,6 +1012,8 @@ async function exportarEstudoXLSX() {
         ['Em Licitação (%)', prm.pcts.emlicitacao * 100], ['Contratado (%)', prm.pcts.contratado * 100],
         ['Atividades Preparatórias (%)', prm.pcts.preparatorias * 100], ['Não Iniciado (%)', prm.pcts.naoiniciado * 100],
         ['Em Execução — limiar (% do Programado 2026)', prm.limiar],
+        ['Em Execução — meses decorridos na anualização (EMP/meses×12)', prm.opcoes.meses],
+        ['Expurgar Execução Físic/Finan. Concluída', prm.opcoes.expurgarFisFin ? 'SIM' : 'NÃO (igual ao SIPOG)'],
         ...GRUPOS_VD_ESTUDO.map(g => [`Valor Deliberado — ${g.label} (%)`, prm.vd[g.classe] * 100]),
         ['Valor Deliberado — fonte de aplicação', prm.vdFonte || '(todas as fontes)'],
         ['', ''],

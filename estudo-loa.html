@@ -46,6 +46,8 @@
     td.col-mapp span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
     td.col-fonte { min-width: 150px; max-width: 220px; white-space: normal; }
     td.col-regra { min-width: 170px; max-width: 240px; white-space: normal; font-size: 11px; }
+    tr.linha-clicavel { cursor: pointer; }
+    tr.linha-clicavel:hover td { background: var(--panel2); }
     .estudo-tag { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
     .tag-exata { background: rgba(38,167,55,0.15); color: var(--success); }
     .tag-tesouro { background: rgba(245,156,0,0.15); color: var(--warning); }
@@ -114,6 +116,10 @@
                 <div><label for="ep-preparatorias">Ativ. Preparatórias (%)</label><input type="number" id="ep-preparatorias" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-naoiniciado">Não Iniciado (%)</label><input type="number" id="ep-naoiniciado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-limiar">Em Execução — limiar (% do Prog.)</label><input type="number" id="ep-limiar" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
+                <div><label for="ep-meses" title="Regra (EMP/meses)×12 de Em Execução. O SIPOG fixa 5 (dados até maio). Use o nº de meses até a data da extração.">Em Execução — meses decorridos</label><input type="number" id="ep-meses" min="1" max="12" step="0.5" oninput="recalcularEstudo()"></div>
+            </div>
+            <div style="margin-top:10px; font-size:12px;">
+                <label><input type="checkbox" id="ep-expurgar-fisfin" checked onchange="recalcularEstudo()"> Expurgar MAPPs em <strong>Execução Físic/Finan. Concluída</strong> <span style="color:var(--muted);">(no SIPOG eles entram com 100% do Programado 2026 e TRF zero)</span></label>
             </div>
             <h3 style="font-size:13px; margin:18px 0 4px;">Valor Deliberado por grupo — redução da Previsão de Empenho 2026</h3>
             <p class="estudo-nota">Mesma regra do bloco "Valor Deliberado Máximo do Empenho 2026 por Grupo de Projetos" do SIPOG: Prev. Empenho Ajustada = Prev. Empenho × (1 − %); TRF Ajustada = Programado 2026 − Prev. Empenho Ajustada; Necessidade 2027 Ajustada = Programado 2027 + TRF Ajustada. No SIPOG o percentual vale só para a Fonte selecionada no momento do "Aplicar" — escolha abaixo a fonte (ou todas). Edições manuais e travas por MAPP do SIPOG não entram no estudo.</p>
@@ -126,7 +132,10 @@
                 <div><label for="vd-fonte">Aplicar na fonte</label><select id="vd-fonte" onchange="recalcularEstudo()" style="width:100%; padding:7px 9px; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px;"><option value="">(todas as fontes)</option></select></div>
             </div>
             <div class="estudo-tabela-wrap" style="margin-top:12px; max-height:none;"><div id="tabela-grupos"><p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p></div></div>
-            <div style="margin-top:12px;"><button class="btn-mini-header" onclick="restaurarParametrosEstudo()">↺ Restaurar padrões do SIPOG</button></div>
+            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn-mini-header" onclick="restaurarParametrosEstudo()" title="Percentuais padrão do SIPOG + regras revisadas do estudo (expurgo de Físic/Finan. Concluída)">↺ Restaurar padrões</button>
+                <button class="btn-mini-header" onclick="igualarAoSIPOG()" title="Mesmas regras do SIPOG: sem o expurgo extra e 5 meses na anualização — para conferir números com o SIPOG">⚖ Igualar ao SIPOG</button>
+            </div>
         </div>
     </details>
 
@@ -154,8 +163,8 @@
             <p class="estudo-nota">A LOA é o orçamento inteiro do órgão naquela fonte (pessoal, custeio, dívida e investimento); os MAPPs são só os projetos. "% da LOA" e "Saldo" usam a Necessidade 2027 Ajustada (igual à Calculada quando o Valor Deliberado é 0%) — referência, não teto rígido.</p>
             <div class="estudo-resumo" id="resumo-consolidado"></div>
             <div class="estudo-filtros">
-                <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado()"><option value="">(todas)</option></select></label>
-                <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado()"><option value="">(todos)</option></select></label>
+                <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()"><option value="">(todas)</option></select></label>
+                <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); sincronizarDetalheComConsolidado()"><option value="">(todos)</option></select></label>
                 <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado()">
                     <option value="">(todas)</option>
                     <option value="OK">LOA e MAPPs</option>
@@ -168,10 +177,10 @@
         </div>
     </details>
 
-    <details class="estudo-secao" open>
+    <details class="estudo-secao" id="secao-detalhe" open>
         <summary>5. Detalhe por MAPP — regra aplicada</summary>
         <div class="estudo-corpo">
-            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. MAPPs Concluídos, Cancelados, Transferidos e de Entrega Prioritária são expurgados, como no SIPOG.</p>
+            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos e Entrega Prioritária (como no SIPOG) e, se marcado nos parâmetros, Execução Físic/Finan. Concluída. Os filtros Órgão e Fonte do card 4 são aplicados aqui automaticamente; clique numa linha do card 4 para ver os MAPPs daquele par.</p>
             <div class="estudo-filtros">
                 <label>Órgão <select id="filtro-det-orgao" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
                 <label>Fonte <select id="filtro-det-fonte" onchange="renderizarDetalhe()"><option value="">(todas)</option></select></label>

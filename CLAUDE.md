@@ -59,6 +59,11 @@ Carrega só `js/03` e `js/06` do SIPOG (definições puras) — não incluir out
   `processarDados()` (js/08, cenário PADRAO). **Mudou a regra no js/08 → atualizar a cópia.**
   Conferência: processar a base real no SIPOG com parâmetros padrão e comparar MAPP a MAPP
   (`prevEmp`, `regra`, `nec`); em 2026-10-26 deu 7.300/7.300 iguais.
+- Diferenças **intencionais** do estudo (desligadas pelo botão "⚖ Igualar ao SIPOG"):
+  expurgo de "EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA" (SIPOG: 100% do Programado, TRF zero) e meses
+  decorridos parametrizáveis em `(EMP/meses)×12` (SIPOG fixa 5). A leitura também corrige
+  acentos corrompidos (UTF-8 lido como 1252, ex.: "PREPARATÃ“RIAS") — o cenário "Base 14-07"
+  da nuvem do SIPOG tem 403 MAPPs assim, que no SIPOG caem no "padrão de segurança" (100%).
 - `aplicarValorDeliberadoEstudo()` é **cópia** da conta de `aplicarValorParadigmaGrupoCore()`
   (js/07): Prev. Emp. × (1 − % do grupo) → TRF e Necessidade Ajustadas, na fonte escolhida ou
   em todas; sem travas/edições manuais. Conferido em 2026-10-26: 7.111/7.111 iguais.
