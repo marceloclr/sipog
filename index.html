@@ -411,6 +411,7 @@
                     <tr><td>ATIVIDADES PREPARATÓRIAS</td><td><input type="number" id="p-preparatorias" class="input-table" value="5" onchange="onChangeEstagioPercentual()" title="Se Limite 2026 = 0: Empenho Previsto = Programado 2026 × este %. Se Limite 2026 ≠ 0: usa o Limite 2026 (ignora este campo). Aumentar reduz a Necessidade Real 2027 e melhora o Saldo; diminuir faz o inverso. Recalcula automaticamente ao sair do campo.">%</td><td style="font-size:11px;" id="resumo-preparatorias">—</td></tr>
                     <tr><td>NÃO INICIADO</td><td><input type="number" id="p-naoiniciado" class="input-table" value="0" onchange="onChangeEstagioPercentual()" title="Empenho Previsto = Programado 2026 × este %, sempre (não depende do Limite 2026). Aumentar reduz a Necessidade Real 2027 e melhora o Saldo; diminuir faz o inverso. Recalcula automaticamente ao sair do campo.">%</td><td></td></tr>
                     <tr><td>PARALISADO</td><td style="font-size:11px; color:var(--muted);" title="Empenho Previsto é sempre igual ao Empenhado 2026 do MAPP — não é uma taxa e não tem campo editável aqui.">Fixo = Empenhado 2026</td><td></td></tr>
+                    <tr><td>EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA</td><td style="font-size:11px;" title="Ligado (padrão): o MAPP concluído física e financeiramente sai do cálculo, como Concluído/Cancelado/Transferido. Desligado: entra com 100% do Programado 2026 (TRF zero). Recalcula automaticamente."><label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="r-expurgar-fisfin" checked onchange="onChangeEstagioPercentual()"> Expurgar</label></td><td style="font-size:11px; color:var(--muted);">Desligado: fixo = 100% do Programado 2026</td></tr>
                 </tbody>
             </table>
         </div>
@@ -435,6 +436,11 @@
                         <span style="font-size:13px; color:var(--text); font-weight:600;">Percentual limite sobre o Programado 2026:</span>
                         <input type="number" id="r-exec-limiar" class="input-table" value="40" min="1" max="99" style="width:70px;" oninput="sincronizarCenario()">
                         <span style="font-size:13px; color:var(--text); font-weight:600;">%</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:10px;">
+                        <span style="font-size:13px; color:var(--text); font-weight:600;" title="Usado na regra 2: (Empenhado 2026 ÷ meses decorridos) × 12. Use o número de meses de execução até a data da extração da base (ex.: dados até meados de julho ≈ 6,5).">Meses de execução decorridos na base:</span>
+                        <input type="number" id="r-exec-meses" class="input-table" value="5" min="1" max="12" step="0.5" style="width:70px;" oninput="sincronizarCenario()">
+                        <span style="font-size:12px; color:var(--muted);">(padrão 5)</span>
                     </div>
                     <div style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.7;">
                         Este percentual só vale para MAPPs no estágio <strong>EM EXECUÇÃO</strong> — os demais estágios (Conveniado, Licitado, Contratado etc.) usam os percentuais fixos do bloco "Ajustar Previsão de Empenho 2026, por Estágio de Execução", logo acima.
@@ -468,8 +474,8 @@
                             <span style="background:var(--accent); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; flex-shrink:0; margin-top:1px;">2</span>
                             <div>
                                 <div style="font-size:13px; font-weight:700; color:var(--text); margin-bottom:3px;">Empenhado 2026 maior que zero e inferior ao Parâmetro</div>
-                                <div style="font-size:12px; color:var(--muted); line-height:1.6;">Previsão de Empenho 2026 <strong style="color:var(--success)">= (Empenhado 2026 ÷ 5) × 12</strong><br>
-                                <span style="font-size:11px; opacity:0.8;">Extrapolação do empenho acumulado em 5 meses para 12 meses.</span></div>
+                                <div style="font-size:12px; color:var(--muted); line-height:1.6;">Previsão de Empenho 2026 <strong style="color:var(--success)">= (Empenhado 2026 ÷ meses decorridos) × 12</strong><br>
+                                <span style="font-size:11px; opacity:0.8;">Extrapolação do empenho acumulado até a data da base para 12 meses (meses decorridos: parâmetro acima, padrão 5).</span></div>
                             </div>
                         </div>
 

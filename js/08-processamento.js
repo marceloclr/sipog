@@ -57,6 +57,14 @@ function montarDadosAjustesRealizados() {
             diferentesEstagio.push(`${el.closest('tr').querySelector('td').innerText}: ${el.value}% (padrão ${DEFAULTS_PARAMETROS.estagios[k]}%)`);
         }
     }
+    let elExpFisFin = document.getElementById('r-expurgar-fisfin');
+    if (elExpFisFin && elExpFisFin.checked !== DEFAULTS_PARAMETROS.regras['r-expurgar-fisfin']) {
+        diferentesEstagio.push(`Execução Físic/Finan. Concluída: ${elExpFisFin.checked ? 'expurgada' : 'NÃO expurgada'} (padrão: ${DEFAULTS_PARAMETROS.regras['r-expurgar-fisfin'] ? 'expurgar' : 'manter'})`);
+    }
+    let elMesesExec = document.getElementById('r-exec-meses');
+    if (elMesesExec && V(elMesesExec.value) !== DEFAULTS_PARAMETROS.cenario['r-exec-meses']) {
+        diferentesEstagio.push(`Em Execução — meses decorridos: ${elMesesExec.value} (padrão ${DEFAULTS_PARAMETROS.cenario['r-exec-meses']})`);
+    }
     if (diferentesEstagio.length > 0) {
         secoes.push({ titulo: '⚙️ Parametrização por Estágio alterada', itens: diferentesEstagio });
         qtdAjustesAtivos++;
@@ -155,8 +163,9 @@ const PREMISSAS_SISTEMA = [
             'Não Iniciado: Programado × taxa configurável (0%* padrão).',
             'Paralisado: fixo = Empenhado 2026.',
             'Execução Física Concluída: fixo = Limite 2026.',
-            'Execução Físic/Finan,Concluída: fixo = 100% do Programado 2026.',
-            'Em Execução: Empenhado=0 → Limite 2026; Empenhado < 40%* do Programado → (Empenhado/5)×12; Empenhado ≥ 40%* → Programado 2026.',
+            'Execução Físic/Finan,Concluída: excluída do cálculo (expurgo, ligado*); se o expurgo for desligado, fixo = 100% do Programado 2026.',
+            'Em Execução: Empenhado=0 → Limite 2026; Empenhado < 40%* do Programado → (Empenhado/meses decorridos)×12, com 5 meses*; Empenhado ≥ 40%* → Programado 2026.',
+            'Variações de texto do estágio (acento corrompido, espaços, "FINAN." ou "FINAN, ") são normalizadas antes da comparação.',
             'Não Definido / Não Informado / estágio não reconhecido: 100% do Programado (padrão de segurança).',
             'Cancelado / Transferido / Concluído: excluído do cálculo inteiramente.',
             '* valores padrão de fábrica — veja "Ajustes Realizados" para o que está configurado agora.'
@@ -254,6 +263,13 @@ function processarDados() {
 
     let cenario = document.getElementById('cenario-opcao').value;
     estagiosSemRegra = {};
+    // Regra liga/desliga (padrão: ligada) — vale para a Necessidade Calculada e a
+    // Ajustada, porque tira o MAPP do cenário (expurgo), como Concluído/Cancelado.
+    let elExpurgoFisFin = document.getElementById('r-expurgar-fisfin');
+    let expurgarFisFin = elExpurgoFisFin ? elExpurgoFisFin.checked : DEFAULTS_PARAMETROS.regras['r-expurgar-fisfin'];
+    // Meses decorridos na anualização de Em Execução: tela (Ajustada) e padrão (Calculada).
+    let _meses = (typeof window.r_exec_meses === 'number' && window.r_exec_meses > 0) ? window.r_exec_meses : DEFAULTS_PARAMETROS.cenario['r-exec-meses'];
+    let _mesesPadrao = DEFAULTS_PARAMETROS.cenario['r-exec-meses'];
 
     dadosBrutos.forEach((r, idx) => {
         let estagio = normalizarEstagio(r.ESTAGIO_EXECUCAO);
@@ -273,6 +289,19 @@ function processarDados() {
                 isExpurgado: true, regra: motivoExpurgo
             });
             return; 
+        }
+
+        // Execução Físic/Finan Concluída: projeto encerrado física e financeiramente —
+        // sai do cenário ativo (expurgo), antes dos grupos, como Concluído/Cancelado.
+        // Desligável no bloco "Ajustar Previsão de Empenho 2026, por Estágio".
+        if (expurgarFisFin && estagio === EST_EXEC_FISFIN_CONCL) {
+            totalRegistrosExpurgados++;
+            dadosExcluidos.push({
+                idOriginal: idx, mapp: r.MAPP || 'SEM MAPP', secretaria: r.SECRETARIA || 'NÃO INFORMADO', orgao: r.ORGAO || 'NÃO INFORMADO',
+                fonte: r.FONTE || 'NÃO INFORMADA', estagio: labelEstagio(estagio), p26: p26, p27: p27, classe: classe,
+                isExpurgado: true, regra: "EXPURGO: EXECUÇÃO FÍSIC/FINAN CONCLUÍDA"
+            });
+            return;
         }
 
         // Grupo Entrega Prioritária foi ocultado do sistema — tratado como expurgo
@@ -340,9 +369,9 @@ function processarDados() {
                 if (cenario === 'REDUCAO_10') { prevEmp = l26 * (1 - _modPct/100); justificativa = `CENÁRIO: EM EXECUÇÃO (LIMITE -${_modPct}%)`; }
                 else if (cenario === 'ZERA_CRITICO' && e26 < (p26 * (_critico / 100))) { prevEmp = 0; justificativa = "CENÁRIO: CRÍTICO EXTREMO ZERO"; }
             } else if (e26 > 0 && e26 < _parametro) {
-                // Regra 1: 0 < Empenhado < parâmetro → (Empenhado / 5) × 12
-                prevEmp = (e26 / 5) * 12;
-                justificativa = `EM EXECUÇÃO: (EMP/5)×12 [EMP < ${_limiar}% PROG]`;
+                // Regra 1: 0 < Empenhado < parâmetro → (Empenhado / meses decorridos) × 12
+                prevEmp = (e26 / _meses) * 12;
+                justificativa = `EM EXECUÇÃO: (EMP/${_meses})×12 [EMP < ${_limiar}% PROG]`;
             } else {
                 // Empenhado >= parâmetro → 100% do Programado 2026
                 prevEmp = p26;
@@ -379,7 +408,7 @@ function processarDados() {
             let _limiarPadrao = DEFAULTS_PARAMETROS.cenario['r-exec-limiar'];
             let _parametroPadrao = p26 * (_limiarPadrao / 100);
             if (e26 === 0) { prevEmpPadrao = l26; }
-            else if (e26 > 0 && e26 < _parametroPadrao) { prevEmpPadrao = (e26 / 5) * 12; }
+            else if (e26 > 0 && e26 < _parametroPadrao) { prevEmpPadrao = (e26 / _mesesPadrao) * 12; }
             else { prevEmpPadrao = p26; }
             if (prevEmpPadrao > p26) prevEmpPadrao = p26;
         }

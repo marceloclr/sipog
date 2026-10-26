@@ -88,9 +88,9 @@ async function baixarModeloXLSX() {
         const cab2 = wsI.getRow(48); cab2.getCell(1).value = 'Estágio'; cab2.getCell(2).value = 'Efeito no cálculo (Empenho Previsto 2026)';
         cab2.font = { bold: true };
         const efeitos = [
-            ['EM EXECUÇÃO', 'Regra do gatilho: Empenhado=0 → usa Limite 2026; Empenhado < 40% do Programado → (Empenhado/5)×12; Empenhado ≥ 40% → 100% do Programado.'],
+            ['EM EXECUÇÃO', 'Regra do gatilho: Empenhado=0 → usa Limite 2026; Empenhado < 40% do Programado → (Empenhado/meses decorridos)×12, padrão 5 meses; Empenhado ≥ 40% → 100% do Programado.'],
             ['EXECUÇÃO FÍSICA CONCLUÍDA', 'Fixo = Limite 2026.'],
-            ['EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA', 'Fixo = 100% do Programado 2026 (sem transferência).'],
+            ['EXECUÇÃO FÍSIC/FINAN,CONCLUÍDA', 'MAPP é excluído do cálculo (expurgo, padrão). Se o expurgo for desligado na Parametrização: fixo = 100% do Programado 2026.'],
             ['PARALISADO', 'Fixo = Empenhado 2026.'],
             ['NÃO INICIADO', 'Programado 2026 × percentual configurado na Parametrização (padrão 0%).'],
             ['EM LICITAÇÃO', 'Se Limite 2026 = 0: Programado × 15%. Se Limite ≠ 0: usa o Limite 2026.'],

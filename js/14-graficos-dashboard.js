@@ -6,10 +6,13 @@ function sincronizarCenario() {
     let limiar = parseFloat(document.getElementById('r-exec-limiar').value) || 40;
     let critico = parseFloat(document.getElementById('r-exec-critico').value) || 15;
     let modPct  = parseFloat(document.getElementById('r-cenario-moderado-pct').value) || 10;
+    let elMeses = document.getElementById('r-exec-meses');
+    let meses = (elMeses && parseFloat(elMeses.value) > 0) ? Math.min(parseFloat(elMeses.value), 12) : DEFAULTS_PARAMETROS.cenario['r-exec-meses'];
 
     if (critico > limiar) critico = limiar;
 
     window.r_exec_limiar = limiar;
+    window.r_exec_meses = meses;
     window.r_exec_critico = critico;
     window.r_mod_pct = modPct;
 
@@ -38,6 +41,7 @@ function marcarCenarioDesatualizado(ativo) {
 }
 // Inicializa as variáveis globais com os defaults ao carregar a página
 window.r_exec_limiar = 40;
+window.r_exec_meses = 5;
 window.r_exec_critico = 15;
 window.r_mod_pct = 10;
 

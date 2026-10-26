@@ -110,8 +110,12 @@ function coletarParametros() {
             'plo-operacao-credito': document.getElementById('plo-operacao-credito').value,
             'plo-investimento': document.getElementById('plo-investimento').value
         },
+        regras: {
+            'r-expurgar-fisfin': document.getElementById('r-expurgar-fisfin').checked
+        },
         cenario: {
             'r-exec-limiar': document.getElementById('r-exec-limiar').value,
+            'r-exec-meses': document.getElementById('r-exec-meses').value,
             'r-cenario-moderado-pct': document.getElementById('r-cenario-moderado-pct').value,
             'r-exec-critico': document.getElementById('r-exec-critico').value
         },
@@ -137,7 +141,10 @@ const DEFAULTS_PARAMETROS = {
         'plo-contrato-gestao': 0, 'plo-continuidade': 0, 'plo-pcf-convenio': 0,
         'plo-operacao-credito': 0, 'plo-investimento': 0
     },
-    cenario: { 'r-exec-limiar': 40, 'r-cenario-moderado-pct': 10, 'r-exec-critico': 15 }
+    // Regras liga/desliga: Execução Físic/Finan Concluída sai do cálculo (expurgo).
+    regras: { 'r-expurgar-fisfin': true },
+    // r-exec-meses: meses de execução decorridos na anualização (Empenhado ÷ meses) × 12.
+    cenario: { 'r-exec-limiar': 40, 'r-exec-meses': 5, 'r-cenario-moderado-pct': 10, 'r-exec-critico': 15 }
 };
 
 // Reseta a tela de parametrização para os valores padrão da regra vigente.
@@ -148,6 +155,7 @@ function aplicarDefaultsParametros() {
     for (let k in DEFAULTS_PARAMETROS.classes) { let el = document.getElementById(k); if (el) el.value = DEFAULTS_PARAMETROS.classes[k]; }
     for (let k in DEFAULTS_PARAMETROS.plo) { let el = document.getElementById(k); if (el) el.value = DEFAULTS_PARAMETROS.plo[k]; }
     for (let k in DEFAULTS_PARAMETROS.cenario) { let el = document.getElementById(k); if (el) el.value = DEFAULTS_PARAMETROS.cenario[k]; }
+    for (let k in DEFAULTS_PARAMETROS.regras) { let el = document.getElementById(k); if (el) el.checked = DEFAULTS_PARAMETROS.regras[k]; }
     prevEmpAjustesPreservados = {};
     if (typeof resetarQuebradosSlider === 'function') resetarQuebradosSlider();
     if (typeof sincronizarCenario === 'function') sincronizarCenario();
@@ -188,9 +196,12 @@ function aplicarParametros(p) {
         classesRestauradas = p.classes;
     }
     if (p.plo) for (let k in p.plo) { let el = document.getElementById(k); if (el) el.value = p.plo[k]; }
+    // Pacotes salvos antes das regras liga/desliga não têm "regras": ficam no padrão.
+    if (p.regras) for (let k in p.regras) { let el = document.getElementById(k); if (el) el.checked = !!p.regras[k]; }
     if (p.cenario) {
         let c = p.cenario;
         if ('r-exec-limiar' in c) document.getElementById('r-exec-limiar').value = c['r-exec-limiar'];
+        if ('r-exec-meses' in c) document.getElementById('r-exec-meses').value = c['r-exec-meses'];
         if ('r-cenario-moderado-pct' in c) { let el = document.getElementById('r-cenario-moderado-pct'); if (el) el.value = c['r-cenario-moderado-pct']; }
         if ('r-exec-critico' in c) { let el = document.getElementById('r-exec-critico'); if (el) el.value = c['r-exec-critico']; }
         // r-cen-padrao / r-cen-moderado / r-cen-restritivo foram removidos da UI — ignorar se presentes em pacotes antigos

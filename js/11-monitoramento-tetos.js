@@ -624,6 +624,9 @@ function calcularHouveAjusteGlobal() {
         let el = document.getElementById(id);
         return el && V(el.value) !== defaults[id];
     });
+    // Meses decorridos diferentes do padrão também mudam a Previsão de Empenho da tela (Ajustada).
+    let elMeses = document.getElementById('r-exec-meses');
+    if (elMeses && V(elMeses.value) !== DEFAULTS_PARAMETROS.cenario['r-exec-meses']) estagioDiferente = true;
     let porFonteAtual = prevEmpAjustesPreservados[N(monFonteSelecionada)];
     let temValorParadigma = !!(porFonteAtual && Object.keys(porFonteAtual).length > 0);
     let temMappTravado = dadosProcessados.some(d => d.foiAjustado);
