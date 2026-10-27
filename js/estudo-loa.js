@@ -1036,6 +1036,96 @@ function renderizarDePara() {
         <td colspan="2" style="font-weight:600; font-size:11px; white-space:normal;">Com fonte: ${tot.qtdCom} · ${F(tot.valorCom)} &nbsp;|&nbsp; Sem fonte: ${tot.qtdSem} · ${F(tot.valorSem)}</td>
         </tr></tfoot></table>`;
     cont.innerHTML = h;
+    renderizarDeParaPorMapp(todas, fGrupo);
+}
+
+// ─── DE-PARA VISTO PELA FONTE DO MAPP ───────────────────────────────────────
+// Várias fontes da LOA podem ir para uma mesma Fonte do MAPP (sem rateio: cada fonte da LOA vai
+// inteira para uma só). Uma linha por Fonte do MAPP; o clique abre a composição na própria grade,
+// com ✕ (desligar) e "+ ligar fonte da LOA".
+let expandidosDeParaMapp = new Set();
+
+function alternarFonteMappDePara(fonte) {
+    if (expandidosDeParaMapp.has(fonte)) expandidosDeParaMapp.delete(fonte); else expandidosDeParaMapp.add(fonte);
+    renderizarDePara();
+}
+
+function ligarFonteLOA(sel) {
+    if (!sel.value) return;
+    deParaManual[sel.value] = sel.dataset.fonte;
+    salvarDeParaManual();
+    recalcularEstudo();
+}
+
+function desligarFonteLOA(btn) {
+    deParaManual[btn.dataset.subfonte] = '';
+    salvarDeParaManual();
+    recalcularEstudo();
+}
+
+function renderizarDeParaPorMapp(todas, fGrupo) {
+    let cont = document.getElementById('tabela-depara-mapp');
+    if (!cont) return;
+    let fTxt = N((document.getElementById('filtro-dp-texto') || {}).value || '');
+    let porFonte = {};
+    let obter = f => porFonte[f] || (porFonte[f] = { fonte: f, subs: [], loa: 0, mapps: 0, necAj: 0 });
+    fontesSIPOGDisponiveis().forEach(obter);
+    todas.forEach(s => {
+        let f = fonteEfetiva(s.subfonte).fonte;
+        if (!f || (fGrupo && s.grupo !== fGrupo)) return;
+        let g = obter(f);
+        g.subs.push(s); g.loa += s.valor;
+    });
+    mappsCalculados.forEach(m => { if (!m.expurgado && porFonte[m.fonte]) { porFonte[m.fonte].mapps++; porFonte[m.fonte].necAj += m.necAj; } });
+    let linhas = Object.values(porFonte).filter(g => (!fGrupo || g.subs.length) && (!fTxt || N(g.fonte).includes(fTxt)))
+        .sort((a, b) => (b.loa - a.loa) || (b.necAj - a.necAj) || a.fonte.localeCompare(b.fonte));
+    if (!linhas.length) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma Fonte do MAPP para o filtro.</p>'; return; }
+    let h = `<table><thead><tr>${thDesc('Fonte do MAPP', 'Fonte da base de MAPPs. Clique na linha (▸) para ver e editar as fontes da LOA ligadas a ela.')}
+        ${thDesc('Fontes da LOA', 'Quantas fontes (sub fontes) da LOA estão ligadas a esta Fonte do MAPP pelo de-para. Cada fonte da LOA vai inteira para uma só Fonte do MAPP.', 'num')}
+        ${thDesc('LOA 2027', 'Σ LOA 2027 das fontes da LOA ligadas (só Executivo, recorte da aba 2).', 'num')}
+        ${thDesc('MAPPs', 'MAPPs ativos nesta Fonte do MAPP.', 'num')}${thDesc('Nec. 2027 Ajustada', 'Σ Nec. 2027 Ajustada dos MAPPs ativos da fonte.', 'num')}
+        ${thDesc('Necessidade ÷ LOA', 'Nec. Ajustada ÷ LOA × 100 (sem LOA: —).', 'num')}</tr></thead><tbody>`;
+    linhas.forEach(g => {
+        let aberto = expandidosDeParaMapp.has(g.fonte);
+        let pct = g.loa > 0 ? g.necAj / g.loa * 100 : null;
+        let compos = g.subs.length ? `Σ = ${g.subs.map(s => `${s.subfonte} ${FT(s.valor)}`).join(' + ')} = ${FT(g.loa)}` : 'Nenhuma fonte da LOA ligada';
+        h += `<tr class="linha-clicavel${g.subs.length ? '' : ' alerta-semdestino'}" data-fonte="${escHtml(g.fonte)}" onclick="alternarFonteMappDePara(this.dataset.fonte)" title="${aberto ? 'Recolher' : 'Ver e editar as fontes da LOA ligadas'}">
+            <td><span class="seta-grupo">${aberto ? '▾' : '▸'}</span> <strong>${escHtml(g.fonte)}</strong></td>
+            <td class="num"${dica(compos)}>${g.subs.length || '—'}</td>${g.loa ? tdNum(g.loa, compos) : '<td class="num">—</td>'}
+            <td class="num">${g.mapps || '—'}</td>${tdNum(g.necAj, `Σ Nec. 2027 Ajustada dos ${g.mapps} MAPPs = ${FT(g.necAj)}`)}
+            <td class="num ${pct !== null && pct > 100 ? 'pct-alto' : ''}"${dica(pct === null ? 'Sem LOA ligada' : `${FT(g.necAj)} ÷ ${FT(g.loa)} × 100`)}>${fmtPct(pct)}</td></tr>`;
+        if (aberto) h += `<tr class="linha-mapps"><td colspan="6">${subtabelaComposicaoFonte(g, todas)}</td></tr>`;
+    });
+    let semLOA = linhas.filter(g => !g.subs.length && g.necAj > 0.5);
+    h += `</tbody><tfoot><tr><td>TOTAL (${linhas.length} Fontes do MAPP)</td><td class="num">${linhas.reduce((s, g) => s + g.subs.length, 0)}</td>
+        ${tdNum(linhas.reduce((s, g) => s + g.loa, 0), 'Σ LOA ligada')}<td class="num">${linhas.reduce((s, g) => s + g.mapps, 0).toLocaleString('pt-BR')}</td>
+        ${tdNum(linhas.reduce((s, g) => s + g.necAj, 0), 'Σ Nec. Ajustada')}<td></td></tr></tfoot></table>`;
+    cont.innerHTML = h;
+    let aviso = document.getElementById('aviso-depara-mapp');
+    if (aviso) aviso.innerHTML = semLOA.length
+        ? `⚠ ${semLOA.length} Fonte(s) do MAPP com necessidade e <strong>nenhuma fonte da LOA ligada</strong> (${abreviarValor(semLOA.reduce((s, g) => s + g.necAj, 0))} de Nec. Ajustada): ${escHtml(semLOA.slice(0, 6).map(g => g.fonte).join('; '))}${semLOA.length > 6 ? '…' : ''}. Se alguma fonte da LOA "sem par" corresponde a elas, ligue-a abrindo a linha.`
+        : '';
+}
+
+function subtabelaComposicaoFonte(g, todas) {
+    let h = `<table class="subtabela-mapps"><thead><tr>${thDesc('Fonte da LOA', 'Sub fonte da LOA ligada a esta Fonte do MAPP.')}${thDesc('Descrição', 'Descrição da sub fonte na LOA.')}
+        ${thDesc('Grupo', 'Tesouro ou Outras Fontes.')}${thDesc('Regra', 'exata, tesouro, prefixo ou manual.')}${thDesc('LOA 2027', 'LOA da sub fonte (Executivo).', 'num')}<th class="sem-ordem"></th></tr></thead><tbody>`;
+    g.subs.slice().sort((a, b) => b.valor - a.valor).forEach(s => {
+        let ef = fonteEfetiva(s.subfonte);
+        h += `<tr><td style="white-space:nowrap;">${escHtml(s.subfonte)}</td><td>${escHtml(s.desc)}</td><td>${escHtml(s.grupo)}</td>
+            <td><span class="estudo-tag tag-${ef.regra === 'sem' ? 'sem' : ef.regra}">${ROTULO_REGRA_DEPARA[ef.regra] || ef.regra}</span></td>${tdNum(s.valor, `LOA 2027 da sub fonte = ${FT(s.valor)}`)}
+            <td><button class="btn-link" data-subfonte="${escHtml(s.subfonte)}" onclick="event.stopPropagation(); desligarFonteLOA(this)" title="Desligar: a fonte da LOA fica sem Fonte do MAPP (de-para manual)">✕ desligar</button></td></tr>`;
+    });
+    // Fontes da LOA que podem ser ligadas: sem par primeiro, depois as ligadas a outra Fonte do MAPP.
+    let candidatas = todas.filter(s => fonteEfetiva(s.subfonte).fonte !== g.fonte)
+        .sort((a, b) => (!!fonteEfetiva(a.subfonte).fonte - !!fonteEfetiva(b.subfonte).fonte) || b.valor - a.valor);
+    let opcoes = candidatas.map(s => {
+        let atual = fonteEfetiva(s.subfonte).fonte;
+        return `<option value="${escHtml(s.subfonte)}">${escHtml(`${s.subfonte} — ${String(s.desc).slice(0, 50)} — ${abreviarValor(s.valor)} — ${atual ? 'hoje em ' + atual : 'sem par'}`)}</option>`;
+    }).join('');
+    h += `</tbody><tfoot><tr><td colspan="6" onclick="event.stopPropagation();">+ ligar fonte da LOA:
+        <select data-fonte="${escHtml(g.fonte)}" onchange="ligarFonteLOA(this)" style="max-width:560px;"><option value="">(escolha a fonte da LOA)</option>${opcoes}</select></td></tr></tfoot></table>`;
+    return h;
 }
 
 // ─── CONSOLIDADO ÓRGÃO × FONTE ──────────────────────────────────────────────

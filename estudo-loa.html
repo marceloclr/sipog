@@ -293,6 +293,11 @@
             </div>
             <div class="estudo-status" id="status-depara-xlsx" style="margin:-4px 0 10px;"></div>
             <div class="estudo-tabela-wrap"><div id="tabela-depara"><p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p></div></div>
+            <h3 class="estudo-subtitulo">Por Fonte do MAPP — fontes da LOA ligadas a cada uma</h3>
+            <p class="estudo-nota">Uma Fonte do MAPP pode receber várias fontes da LOA (cada fonte da LOA vai inteira para uma só). Clique numa linha (▸) para ver a composição, desligar (✕) ou ligar outra fonte da LOA.</p>
+            <div class="estudo-filtros"><input type="search" id="filtro-dp-texto" placeholder="Buscar Fonte do MAPP…" oninput="renderizarDePara()"></div>
+            <p class="estudo-nota" id="aviso-depara-mapp" style="color:var(--warning);"></p>
+            <div class="estudo-tabela-wrap" style="max-height:520px;"><div id="tabela-depara-mapp"></div></div>
         
         </div>
     </section>
