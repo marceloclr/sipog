@@ -294,6 +294,12 @@
                     <input type="file" accept=".xlsx" onchange="selecionarArquivoDePara(this)" style="display:none;"></label>
             </div>
             <div class="estudo-status" id="status-depara-xlsx" style="margin:-4px 0 10px;"></div>
+            <details class="estudo-carga" id="bloco-import-depara" style="margin-bottom:12px;">
+                <summary style="cursor:pointer; font-weight:700; font-size:13px;">⬆ Importar de-para (CSV ou xlsx, formato livre)</summary>
+                <p class="estudo-nota">Para planilhas em qualquer formato: depois de carregar, indique a coluna da <strong>fonte da LOA</strong>, a da <strong>Fonte do MAPP</strong> e, se houver, a do <strong>órgão</strong>. Os códigos são reconhecidos em vários formatos (500.9.1.0.00.00, 500.00, 1.500.00; "(500)-(501) Tesouro", "500-501" ou só a descrição). Várias fontes da LOA podem ir para a mesma Fonte do MAPP; a mesma fonte da LOA em duas Fontes do MAPP é conflito (vale a 1ª linha). Nada muda antes de "Aplicar".</p>
+                <input type="file" accept=".csv,.txt,.xlsx" onchange="selecionarArquivoImportDePara(this)">
+                <div id="area-import-depara"></div>
+            </details>
             <div class="estudo-tabela-wrap"><div id="tabela-depara"><p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p></div></div>
             <h3 class="estudo-subtitulo">Por Fonte do MAPP — fontes da LOA ligadas a cada uma</h3>
             <p class="estudo-nota">Uma Fonte do MAPP pode receber várias fontes da LOA (cada fonte da LOA vai inteira para uma só). Clique numa linha (▸) para ver a composição, desligar (✕) ou ligar outra fonte da LOA.</p>

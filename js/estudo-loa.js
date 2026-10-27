@@ -2873,6 +2873,135 @@ function aplicarDeParaClassificado(classif) {
     return n;
 }
 
+// ─── IMPORTADOR DE DE-PARA DE FORMATO LIVRE (CSV ou xlsx) ───────────────────
+// Lê a planilha, o usuário indica as colunas (LOA, MAPP, órgão opcional; o mapeamento fica salvo
+// por cabeçalho), pré-visualiza o status de cada linha e só então aplica.
+const CHAVE_MAPA_IMPORT_DEPARA = 'sipog_estudo_loa_import_depara_v1';
+const ROTULO_STATUS_DEPARA = { nova: '✅ nova', igual: '= igual', substitui: '↺ substitui', loa: '⚠ LOA não reconhecida', mapp: '✖ Fonte do MAPP inválida', conflito: '✖ conflito' };
+let importDP = null;   // { nome, abas: { nome: { cab: [], linhas: [[]] } }, aba, mapa: { loa, mapp, orgao }, classif }
+
+async function selecionarArquivoImportDePara(input) {
+    let arquivo = input.files && input.files[0];
+    if (!arquivo) return;
+    let area = document.getElementById('area-import-depara');
+    try {
+        if (!loaLinhas.length || !mappsBrutos.length) throw new Error('Carregue a LOA e a base de MAPPs antes do de-para.');
+        let buffer = await lerArquivoComoBuffer(arquivo), abas = {};
+        if (/\.(csv|txt)$/i.test(arquivo.name)) {
+            let texto = decodificarTextoArquivo(buffer);
+            let primeira = texto.slice(0, texto.indexOf('\n') > 0 ? texto.indexOf('\n') : texto.length);
+            let sep = [';', '\t', ','].sort((a, b) => primeira.split(b).length - primeira.split(a).length)[0];
+            let t = parseCSV(texto, sep).filter(l => l.some(v => String(v).trim() !== ''));
+            abas['CSV'] = { cab: (t[0] || []).map(h => String(h).trim()), linhas: t.slice(1) };
+        } else {
+            let wb = new ExcelJS.Workbook();
+            await wb.xlsx.load(buffer);
+            wb.worksheets.forEach(ws => {
+                let linhas = [];
+                ws.eachRow({ includeEmpty: false }, row => {
+                    let v = [];
+                    row.eachCell({ includeEmpty: true }, (cell, col) => { v[col - 1] = valorCelulaExcelJS(cell.value); });
+                    if (v.some(x => String(x === undefined || x === null ? '' : x).trim() !== '')) linhas.push(v.map(x => x === undefined || x === null ? '' : x));
+                });
+                if (linhas.length) abas[ws.name] = { cab: linhas[0].map(h => String(h).trim()), linhas: linhas.slice(1) };
+            });
+        }
+        if (!Object.keys(abas).length) throw new Error('A planilha está vazia.');
+        importDP = { nome: arquivo.name, abas, aba: Object.keys(abas)[0], mapa: null, classif: [] };
+        sugerirMapaImportDePara();
+        renderizarImportDePara();
+    } catch (err) {
+        console.error(err);
+        area.innerHTML = `<p class="estudo-status"><span class="erro">❌ ${escHtml(err.message || err)}</span></p>`;
+    } finally {
+        input.value = '';
+    }
+}
+
+// Mapeamento salvo para os mesmos cabeçalhos; senão, pelo nome das colunas.
+function sugerirMapaImportDePara() {
+    let cab = importDP.abas[importDP.aba].cab;
+    let salvo = null;
+    try { salvo = (JSON.parse(localStorage.getItem(CHAVE_MAPA_IMPORT_DEPARA) || '{}') || {})[cab.map(N).join('|')]; } catch (e) {}
+    if (salvo) { importDP.mapa = salvo; return; }
+    let n = cab.map(N);
+    let achar = teste => n.findIndex(teste);
+    let mapp = achar(h => /MAPP|SIPOG/.test(h));
+    let loa = achar((h, i) => i !== mapp && /FONTE|SUB ?FONTE|LOA|ORCAMENT/.test(h));
+    let orgao = achar(h => /ORGAO|SIGLA|UNIDADE/.test(h));
+    importDP.mapa = { loa: loa >= 0 ? loa : 0, mapp: mapp >= 0 ? mapp : (loa === 1 ? 0 : 1), orgao };
+}
+
+function alterarImportDePara(sel) {
+    if (sel.dataset.campo === 'aba') { importDP.aba = sel.value; sugerirMapaImportDePara(); }
+    else importDP.mapa[sel.dataset.campo] = Number(sel.value);
+    renderizarImportDePara();
+}
+
+function renderizarImportDePara() {
+    let area = document.getElementById('area-import-depara');
+    if (!importDP) { area.innerHTML = ''; return; }
+    let { cab, linhas } = importDP.abas[importDP.aba], m = importDP.mapa;
+    let celula = (l, i) => i >= 0 ? String(l[i] === undefined ? '' : l[i]).trim() : '';
+    importDP.classif = classificarDePara(linhas.filter(l => celula(l, m.loa) || celula(l, m.mapp))
+        .map(l => ({ loa: celula(l, m.loa), mapp: celula(l, m.mapp), orgao: celula(l, m.orgao) })));
+    let opc = (atual, opcional) => (opcional ? `<option value="-1"${atual < 0 ? ' selected' : ''}>(nenhuma)</option>` : '') +
+        cab.map((h, i) => `<option value="${i}"${i === atual ? ' selected' : ''}>${escHtml(h || `Coluna ${i + 1}`)}</option>`).join('');
+    let cont = {};
+    importDP.classif.forEach(c => { cont[c.status] = (cont[c.status] || 0) + 1; });
+    let aplicaveis = (cont.nova || 0) + (cont.substitui || 0);
+    let h = `<div class="estudo-filtros" style="margin-top:10px;"><strong>${escHtml(importDP.nome)}</strong>` +
+        (Object.keys(importDP.abas).length > 1 ? `<label>Aba <select data-campo="aba" onchange="alterarImportDePara(this)">${Object.keys(importDP.abas).map(a => `<option${a === importDP.aba ? ' selected' : ''}>${escHtml(a)}</option>`).join('')}</select></label>` : '') +
+        `<label>Fonte da LOA <select data-campo="loa" onchange="alterarImportDePara(this)">${opc(m.loa)}</select></label>
+        <label>Fonte do MAPP <select data-campo="mapp" onchange="alterarImportDePara(this)">${opc(m.mapp)}</select></label>
+        <label>Órgão (opcional) <select data-campo="orgao" onchange="alterarImportDePara(this)">${opc(m.orgao, true)}</select></label></div>
+        <p class="estudo-status">${importDP.classif.length} linha(s): ` +
+        Object.keys(ROTULO_STATUS_DEPARA).filter(k => cont[k]).map(k => `${ROTULO_STATUS_DEPARA[k]}: <strong>${cont[k]}</strong>`).join(' · ') + `</p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            <button class="btn-mini-header" onclick="aplicarImportDePara()" ${aplicaveis ? '' : 'disabled'}>✔ Aplicar ${aplicaveis} ligação(ões)</button>
+            <button class="btn-mini-header" onclick="importDP = null; renderizarImportDePara();">✕ Cancelar</button>
+            <button class="btn-mini-header" onclick="baixarRelatorioImportDePara()">⬇ Baixar relatório</button></div>
+        <div class="estudo-tabela-wrap" style="max-height:360px;"><table class="subtabela-mapps"><thead><tr>
+        ${thDesc('Linha', 'Linha da planilha (sem o cabeçalho).', 'num')}${thDesc('Fonte da LOA (arquivo)', 'Texto da coluna escolhida.')}${thDesc('Fonte do MAPP (arquivo)', 'Texto da coluna escolhida.')}
+        ${thDesc('Órgão', 'Só usado para desfazer fonte da LOA ambígua.')}${thDesc('Status', 'nova, igual, substitui (troca a atual), LOA não reconhecida, Fonte do MAPP inválida ou conflito.')}
+        ${thDesc('Reconhecido como', 'Fonte da LOA → Fonte do MAPP que serão gravadas.')}</tr></thead><tbody>`;
+    importDP.classif.slice(0, 300).forEach(c => {
+        let cls = c.status === 'mapp' || c.status === 'conflito' ? 'alerta-estouro' : (c.status === 'loa' ? 'alerta-sobra' : '');
+        h += `<tr class="${cls}"><td class="num">${c.n}</td><td>${escHtml(c.loa)}</td><td>${escHtml(c.mapp)}</td><td>${escHtml(c.orgao)}</td>
+            <td style="white-space:nowrap;"${dica(c.msg || '')}>${ROTULO_STATUS_DEPARA[c.status]}</td>
+            <td>${c.sub ? escHtml(c.sub) + (c.fonte !== undefined ? ' → ' + escHtml(c.fonte || '(sem fonte)') : '') : ''}${c.status === 'substitui' ? `<br><small style="color:var(--muted);">hoje: ${escHtml(c.atual)}</small>` : ''}${c.msg ? `<br><small style="color:var(--muted);">${escHtml(c.msg)}</small>` : ''}</td></tr>`;
+    });
+    h += `</tbody></table></div>${importDP.classif.length > 300 ? '<p class="estudo-nota">Exibindo 300 linhas; o relatório traz todas.</p>' : ''}`;
+    area.innerHTML = h;
+}
+
+function aplicarImportDePara() {
+    if (!importDP) return;
+    let n = aplicarDeParaClassificado(importDP.classif);
+    try {
+        let mapas = JSON.parse(localStorage.getItem(CHAVE_MAPA_IMPORT_DEPARA) || '{}') || {};
+        mapas[importDP.abas[importDP.aba].cab.map(N).join('|')] = importDP.mapa;
+        localStorage.setItem(CHAVE_MAPA_IMPORT_DEPARA, JSON.stringify(mapas));
+    } catch (e) {}
+    let nome = importDP.nome;
+    importDP = null;
+    recalcularEstudo();
+    renderizarImportDePara();
+    document.getElementById('area-import-depara').innerHTML = `<p class="estudo-status"><span class="ok">✅ ${escHtml(nome)}: ${n} ligação(ões) aplicada(s) ao de-para.</span></p>`;
+}
+
+async function baixarRelatorioImportDePara() {
+    if (!importDP) return;
+    let wb = new ExcelJS.Workbook();
+    adicionarAbaEstudo(wb, 'RELATORIO_DE_PARA', [
+        { titulo: 'LINHA', chave: 'n', largura: 8 }, { titulo: 'FONTE DA LOA (ARQUIVO)', chave: 'loa', largura: 30 },
+        { titulo: 'FONTE DO MAPP (ARQUIVO)', chave: 'mapp', largura: 40 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 12 },
+        { titulo: 'STATUS', chave: 'st', largura: 22 }, { titulo: 'FONTE DA LOA RECONHECIDA', chave: 'sub', largura: 20 },
+        { titulo: 'FONTE DO MAPP RECONHECIDA', chave: 'fonteTxt', largura: 40 }, { titulo: 'MENSAGEM', chave: 'msg', largura: 60 }
+    ], importDP.classif.map(c => Object.assign({}, c, { st: ROTULO_STATUS_DEPARA[c.status], fonteTxt: c.fonte === undefined ? '' : (c.fonte || '(sem fonte)') })));
+    await baixarWorkbook(wb, `SIPOG_DePara_Relatorio_${carimboDataHora()}.xlsx`);
+}
+
 function aplicarDeParaImportado(linhas) {
     let classif = classificarDePara(linhas.map(x => ({ loa: x.subfonte, mapp: x.fonte, orgao: x.orgao })));
     let aplicadas = aplicarDeParaClassificado(classif);

@@ -166,6 +166,15 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
 - De-para por xlsx (aba 3): `baixarDeParaXLSX` (abas DE_PARA_FONTES + FONTES_DO_MAPP) e `selecionarArquivoDePara` →
   `lerDeParaDeWorkbook` + `aplicarDeParaImportado` (SUB FONTE completa ou FT.DT; "(sem fonte)" = sem fonte; fonte fora da base
   de MAPPs é rejeitada); grava em `deParaManual`.
+- **Várias fontes da LOA → uma Fonte do MAPP** (sem rateio; a mesma fonte da LOA em duas Fontes do MAPP é conflito,
+  vale a 1ª): aba 3 tem a grade "Por Fonte do MAPP" (`renderizarDeParaPorMapp`, composição aberta na grade, ✕ desligar,
+  "+ ligar fonte da LOA", aviso de Fonte do MAPP com necessidade e sem LOA); abas 4/5/6 mostram a composição
+  (`somarComposicao`/`textoComposicao`, coluna "Fontes da LOA", faixa "Composição da LOA"); XLSX tem FONTE_MAPP_X_LOA.
+- **Reconhecimento de de-para** (`classificarDePara`, `reconhecerFonteLOA`, `reconhecerFonteMAPP`): código completo,
+  FT.DT ou ID.FT.DT (o órgão desfaz FT.DT ambíguo, via `SUBFONTE_LOA_POR_ORGAO`); Fonte do MAPP por texto, código
+  ("500-501", "759.070") ou descrição. Usado pelo "Carregar de-para", pelo pacote e pelo **importador de formato livre**
+  (aba 3, CSV ;/,/tab em UTF-8 ou Windows-1252, ou xlsx; o usuário escolhe as colunas — salvas por cabeçalho em
+  `CHAVE_MAPA_IMPORT_DEPARA` —, vê a pré-visualização com status e só então aplica; relatório em xlsx).
 - Termos: na tela e no XLSX é "Fonte do MAPP" (não "Fonte do SIPOG"); o percentual Nec. Ajustada ÷ LOA chama-se
   "Necessidade ÷ LOA" (só pares com LOA; card mostra quantas vezes e quanto falta/sobra).
 - Consolidado com programa: `gruposConsolidado` mostra uma linha por Órgão × Fonte (total) e, ao clicar
