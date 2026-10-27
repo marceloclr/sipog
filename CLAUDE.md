@@ -70,6 +70,29 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 - Arquivos js/01–15 estão com CRLF na cópia de trabalho e LF no repositório: depois de editar,
   converter para LF antes do commit (senão o diff vira o arquivo inteiro).
 
+## Crítica do upload e referências por exercício: `js/referencias.js` (27/10/2026)
+
+- Carregado pelo SIPOG (`index.html`, **depois** do js/15, fora da sequência 01–15) e pelo estudo LOA. Sem efeito ao carregar.
+- Nada é cadastro digitado: órgãos (com secretarias), fontes e programas saem do próprio arquivo (`extrairCadastroMAPP`,
+  `extrairCadastroLOA`) e ficam numa memória por exercício (`localStorage` `sipog_referencias_v1` + nuvem
+  `referencias/exercicio_<ano>`, em chunks do js/05) só para dizer "novo desde a última carga" (na 1ª carga do ano nada é novo;
+  sem memória do ano, compara com o ano anterior). O que fica de fato salvo é decisão do usuário: **aliases** (texto variante →
+  texto da base, por ORGAO/SECRETARIA/FONTE) e, no estudo, as **ligações** LOA × MAPP do exercício.
+- `criticarBaseMAPPs`: só **erro estrutural bloqueia** (coluna obrigatória ausente, valor que não é número); o resto é aviso
+  (órgão/fonte/programa novo, secretaria diferente, estágio desconhecido, MAPP repetido no mesmo órgão + fonte, negativo,
+  Empenhado > Limite, Pago > Empenhado, Limite > Programado, mais de um grupo "S", fora do Executivo). Não muda valores.
+  Sugestão de alias por chave tolerante (`chaveTolerante`: "(312,82)" = "(312.82)") ou mesmo código numérico da fonte.
+- SIPOG: `importar()` (js/04) critica antes de trocar `dadosBrutos` — com erro, a base anterior continua; estado/JSON carregado
+  (js/05) só mostra a crítica (`semAliases`, sem registrar). Painel em `#critica-base`.
+- Estudo: `carregarMAPPs(..., bloquearComErro)` (só o upload bloqueia); `criticarCargaLOA` no PLOA; `atualizarCriticaEstudo`
+  (fim de `recalcularEstudo`) junta tudo em `#critica-estudo`, inclusive `criticarLOAxMAPP` (órgão do MAPP sem sigla na LOA e
+  vice-versa; achou "CIPP S,A" da base × "CIPP S.A" da LOA). Ligações **editáveis**: `ligacoesAtuais`/`aplicarLigacoes`;
+  "☁ Salvar como padrão do exercício" (aba 3) grava siglas, FONTES_LOA, SUBFONTE_LOA_POR_ORGAO, fora/dentro e de-para;
+  `carregarPadraoExercicio` aplica ao abrir. O de-para do padrão (`deParaPadrao`, regra "padrão") fica abaixo do manual.
+  O estudo salvo guarda `ligacoes` e reabre igual. `js/estudo-loa-tabelas.js` continua como semente (JSON não abre em `file://`).
+- Conferido em 27/10: base real 7.300 MAPPs no SIPOG e no estudo com os mesmos totais; padrão salvo e reaplicado ao recarregar
+  com totais iguais. A gravação na coleção `referencias` não foi testada na nuvem real (só leitura).
+
 ## Página de estudo separada: `estudo-loa.html` + `js/estudo-loa.js`
 
 Cruza a LOA 2027 com a base de MAPPs (layout do `importar()`). **LOA recomendada: PLOA 2027 por ação**
