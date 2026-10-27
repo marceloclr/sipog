@@ -94,6 +94,8 @@
     /* Cabeçalho com significado/cálculo no tooltip */
     .estudo-tabela-wrap th[data-desc] { text-decoration: underline dotted; text-underline-offset: 3px; }
     .estudo-tabela-wrap th.sem-ordem[data-desc] { cursor: help; }
+    /* Filtro/coluna Programa: só quando o cruzamento é Órgão × Programa × Fonte */
+    body:not(.cruza-programa) .so-programa { display: none; }
     .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
     @media (max-width: 900px) {
         .estudo-layout { flex-direction: column; }
@@ -142,9 +144,12 @@
             <p class="estudo-nota">Os arquivos são lidos só neste navegador — nada é enviado à nuvem nem altera o SIPOG (a não ser que você use "Salvar na nuvem").</p>
             <div class="estudo-grid-carga">
                 <div class="estudo-carga">
-                    <h3>LOA 2027 — Investimento por Órgão e Fonte</h3>
-                    <p class="estudo-nota"><strong>PDF</strong> do relatório "Demonstrativo Consolidado por Órgão e Fonte" emitido só com Investimento (conferido pelo total de cada órgão e pelo TOTAL GERAL), ou a planilha com a aba "Fonte x Órgão" (coluna C; LOA inteira, conferida pela aba "Resumo por sub fonte"). <strong>Só o Executivo estadual entra:</strong> a LOA da Assembleia Legislativa, do Tribunal de Contas, do Tribunal de Justiça, do Ministério Público (PGJ) e dos órgãos vinculados a eles é expurgada.</p>
-                    <input type="file" id="arquivo-loa" accept=".pdf,.xlsx" onchange="selecionarArquivoLOA(this)">
+                    <h3>LOA 2027</h3>
+                    <p class="estudo-nota"><strong>Recomendado: PLOA 2027 por ação</strong> (<code>dados/loa2027_acoes.json</code>, extraído do Volume II e conferido com o Volume I): traz órgão, programa, ação, GND, esfera e fonte — o recorte de GND e esfera fica na aba 2 e o cruzamento passa a ser Órgão × Programa × Fonte. Alternativas: o PDF "Demonstrativo Consolidado por Órgão e Fonte" ou a planilha "Fonte x Órgão" (cruzamento Órgão × Fonte). <strong>Só o Executivo estadual entra:</strong> a LOA da Assembleia Legislativa, do Tribunal de Contas, do Tribunal de Justiça, do Ministério Público (PGJ) e dos órgãos vinculados a eles é expurgada.</p>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                        <button class="btn-mini-header" onclick="carregarPLOADoRepositorio()" title="Baixa dados/loa2027_acoes.json do site (não funciona com a página aberta por duplo clique — aí use o seletor de arquivo)">⬇ PLOA 2027 do sistema</button>
+                        <input type="file" id="arquivo-loa" accept=".json,.pdf,.xlsx" onchange="selecionarArquivoLOA(this)">
+                    </div>
                     <div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div>
                 </div>
                 <div class="estudo-carga">
@@ -153,6 +158,9 @@
                     <input type="file" id="arquivo-mapps" accept=".xlsx,.csv" onchange="selecionarArquivoMAPPs(this)">
                     <div class="estudo-status" id="status-mapps">Nenhum arquivo carregado.</div>
                     <div class="estudo-status" id="status-mapps-expurgo"></div>
+                    <p class="estudo-nota" style="margin-top:12px;"><strong>Programas dos MAPPs</strong> (opcional): a base do SIPOG não tem a coluna PROGRAMA. Carregue a extração bruta do MAPP (CSV ou xlsx, com PROGRAMA) para ligar cada MAPP ao programa, pelo órgão e pelo texto do MAPP.</p>
+                    <input type="file" id="arquivo-programas" accept=".csv,.xlsx" onchange="selecionarArquivoProgramas(this)">
+                    <div class="estudo-status" id="status-programas"></div>
                 </div>
             </div>
         </div>
@@ -171,6 +179,24 @@
                 <div><label for="ep-naoiniciado">Não Iniciado (%)</label><input type="number" id="ep-naoiniciado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-limiar">Em Execução — limiar (% do Prog.)</label><input type="number" id="ep-limiar" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-meses" title="Regra (EMP/meses)×12 de Em Execução. O SIPOG fixa 5 (dados até maio). Use o nº de meses até a data da extração.">Em Execução — meses decorridos</label><input type="number" id="ep-meses" min="1" max="12" step="0.5" oninput="recalcularEstudo()"></div>
+            </div>
+            <h3 style="font-size:13px; margin:18px 0 4px;">Recorte da LOA (PLOA 2027 por ação)</h3>
+            <p class="estudo-nota">Vale quando a LOA vem do PLOA 2027 por ação (aba 1). Padrão: só o GND 44 (Investimentos), as duas esferas e sem a modalidade 91 (aplicação direta intraorçamentária, que duplica valores — o Volume I também a exclui).</p>
+            <div class="estudo-filtros" id="recorte-loa" style="gap:14px;">
+                <span><strong>GND:</strong>
+                    <label><input type="checkbox" id="gnd-31" onchange="recalcularEstudo()"> 31 Pessoal</label>
+                    <label><input type="checkbox" id="gnd-32" onchange="recalcularEstudo()"> 32 Juros</label>
+                    <label><input type="checkbox" id="gnd-33" onchange="recalcularEstudo()"> 33 Outras Correntes</label>
+                    <label><input type="checkbox" id="gnd-44" checked onchange="recalcularEstudo()"> 44 Investimentos</label>
+                    <label><input type="checkbox" id="gnd-45" onchange="recalcularEstudo()"> 45 Inversões</label>
+                    <label><input type="checkbox" id="gnd-46" onchange="recalcularEstudo()"> 46 Amortização</label>
+                    <label><input type="checkbox" id="gnd-02" onchange="recalcularEstudo()"> Reserva de Contingência</label>
+                </span>
+                <span><strong>Esfera:</strong>
+                    <label><input type="checkbox" id="esf-fiscal" checked onchange="recalcularEstudo()"> Fiscal / Seguridade</label>
+                    <label><input type="checkbox" id="esf-estatais" checked onchange="recalcularEstudo()"> Investimentos Estatais</label>
+                </span>
+                <label><input type="checkbox" id="loa-sem-mod91" checked onchange="recalcularEstudo()"> Excluir modalidade 91</label>
             </div>
             <div style="margin-top:10px; font-size:12px;">
                 <label><input type="checkbox" id="ep-expurgar-fisfin" checked onchange="recalcularEstudo()"> Expurgar MAPPs em <strong>Execução Físic/Finan. Concluída</strong> <span style="color:var(--muted);">(padrão, como no SIPOG; desmarcado: entram com 100% do Programado 2026 e TRF zero)</span></label>
@@ -219,6 +245,7 @@
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
+                <label class="so-programa">Programa <select id="filtro-cons-programa" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
                 <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Estágio <select id="filtro-det-estagio" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
                 <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado(); renderizarDetalhe()">
@@ -251,6 +278,7 @@
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-aj-fonte" onchange="renderizarAjustesFinais()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-aj-orgao" onchange="renderizarAjustesFinais()"><option value="">(todos)</option></select></label>
+                <label class="so-programa">Programa <select id="filtro-aj-programa" onchange="renderizarAjustesFinais()"><option value="">(todos)</option></select></label>
                 <input type="search" id="filtro-aj-texto" placeholder="Buscar MAPP…" oninput="renderizarAjustesFinais()">
                 <label><input type="checkbox" id="filtro-aj-editados" onchange="renderizarAjustesFinais()"> só editados</label>
                 <button class="btn-mini-header" onclick="restaurarTodasPropostas()" title="Descarta todas as edições e volta à distribuição automática">↺ Voltar tudo ao automático</button>
@@ -334,6 +362,7 @@
 <script src="js/03-utils-formatacao.js"></script>
 <script src="js/06-classificacao-gate.js"></script>
 <script src="js/05-nuvem-firestore.js"></script>
+<script src="js/estudo-loa-tabelas.js"></script>
 <script src="js/estudo-loa.js"></script>
 </body>
 </html>

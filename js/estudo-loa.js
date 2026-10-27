@@ -339,6 +339,10 @@ async function selecionarArquivoLOA(input) {
     let status = document.getElementById('status-loa');
     status.innerHTML = 'Lendo…';
     try {
+        if (/\.json$/i.test(arquivo.name)) {
+            carregarLOAPloa(JSON.parse(new TextDecoder('utf-8').decode(await lerArquivoComoBuffer(arquivo))), arquivo.name);
+            return;
+        }
         if (/\.pdf$/i.test(arquivo.name)) {
             carregarLOA(await lerLOADePDF(await lerArquivoComoBuffer(arquivo)), arquivo.name);
             return;
@@ -348,40 +352,119 @@ async function selecionarArquivoLOA(input) {
         carregarLOA(lerLOADeWorkbook(wb), arquivo.name);
     } catch (err) {
         console.error(err);
-        loaLinhas = []; loaLinhasArquivo = [];
+        loaLinhas = []; loaLinhasArquivo = []; loaCreditos = [];
         status.innerHTML = `<span class="erro">❌ ${escHtml(err.message || err)}</span>`;
         recalcularEstudo();
     }
 }
 
+// ─── LOA DO PLOA 2027 POR AÇÃO (dados/loa2027_acoes.json) ───────────────────
+// Gerado por ferramentas/extrair_ploa.py a partir do Volume II (conferido com os resumos de
+// programa e de órgão e com o Volume I). Guarda todos os créditos; o recorte (GND, esfera,
+// modalidade 91) é aplicado a cada recálculo e agrega por Órgão × Programa × Fonte (FT.DT).
+let loaCreditos = [];
+const ARQUIVO_PLOA = 'dados/loa2027_acoes.json';
+
+async function carregarPLOADoRepositorio() {
+    let status = document.getElementById('status-loa');
+    status.innerHTML = 'Baixando o PLOA 2027…';
+    try {
+        let resp = await fetch(ARQUIVO_PLOA);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        carregarLOAPloa(await resp.json(), 'PLOA 2027 — Volume II (' + ARQUIVO_PLOA + ')');
+    } catch (err) {
+        console.error(err);
+        status.innerHTML = `<span class="erro">❌ Não foi possível baixar ${ARQUIVO_PLOA} (${escHtml(err.message || err)}). Com a página aberta por duplo clique, escolha o arquivo no seletor ao lado.</span>`;
+    }
+}
+
+function carregarLOAPloa(pacote, nomeArquivo) {
+    if (!pacote || !Array.isArray(pacote.creditos)) throw new Error('O arquivo não é o PLOA 2027 por ação (falta a lista "creditos").');
+    loaCreditos = pacote.creditos;
+    let conf = pacote.conferencia || {};
+    carregarLOA({ linhas: montarLinhasPLOA(loaCreditos, lerParametrosEstudo()), conferido: true, origem: 'ploa',
+        divergencias: (conf.difResumos || []).map(d => ({ item: `${d.orgao}${d.programa ? ' prog. ' + d.programa : ''} ${d.fonte} GND ${d.gnd}`, esperado: d.resumo, lido: d.creditos })),
+        resumoPloa: { creditos: loaCreditos.length, gndVolumeI: conf.gndVolumeI || {} } }, nomeArquivo);
+}
+
+// Sub fonte do crédito: o código completo quando dá para saber qual é (uma só sub fonte
+// conhecida para o FT.DT, ou resolvida pelo órgão); senão, o próprio FT.DT.
+function fonteLOADoCredito(c) {
+    let chave = `${c.ft}.${c.dt}`;
+    let conhecidas = FONTES_LOA[chave] || [];
+    let resolvida = (SUBFONTE_LOA_POR_ORGAO[c.codOrgao] || {})[chave];
+    let unica = resolvida ? conhecidas.find(x => x.subfonte === resolvida) : (conhecidas.length === 1 ? conhecidas[0] : null);
+    if (unica) return { subfonte: unica.subfonte, grupo: unica.grupo, desc: unica.desc, codigos: [unica.subfonte] };
+    return { subfonte: chave, grupo: conhecidas.length ? conhecidas[0].grupo : (c.ft === '500' ? 'Tesouro' : 'Outras Fontes'),
+        desc: conhecidas.length ? conhecidas[0].desc + ` (e mais ${conhecidas.length - 1} variante(s))` : '(sem descrição na LOA por Órgão e Fonte)',
+        codigos: conhecidas.map(x => x.subfonte) };
+}
+
+function montarLinhasPLOA(creditos, prm) {
+    let agreg = {};
+    creditos.forEach(c => {
+        if (!prm.gnds.has(c.gnd) || !prm.esferas.has(c.esfera) || (prm.semMod91 && c.modalidade === '91')) return;
+        let f = fonteLOADoCredito(c);
+        let k = c.codOrgao + '|' + c.programa + '|' + f.subfonte;
+        let l = agreg[k] || (agreg[k] = { grupo: f.grupo, subfonte: f.subfonte, descSubfonte: f.desc, codigosSubfonte: f.codigos,
+            codOrgao: c.codOrgao, orgao: c.orgao, sigla: SIGLAS_ORGAO_LOA[c.codOrgao] || c.orgao, esfera: c.esfera,
+            programa: c.programa, nomePrograma: c.nomePrograma, valor: 0, acoes: new Set() });
+        l.valor += c.valor;
+        l.acoes.add(c.codAcao);
+    });
+    return Object.values(agreg).map(l => Object.assign(l, { acoes: l.acoes.size }));
+}
+
+// Refaz as linhas da LOA com o recorte atual (só quando a LOA veio do PLOA por ação).
+function aplicarRecorteLOA() {
+    if (loaConferencia.origem !== 'ploa' || !loaCreditos.length) return;
+    loaLinhasArquivo = montarLinhasPLOA(loaCreditos, lerParametrosEstudo());
+    loaLinhas = loaLinhasArquivo.filter(l => !loaForaDoExecutivo(l));
+    atualizarStatusLOA();
+}
+
 function carregarLOA(resultado, nomeArquivo) {
     loaLinhasArquivo = resultado.linhas;
     loaLinhas = loaLinhasArquivo.filter(l => !loaForaDoExecutivo(l));
-    let expurgadas = loaLinhasArquivo.filter(loaForaDoExecutivo);
     let origem = resultado.origem || (/\.pdf$/i.test(nomeArquivo || '') ? 'pdf' : 'xlsx');
-    loaConferencia = { conferido: !!resultado.conferido, divergencias: resultado.divergencias || [], origem };
+    if (origem !== 'ploa') loaCreditos = [];
+    loaConferencia = { conferido: !!resultado.conferido, divergencias: resultado.divergencias || [], origem, resumoPloa: resultado.resumoPloa || null };
     loaArquivo = nomeArquivo || '';
+    atualizarStatusLOA();
+    recalcularEstudo();
+}
+
+function atualizarStatusLOA() {
+    let origem = loaConferencia.origem;
+    let expurgadas = loaLinhasArquivo.filter(loaForaDoExecutivo);
     let total = loaLinhas.reduce((s, l) => s + l.valor, 0);
     let subfontes = new Set(loaLinhas.map(l => l.subfonte)).size;
     let orgaos = new Set(loaLinhas.map(l => l.codOrgao)).size;
-    let ref = origem === 'pdf' ? 'totais do PDF' : 'Resumo';
+    let ref = origem === 'pdf' ? 'totais do PDF' : origem === 'ploa' ? 'resumos do PDF' : 'Resumo';
     let divs = loaConferencia.divergencias;
     let conf;
-    if (!resultado.conferido) conf = '<span class="aviso">⚠ Aba "Resumo por sub fonte" ausente — soma não conferida.</span>';
+    if (!loaConferencia.conferido) conf = '<span class="aviso">⚠ Aba "Resumo por sub fonte" ausente — soma não conferida.</span>';
     else if (divs.length === 0) conf = origem === 'pdf' ? '<span class="ok">✔ Somas das fontes conferem com o total de cada órgão e com o TOTAL GERAL.</span>'
         : '<span class="ok">✔ Somas por sub fonte conferem com o Resumo.</span>';
+    else if (origem === 'ploa') conf = `<span class="ok">✔ Créditos conferem com os resumos de programa e de órgão e com o Volume I</span>, salvo ${divs.length} diferença(s) do próprio PDF (resumo maior que as linhas impressas): ` +
+        divs.slice(0, 3).map(d => `${escHtml(d.item)} ${F(d.esperado - d.lido)}`).join('; ');
     else conf = `<span class="erro">✖ ${divs.length} item(ns) divergem dos ${ref}:</span> ` +
         divs.slice(0, 5).map(d => `${escHtml(d.item || d.subfonte)} (lido ${F(d.lido)} × ${ref} ${F(d.esperado)})`).join('; ');
+    let recorte = '';
+    if (origem === 'ploa') {
+        let prm = lerParametrosEstudo();
+        recorte = `Recorte (aba 2): GND ${[...prm.gnds].sort().join(', ') || 'nenhum'} · ${[...prm.esferas].map(e => e === 'INVESTIMENTOS ESTATAIS' ? 'Estatais' : 'Fiscal/Seguridade').join(' + ') || 'nenhuma esfera'}${prm.semMod91 ? ' · sem modalidade 91' : ''}<br>`;
+    }
+    let unidade = origem === 'ploa' ? 'pares Órgão × Programa × Fonte' : 'pares Sub fonte × Órgão';
     document.getElementById('status-loa').innerHTML =
-        `<span class="ok">✅ ${escHtml(loaArquivo)}</span><br>` +
-        `${loaLinhas.length.toLocaleString('pt-BR')} pares Sub fonte × Órgão · ${subfontes} sub fontes · ${orgaos} órgãos<br>` +
+        `<span class="ok">✅ ${escHtml(loaArquivo)}</span>${origem === 'ploa' ? ` — ${loaCreditos.length.toLocaleString('pt-BR')} créditos` : ''}<br>` + recorte +
+        `${loaLinhas.length.toLocaleString('pt-BR')} ${unidade} · ${subfontes} fontes · ${orgaos} órgãos<br>` +
         `Total LOA (Executivo): <strong>${F(total)}</strong><br>` +
         (expurgadas.length
             ? `<span class="aviso">Expurgados (fora do Executivo): ${expurgadas.length} par(es), ${new Set(expurgadas.map(l => l.codOrgao)).size} órgão(s), ${F(expurgadas.reduce((s, l) => s + l.valor, 0))} — ${escHtml([...new Set(expurgadas.map(l => l.sigla || l.orgao))].join(', '))}</span><br>`
             : `Expurgo fora do Executivo (${escHtml(LOA_FORA_EXECUTIVO.map(o => o.nome.split(' (')[0]).join(', '))}): nenhum órgão no arquivo.<br>`) +
         conf +
-        (origem === 'xlsx' ? '<br><span class="aviso">⚠ A planilha "Fonte x Órgão" traz a LOA inteira (pessoal, custeio e dívida). Para o estudo, use o PDF emitido só com Investimento.</span>' : '');
-    recalcularEstudo();
+        (origem === 'xlsx' ? '<br><span class="aviso">⚠ A planilha "Fonte x Órgão" traz a LOA inteira (pessoal, custeio e dívida). Para o estudo, use o PLOA 2027 por ação.</span>' : '');
 }
 
 // ─── LEITURA DA BASE DE MAPPs (mesmo layout do importar() do SIPOG) ─────────
@@ -549,7 +632,65 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
     document.getElementById('status-mapps').innerHTML =
         `<span class="ok">✅ ${escHtml(mappsArquivo)}</span><br>${mappsBrutos.length.toLocaleString('pt-BR')} linhas lidas ` +
         `(${expurgos.toLocaleString('pt-BR')} concluídas/canceladas/transferidas, expurgadas)${avisos}`;
+    aplicarProgramasNaBase();
     recalcularEstudo();
+}
+
+// ─── PROGRAMAS DOS MAPPs (extração bruta com a coluna PROGRAMA) ─────────────
+// A base do SIPOG não tem PROGRAMA. A extração do MAPP tem; liga pelo órgão + texto do MAPP
+// (o SIPOG trocou "." por "," nos textos, então os dois lados são comparados com ",").
+let programasPorMapp = null;   // { 'ORGAO|MAPP': 'NNN - NOME' }
+let programasArquivo = '';
+
+function chaveProgramaMapp(orgao, mapp) {
+    return N(orgao) + '|' + N(String(mapp || '').replace(/\./g, ',')).replace(/\s+/g, ' ');
+}
+
+async function selecionarArquivoProgramas(input) {
+    let arquivo = input.files && input.files[0];
+    if (!arquivo) return;
+    let status = document.getElementById('status-programas');
+    status.innerHTML = 'Lendo…';
+    try {
+        let buffer = await lerArquivoComoBuffer(arquivo);
+        let r;
+        if (/\.(csv|txt)$/i.test(arquivo.name)) r = lerMAPPsDeCSV(decodificarTextoArquivo(buffer));
+        else { let wb = new ExcelJS.Workbook(); await wb.xlsx.load(buffer); r = lerMAPPsDeWorkbook(wb); }
+        if (!r.headers.includes('PROGRAMA') || !r.headers.includes('MAPP') || !r.headers.includes('ORGAO'))
+            throw new Error('O arquivo precisa das colunas ORGAO, MAPP e PROGRAMA.');
+        corrigirMojibakeLinhas(r.linhas);
+        programasPorMapp = {};
+        r.linhas.forEach(l => { if (l.PROGRAMA) programasPorMapp[chaveProgramaMapp(l.ORGAO, l.MAPP)] = String(l.PROGRAMA).trim(); });
+        programasArquivo = arquivo.name;
+        aplicarProgramasNaBase();
+        recalcularEstudo();
+    } catch (err) {
+        console.error(err);
+        status.innerHTML = `<span class="erro">❌ ${escHtml(err.message || err)}</span>`;
+    }
+}
+
+// Preenche PROGRAMA nas linhas da base que não têm (também na cópia original, para salvar e exportar).
+function aplicarProgramasNaBase() {
+    let status = document.getElementById('status-programas');
+    if (!programasPorMapp || !mappsBrutos.length) {
+        if (status && programasPorMapp) status.innerHTML = `✅ ${escHtml(programasArquivo)} — carregue a base de MAPPs para ligar os programas.`;
+        return;
+    }
+    let ligados = 0, jaTinham = 0;
+    mappsBrutos.forEach((r, i) => {
+        if (r.PROGRAMA) { jaTinham++; return; }
+        let p = programasPorMapp[chaveProgramaMapp(r.ORGAO, r.MAPP)];
+        if (!p) return;
+        r.PROGRAMA = p;
+        if (mappsOriginais[i]) mappsOriginais[i].PROGRAMA = p;
+        ligados++;
+    });
+    if (ligados && !mappsColunasOriginais.includes('PROGRAMA')) mappsColunasOriginais.push('PROGRAMA');
+    let sem = mappsBrutos.length - ligados - jaTinham;
+    if (status) status.innerHTML = `<span class="ok">✅ ${escHtml(programasArquivo)}</span><br>` +
+        `${ligados.toLocaleString('pt-BR')} MAPP(s) ligados a um programa${jaTinham ? ` · ${jaTinham.toLocaleString('pt-BR')} já tinham` : ''}` +
+        (sem ? `<br><span class="aviso">⚠ ${sem.toLocaleString('pt-BR')} linha(s) sem programa (órgão + texto do MAPP não encontrados na extração) — ficam no par "${SEM_PROGRAMA}", sem LOA.</span>` : '');
 }
 
 // ─── REGRA: PREVISÃO DE EMPENHO POR ESTÁGIO ─────────────────────────────────
@@ -643,8 +784,23 @@ function lerParametrosEstudo() {
             meses: v('ep-meses')
         },
         vd: Object.fromEntries(GRUPOS_VD_ESTUDO.map(g => [g.classe, Math.min(Math.max(v('vd-' + g.sufixo), 0), 100) / 100])),
-        vdFonte: (document.getElementById('vd-fonte') || {}).value || ''
+        vdFonte: (document.getElementById('vd-fonte') || {}).value || '',
+        // Recorte da LOA do PLOA por ação (caixas da aba 2).
+        gnds: new Set(GNDS_LOA.filter(g => marcadoRecorte('gnd-' + g)).map(g => g)),
+        esferas: new Set(ESFERAS_LOA.filter(e => marcadoRecorte(e.id)).map(e => e.esfera)),
+        semMod91: marcadoRecorte('loa-sem-mod91')
     };
+}
+
+// Recorte padrão da LOA: só GND 44, as duas esferas e sem a modalidade 91 (intraorçamentária).
+const GNDS_LOA = ['31', '32', '33', '44', '45', '46', '02'];
+const ESFERAS_LOA = [{ id: 'esf-fiscal', esfera: 'FISCAL / SEGURIDADE SOCIAL' }, { id: 'esf-estatais', esfera: 'INVESTIMENTOS ESTATAIS' }];
+const RECORTE_LOA_PADRAO = { 'gnd-31': false, 'gnd-32': false, 'gnd-33': false, 'gnd-44': true, 'gnd-45': false, 'gnd-46': false, 'gnd-02': false,
+    'esf-fiscal': true, 'esf-estatais': true, 'loa-sem-mod91': true };
+
+function marcadoRecorte(id) {
+    let el = document.getElementById(id);
+    return el ? el.checked : !!RECORTE_LOA_PADRAO[id];
 }
 
 // Valor Deliberado: mesma conta de aplicarValorParadigmaGrupoCore() (js/07), para
@@ -666,6 +822,7 @@ function restaurarParametrosEstudo() {
     // Físic/Finan Concluída expurgada por padrão, como no SIPOG (regras.r-expurgar-fisfin).
     let elExp = document.getElementById('ep-expurgar-fisfin');
     if (elExp) elExp.checked = true;
+    for (let id in RECORTE_LOA_PADRAO) { let el = document.getElementById(id); if (el) el.checked = RECORTE_LOA_PADRAO[id]; }
     recalcularEstudo();
 }
 
@@ -684,14 +841,19 @@ function fontesSIPOGDisponiveis() {
 }
 
 // Regras, em ordem: exata → tesouro → prefixo → sem par.
+// A sub fonte do PLOA por ação vem como "FT.DT" (ex.: "754.59"), sem a modalidade que a 754
+// usa no código do SIPOG ((754)-(259)): com uma só sub fonte conhecida para o FT.DT, usa o
+// código completo dela; senão, procura a fonte do SIPOG com o mesmo FT terminada no DT.
 function sugerirFonteSIPOG(linhaLOA, fontesSIPOG) {
     let seg = linhaLOA.subfonte.split('.');
-    let fff = seg[0], modalidade = seg[3], det = seg[5];
+    if (seg.length === 2 && (linhaLOA.codigosSubfonte || []).length === 1) seg = linhaLOA.codigosSubfonte[0].split('.');
+    let fff = seg[0], modalidade = seg.length === 6 ? seg[3] : null, det = seg[seg.length - 1];
     let comPartes = fontesSIPOG.map(f => ({ fonte: f, p: partesFonteSIPOG(f) })).filter(x => x.p);
     let mesmoFFF = comPartes.filter(x => x.p.fff === fff);
 
-    let alvo = (fff === '754') ? (modalidade + det) : ('0' + det);
-    let exatas = mesmoFFF.filter(x => x.p.ddd === alvo);
+    let exatas = (fff === '754' && modalidade === null)
+        ? mesmoFFF.filter(x => x.p.ddd.length === 3 && x.p.ddd.slice(1) === det)
+        : mesmoFFF.filter(x => x.p.ddd === ((fff === '754') ? (modalidade + det) : ('0' + det)));
     if (exatas.length === 1) return { fonte: exatas[0].fonte, regra: 'exata' };
 
     if (linhaLOA.grupo === 'Tesouro' && (fff === '500' || fff === '501')) {
@@ -713,7 +875,14 @@ function recalcularDeParaSugerido() {
     let fontes = fontesSIPOGDisponiveis();
     deParaSugerido = {};
     loaLinhas.forEach(l => {
-        if (!deParaSugerido[l.subfonte]) deParaSugerido[l.subfonte] = sugerirFonteSIPOG(l, fontes);
+        if (deParaSugerido[l.subfonte]) return;
+        // FT.DT do PLOA: herda a escolha manual feita antes para a sub fonte completa equivalente.
+        let codigos = l.codigosSubfonte || [];
+        if (codigos.length === 1 && Object.prototype.hasOwnProperty.call(deParaManual, codigos[0])) {
+            deParaSugerido[l.subfonte] = { fonte: deParaManual[codigos[0]], regra: 'manual' };
+            return;
+        }
+        deParaSugerido[l.subfonte] = sugerirFonteSIPOG(l, fontes);
     });
 }
 
@@ -801,17 +970,17 @@ const ORDEM_SITUACAO = { OK: 0, SEM_MAPP: 1, SEM_LOA: 2 };
 
 function montarConsolidado() {
     let mapa = {};
-    let chave = (orgaoN, fonte) => orgaoN + '||' + fonte;
-    let obter = (orgaoN, rotulo, fonte) => {
-        let k = chave(orgaoN, fonte);
-        if (!mapa[k]) mapa[k] = { orgao: rotulo, fonte, loa: 0, temLOA: false, qtd: 0, p26: 0, p27: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, subfontes: new Set(), loaSubfonte: {} };
+    let obter = (rotulo, programa, nomePrograma, fonte) => {
+        let k = chavePar(rotulo, programa, fonte);
+        if (!mapa[k]) mapa[k] = { orgao: rotulo, programa, nomePrograma: nomePrograma || '', fonte, loa: 0, temLOA: false, qtd: 0, p26: 0, p27: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, subfontes: new Set(), loaSubfonte: {} };
+        if (!mapa[k].nomePrograma && nomePrograma) mapa[k].nomePrograma = nomePrograma;
         return mapa[k];
     };
     let loaForaCruzamento = 0, paresForaCruzamento = 0;
     loaLinhas.forEach(l => {
         let fonte = fonteEfetiva(l.subfonte).fonte;
         if (!fonte) { loaForaCruzamento += l.valor; paresForaCruzamento++; return; }
-        let item = obter(N(l.sigla), l.sigla, fonte);
+        let item = obter(l.sigla, cruzaPrograma ? l.programa : '', l.nomePrograma, fonte);
         item.loa += l.valor;
         item.temLOA = true;
         item.subfontes.add(l.subfonte);
@@ -819,7 +988,7 @@ function montarConsolidado() {
     });
     mappsCalculados.forEach(m => {
         if (m.expurgado) return;
-        let item = obter(N(m.orgao), m.orgao, m.fonte);
+        let item = obter(m.orgao, programaDoPar(m), m.nomePrograma, m.fonte);
         item.qtd++;
         item.p26 += m.p26;
         item.p27 += m.p27;
@@ -839,8 +1008,30 @@ function montarConsolidado() {
     }).sort((a, b) => (ORDEM_SITUACAO[a.situacao] - ORDEM_SITUACAO[b.situacao]) || a.fonte.localeCompare(b.fonte) ||
         (b.loa - a.loa) || (b.necAj - a.necAj) || a.orgao.localeCompare(b.orgao));
     situacaoPorPar = {};
-    consolidadoAtual.forEach(l => { situacaoPorPar[N(l.orgao) + '||' + l.fonte] = l.situacao; });
+    consolidadoAtual.forEach(l => { situacaoPorPar[chavePar(l.orgao, l.programa, l.fonte)] = l.situacao; });
     return { loaForaCruzamento, paresForaCruzamento };
+}
+
+// ─── CRUZAMENTO ÓRGÃO × PROGRAMA × FONTE ────────────────────────────────────
+// Com a LOA do PLOA por ação e MAPPs com programa (coluna PROGRAMA ou arquivo "Programas
+// dos MAPPs"), o par passa a ser Órgão × Programa × Fonte; senão, Órgão × Fonte (programa '').
+let cruzaPrograma = false;
+let nomesProgramas = {};      // código → nome (LOA e MAPPs), para rótulos e filtros
+const SEM_PROGRAMA = '(sem programa)';
+
+function chavePar(orgao, programa, fonte) { return N(orgao) + '||' + (programa || '') + '||' + fonte; }
+
+// "222 - INOVA CEARÁ" → { cod: '222', nome: 'INOVA CEARÁ' }
+function programaDoTexto(txt) {
+    let m = String(txt || '').trim().match(/^(\d{1,3})\s*-\s*(.*)$/);
+    return m ? { cod: m[1].padStart(3, '0'), nome: m[2].trim() } : { cod: '', nome: '' };
+}
+
+function programaDoPar(m) { return cruzaPrograma ? (m.programa || SEM_PROGRAMA) : ''; }
+
+function rotuloPrograma(cod, nome) {
+    if (!cod) return '';
+    return cod === SEM_PROGRAMA ? SEM_PROGRAMA : `${cod}${nome ? ' - ' + nome : ''}`;
 }
 
 const ROTULO_SITUACAO = { OK: 'LOA e MAPPs', SEM_LOA: 'MAPPs sem LOA', SEM_MAPP: 'LOA sem MAPPs' };
@@ -880,6 +1071,7 @@ const DESC_COLUNAS = {
     cons: {
         fonte: 'Fonte do SIPOG (a sub fonte da LOA vem pelo De-para da aba 3).',
         orgao: 'Órgão (sigla). Na LOA, a sigla entre parênteses do nome do órgão.',
+        programa: 'Programa de governo (PLOA 2027 por ação × coluna PROGRAMA dos MAPPs). O par passa a ser Órgão × Programa × Fonte.',
         situacao: 'LOA e MAPPs: o par tem LOA e MAPPs ativos. MAPPs sem LOA: há MAPPs, mas o órgão não tem LOA nesta fonte. LOA sem MAPPs: há LOA, mas nenhum MAPP ativo.',
         loa: 'LOA 2027 do órgão na fonte = Σ das sub fontes da LOA ligadas a esta fonte (só Executivo).',
         qtd: 'Quantidade de MAPPs ativos (não expurgados) do órgão na fonte.',
@@ -893,7 +1085,8 @@ const DESC_COLUNAS = {
         subfontes: 'Sub fontes da LOA somadas nesta linha.'
     },
     det: {
-        mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', fonte: 'Fonte do MAPP no SIPOG.', estagio: 'Estágio de execução (normalizado como no SIPOG).',
+        mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', programa: 'Programa do MAPP (coluna PROGRAMA da base ou do arquivo "Programas dos MAPPs").',
+        fonte: 'Fonte do MAPP no SIPOG.', estagio: 'Estágio de execução (normalizado como no SIPOG).',
         grupo: 'Grupo do MAPP (Contrato Gestão, Continuidade, PCF Convênio, Operação de Crédito ou Demais Projetos).',
         p26: 'Programado 2026 (valor da base).', l26: 'Limite 2026 (valor da base).', e26: 'Empenhado 2026 (valor da base).',
         regra: 'Regra da Previsão de Empenho aplicada ao MAPP (cópia do SIPOG).',
@@ -906,8 +1099,9 @@ const DESC_COLUNAS = {
         necAj: 'Nec. 2027 Ajustada = Programado 2027 + (Programado 2026 − Prev. Empenho Ajustada).'
     },
     aj: {
-        mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', fonte: 'Fonte do MAPP no SIPOG.', estagio: 'Estágio de execução.',
-        loaPar: 'LOA 2027 do órgão nesta fonte (o par inteiro, repartido entre os MAPPs do par).',
+        mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', programa: 'Programa do MAPP (o par é Órgão × Programa × Fonte).',
+        fonte: 'Fonte do MAPP no SIPOG.', estagio: 'Estágio de execução.',
+        loaPar: 'LOA 2027 do par do MAPP (órgão [× programa] × fonte), repartida entre os MAPPs do par.',
         necAj: 'Nec. 2027 Ajustada do MAPP = Programado 2027 + (Programado 2026 − Prev. Empenho Ajustada). É o teto da proposta automática.',
         proposta: DESC_PROPOSTA
     }
@@ -920,20 +1114,28 @@ function thDesc(titulo, desc, cls) {
 function cabecalhoOrdenavel(tabela, colunas) {
     let o = ordemTabelas[tabela];
     return '<tr>' + colunas.map(c => {
-        let cls = [c.num ? 'num' : '', o.chave === c.chave ? (o.desc ? 'ordem-desc' : 'ordem-asc') : ''].join(' ').trim();
+        let cls = [c.num ? 'num' : '', c.classe || '', o.chave === c.chave ? (o.desc ? 'ordem-desc' : 'ordem-asc') : ''].join(' ').trim();
         let desc = (DESC_COLUNAS[tabela] || {})[c.chave];
         return `<th class="${cls}"${desc ? ' data-desc="1"' : ''} onclick="ordenarTabela('${tabela}', '${c.chave}')"${dica(c.titulo, desc, '(clique para ordenar)')}>${escHtml(c.titulo)}</th>`;
     }).join('') + '</tr>';
 }
 
+// Coluna Programa (só aparece com o cruzamento Órgão × Programa × Fonte; classe so-programa).
+const COLUNA_PROGRAMA = { chave: 'programa', titulo: 'Programa', classe: 'so-programa', valor: x => rotuloPrograma(x.programa, x.nomePrograma || nomesProgramas[x.programa]),
+    celula: x => `<td class="so-programa" style="font-size:11px; min-width:150px;">${escHtml(rotuloPrograma(x.programa, x.nomePrograma || nomesProgramas[x.programa]))}</td>` };
+
+// Colunas de texto antes dos valores (para o colspan do TOTAL), contando a coluna Programa se visível.
+function colsTexto(n) { return n + (cruzaPrograma ? 1 : 0); }
+
 // ─── CONSOLIDADO ÓRGÃO × FONTE (grade) ──────────────────────────────────────
 const COLUNAS_CONSOLIDADO = [
     { chave: 'fonte', titulo: 'Fonte do SIPOG', valor: l => l.fonte, celula: l => `<td class="col-fonte">${escHtml(l.fonte)}</td>` },
     { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao, celula: l => `<td><strong>${escHtml(l.orgao)}</strong></td>` },
+    COLUNA_PROGRAMA,
     { chave: 'situacao', titulo: 'Situação', valor: l => ROTULO_SITUACAO[l.situacao], ordem: l => ORDEM_SITUACAO[l.situacao],
       celula: l => `<td><span class="estudo-tag ${l.situacao === 'OK' ? 'tag-exata' : (l.situacao === 'SEM_LOA' ? 'tag-sem' : 'tag-prefixo')}">${ROTULO_SITUACAO[l.situacao]}</span></td>` },
     { chave: 'loa', titulo: 'LOA 2027', num: true, valor: l => l.temLOA ? l.loa : null,
-      celula: l => `<td class="num"${dica(l.temLOA ? `LOA 2027 de ${l.orgao} na fonte = Σ sub fontes da LOA\n` +
+      celula: l => `<td class="num"${dica(l.temLOA ? `LOA 2027 de ${l.orgao}${l.programa ? ' no programa ' + rotuloPrograma(l.programa, l.nomePrograma) : ''} na fonte = Σ sub fontes da LOA\n` +
           Object.keys(l.loaSubfonte).sort().map(sf => `  ${sf}: ${FT(l.loaSubfonte[sf])}`).join('\n') + `\n= ${FT(l.loa)}` : 'Sem LOA 2027 para o órgão nesta fonte')}>${l.temLOA ? F(l.loa) : '—'}</td>` },
     { chave: 'qtd', titulo: 'MAPPs', num: true, valor: l => l.qtd, celula: l => `<td class="num"${dica('MAPPs ativos (não expurgados) do órgão na fonte')}>${l.qtd || '—'}</td>` },
     { chave: 'p26', titulo: 'Programado 2026', num: true, valor: l => l.p26, dica: l => `Σ Programado 2026 dos ${l.qtd} MAPPs = ${FT(l.p26)}` },
@@ -967,8 +1169,9 @@ function renderizarConsolidado() {
     let fOrg = document.getElementById('filtro-cons-orgao').value;
     let fSit = document.getElementById('filtro-cons-situacao').value;
     let fTxt = N(document.getElementById('filtro-cons-texto').value);
+    let fProg = cruzaPrograma ? document.getElementById('filtro-cons-programa').value : '';
     let linhas = linhasConsolidadoOrdenadas().filter(l =>
-        (!fFonte || l.fonte === fFonte) && (!fOrg || N(l.orgao) === N(fOrg)) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
+        (!fFonte || l.fonte === fFonte) && (!fOrg || N(l.orgao) === N(fOrg)) && (!fProg || l.programa === fProg) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
 
     let tot = linhas.reduce((t, l) => {
         t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.p27 += l.p27; t.prevEmp += l.prevEmp; t.prevEmpAj += l.prevEmpAj; t.nec += l.nec; t.necAj += l.necAj;
@@ -992,10 +1195,10 @@ function renderizarConsolidado() {
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
     let h = `<table><thead>${cabecalhoOrdenavel('cons', COLUNAS_CONSOLIDADO)}</thead><tbody>`;
     linhas.forEach(l => {
-        h += `<tr class="linha-clicavel" data-orgao="${escHtml(l.orgao)}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)" title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte no card 5">` +
+        h += `<tr class="linha-clicavel" data-orgao="${escHtml(l.orgao)}" data-programa="${escHtml(l.programa || '')}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)" title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte no card 5">` +
             COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : '')).join('') + '</tr>';
     });
-    h += `</tbody><tfoot><tr><td colspan="3">TOTAL (${linhas.length} linhas)</td>
+    h += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}">TOTAL (${linhas.length} linhas)</td>
         ${tdNum(tot.loa, `Σ LOA 2027 das ${linhas.length} linhas = ${FT(tot.loa)}`)}<td class="num"${dica('Σ MAPPs ativos das linhas')}>${tot.qtd}</td>${tdNum(tot.p26, `Σ Programado 2026 = ${FT(tot.p26)}`)}
         ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada = ${FT(tot.prevEmpAj)}`)}${tdNum(tot.nec, dNec)}${tdNum(tot.necAj, dNecAj)}
         <td class="num"${dica(dPct)}>${fmtPct(pctTot)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
@@ -1053,23 +1256,27 @@ function preencherSelectLigado(id, valores, rotuloTodos, rotulo) {
 function atualizarFiltrosConsolidado() {
     let val = id => (document.getElementById(id) || {}).value || '';
     let fFonte = val('filtro-cons-fonte'), fOrg = val('filtro-cons-orgao'), fSit = val('filtro-cons-situacao'), fEst = val('filtro-det-estagio');
+    let fProg = cruzaPrograma ? val('filtro-cons-programa') : '';
     let fBuscaOrg = N(val('filtro-cons-texto')), fTxt = N(val('filtro-det-texto'));
     let fExp = !!(document.getElementById('filtro-det-expurgo') || {}).checked;
     let universo = [];
     mappsCalculados.forEach(m => {
         if (m.expurgado && !fExp) return;
-        universo.push({ fonte: m.fonte, orgao: m.orgao, situacao: situacaoPorPar[N(m.orgao) + '||' + m.fonte], estagio: m.estagio, texto: N(m.mapp) + ' ' + N(m.regra) });
+        let programa = programaDoPar(m);
+        universo.push({ fonte: m.fonte, orgao: m.orgao, programa, situacao: situacaoPorPar[chavePar(m.orgao, programa, m.fonte)], estagio: m.estagio, texto: N(m.mapp) + ' ' + N(m.regra) });
     });
-    consolidadoAtual.forEach(c => { if (c.situacao === 'SEM_MAPP') universo.push({ fonte: c.fonte, orgao: c.orgao, situacao: c.situacao, estagio: null, texto: null }); });
+    consolidadoAtual.forEach(c => { if (c.situacao === 'SEM_MAPP') universo.push({ fonte: c.fonte, orgao: c.orgao, programa: c.programa, situacao: c.situacao, estagio: null, texto: null }); });
     let filtros = {
         fonte: fFonte ? u => u.fonte === fFonte : null,
         orgao: fOrg ? u => N(u.orgao) === N(fOrg) : null,
+        programa: fProg ? u => u.programa === fProg : null,
         situacao: fSit ? u => u.situacao === fSit : null,
         estagio: fEst ? u => u.estagio === fEst : null
     };
     let extras = (fBuscaOrg || fTxt) ? u => (!fBuscaOrg || N(u.orgao).includes(fBuscaOrg)) && (!fTxt || (u.texto !== null && u.texto.includes(fTxt))) : null;
     preencherSelectLigado('filtro-cons-fonte', valoresLigados(universo, filtros, 'fonte', extras), '(todas)');
     preencherSelectLigado('filtro-cons-orgao', valoresLigados(universo, filtros, 'orgao', extras), '(todos)');
+    if (cruzaPrograma) preencherSelectLigado('filtro-cons-programa', valoresLigados(universo, filtros, 'programa', extras), '(todos)', v => rotuloPrograma(v, nomesProgramas[v]));
     preencherSelectLigado('filtro-cons-situacao', valoresLigados(universo, filtros, 'situacao', extras), '(todas)', v => ROTULO_SITUACAO[v] || v);
     preencherSelectLigado('filtro-det-estagio', valoresLigados(universo, filtros, 'estagio', extras), '(todos)');
 }
@@ -1078,12 +1285,15 @@ function atualizarFiltrosConsolidado() {
 function atualizarFiltrosAjustes() {
     let val = id => (document.getElementById(id) || {}).value || '';
     let fFonte = val('filtro-aj-fonte'), fOrg = val('filtro-aj-orgao'), fTxt = N(val('filtro-aj-texto'));
-    let universo = linhasAjustes.map(l => ({ fonte: l.fonte, orgao: l.orgao, texto: N(l.mapp) }));
-    consolidadoAtual.forEach(c => { if (c.temLOA) universo.push({ fonte: c.fonte, orgao: c.orgao, texto: null }); });
-    let filtros = { fonte: fFonte ? u => u.fonte === fFonte : null, orgao: fOrg ? u => N(u.orgao) === N(fOrg) : null };
+    let fProg = cruzaPrograma ? val('filtro-aj-programa') : '';
+    let universo = linhasAjustes.map(l => ({ fonte: l.fonte, orgao: l.orgao, programa: l.programa, texto: N(l.mapp) }));
+    consolidadoAtual.forEach(c => { if (c.temLOA) universo.push({ fonte: c.fonte, orgao: c.orgao, programa: c.programa, texto: null }); });
+    let filtros = { fonte: fFonte ? u => u.fonte === fFonte : null, orgao: fOrg ? u => N(u.orgao) === N(fOrg) : null,
+        programa: fProg ? u => u.programa === fProg : null };
     let extras = fTxt ? u => u.texto !== null && u.texto.includes(fTxt) : null;
     preencherSelectLigado('filtro-aj-fonte', valoresLigados(universo, filtros, 'fonte', extras), '(todas)');
     preencherSelectLigado('filtro-aj-orgao', valoresLigados(universo, filtros, 'orgao', extras), '(todos)');
+    if (cruzaPrograma) preencherSelectLigado('filtro-aj-programa', valoresLigados(universo, filtros, 'programa', extras), '(todos)', v => rotuloPrograma(v, nomesProgramas[v]));
 }
 
 // Resumo por grupo do Valor Deliberado (mesmas colunas-base da tabela do Redutor no SIPOG).
@@ -1129,6 +1339,7 @@ const COLUNAS_DETALHE = [
     { chave: 'mapp', titulo: 'MAPP', valor: m => m.mapp,
       celula: m => `<td class="col-mapp" title="${escHtml(m.mapp)}"><span>${escHtml(m.mapp)}</span></td>` },
     { chave: 'orgao', titulo: 'Órgão', valor: m => m.orgao, celula: m => `<td>${escHtml(m.orgao)}</td>` },
+    COLUNA_PROGRAMA,
     { chave: 'fonte', titulo: 'Fonte', valor: m => m.fonte, celula: m => `<td class="col-fonte" style="font-size:11px;">${escHtml(m.fonte)}</td>` },
     { chave: 'estagio', titulo: 'Estágio', valor: m => m.estagio, celula: m => `<td style="font-size:11px;">${escHtml(m.estagio)}</td>` },
     { chave: 'grupo', titulo: 'Grupo', valor: m => rotuloGrupo(m.classe), celula: m => `<td style="font-size:11px;">${escHtml(rotuloGrupo(m.classe))}</td>` },
@@ -1168,9 +1379,11 @@ function renderizarDetalhe() {
     let fBuscaOrgaoCard4 = N(document.getElementById('filtro-cons-texto').value);
     let fExp = document.getElementById('filtro-det-expurgo').checked;
     let fTxt = N(document.getElementById('filtro-det-texto').value);
+    let fProg = cruzaPrograma ? document.getElementById('filtro-cons-programa').value : '';
     let linhas = linhasDetalheOrdenadas().filter(m =>
         (fExp || !m.expurgado) && (!fOrg || N(m.orgao) === N(fOrg)) && (!fFon || m.fonte === fFon) && (!fEst || m.estagio === fEst) &&
-        (!fSit || situacaoPorPar[N(m.orgao) + '||' + m.fonte] === fSit) && (!fBuscaOrgaoCard4 || N(m.orgao).includes(fBuscaOrgaoCard4)) &&
+        (!fProg || programaDoPar(m) === fProg) &&
+        (!fSit || situacaoPorPar[chavePar(m.orgao, programaDoPar(m), m.fonte)] === fSit) && (!fBuscaOrgaoCard4 || N(m.orgao).includes(fBuscaOrgaoCard4)) &&
         (!fTxt || N(m.mapp).includes(fTxt) || N(m.regra).includes(fTxt)));
 
     // Totais só dos MAPPs ativos, como no card 4: expurgados exibidos (checkbox)
@@ -1187,7 +1400,7 @@ function renderizarDetalhe() {
     });
     let aviso = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; use os filtros ou exporte o XLSX para ver todas` : '';
     let notaExpurgo = qtdExpurgadosExibidos ? `; ${qtdExpurgadosExibidos.toLocaleString('pt-BR')} expurgado(s) exibido(s), fora do total` : '';
-    h += `</tbody><tfoot><tr><td colspan="5">TOTAL (${ativosExibidos.length.toLocaleString('pt-BR')} MAPPs${notaExpurgo}${aviso})</td>
+    h += `</tbody><tfoot><tr><td colspan="${colsTexto(5)}">TOTAL (${ativosExibidos.length.toLocaleString('pt-BR')} MAPPs${notaExpurgo}${aviso})</td>
         ${tdNum(tot.p26, `Σ Programado 2026 dos MAPPs ativos = ${FT(tot.p26)}`)}${tdNum(tot.l26, `Σ Limite 2026 = ${FT(tot.l26)}`)}${tdNum(tot.e26, `Σ Empenhado 2026 = ${FT(tot.e26)}`)}<td></td>
         ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.trf, `Σ TRF 2026 = Σ Programado 2026 − Σ Prev. Empenho\n= ${FT(tot.p26)} − ${FT(tot.prevEmp)} = ${FT(tot.trf)}`)}
         ${tdNum(tot.p27, `Σ Programado 2027 = ${FT(tot.p27)}`)}${tdNum(tot.nec, `Σ Nec. 2027 Calculada = Σ Programado 2027 + Σ TRF\n= ${FT(tot.p27)} + ${FT(tot.trf)} = ${FT(tot.nec)}`)}
@@ -1201,6 +1414,7 @@ function renderizarDetalhe() {
 function abrirMAPPsDoPar(tr) {
     document.getElementById('filtro-cons-orgao').value = tr.dataset.orgao;
     document.getElementById('filtro-cons-fonte').value = tr.dataset.fonte;
+    document.getElementById('filtro-cons-programa').value = tr.dataset.programa || '';
     document.getElementById('filtro-cons-situacao').value = '';
     document.getElementById('filtro-cons-texto').value = '';
     document.getElementById('filtro-det-estagio').value = '';
@@ -1212,7 +1426,7 @@ function abrirMAPPsDoPar(tr) {
 }
 
 function limparFiltrosConsolidado() {
-    ['filtro-cons-fonte', 'filtro-cons-orgao', 'filtro-cons-situacao', 'filtro-det-estagio', 'filtro-cons-texto', 'filtro-det-texto']
+    ['filtro-cons-fonte', 'filtro-cons-orgao', 'filtro-cons-programa', 'filtro-cons-situacao', 'filtro-det-estagio', 'filtro-cons-texto', 'filtro-det-texto']
         .forEach(id => { let el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('filtro-det-expurgo').checked = false;
     renderizarConsolidado();
@@ -1235,10 +1449,23 @@ function mostrarAbaEstudo(aba) {
 function recalcularEstudo() {
     // A lista de fontes do Valor Deliberado precisa estar pronta antes de ler os parâmetros.
     preencherSelect('vd-fonte', fontesSIPOGDisponiveis(), '(todas as fontes)');
+    aplicarRecorteLOA();
     let prm = lerParametrosEstudo();
     let siglasFora = siglasForaDoExecutivo();
-    mappsCalculados = mappsBrutos.map(r => expurgarMAPPForaDoExecutivo(
-        aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte), siglasFora));
+    mappsCalculados = mappsBrutos.map(r => {
+        let m = expurgarMAPPForaDoExecutivo(
+            aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte), siglasFora);
+        let p = programaDoTexto(r.PROGRAMA);
+        m.programa = p.cod;
+        m.nomePrograma = p.nome;
+        return m;
+    });
+    // Órgão × Programa × Fonte só com a LOA do PLOA por ação e MAPPs com programa.
+    cruzaPrograma = loaConferencia.origem === 'ploa' && mappsCalculados.some(m => !m.expurgado && m.programa);
+    document.body.classList.toggle('cruza-programa', cruzaPrograma);
+    nomesProgramas = {};
+    loaLinhas.forEach(l => { if (l.programa) nomesProgramas[l.programa] = l.nomePrograma; });
+    mappsCalculados.forEach(m => { if (m.programa && !nomesProgramas[m.programa]) nomesProgramas[m.programa] = m.nomePrograma; });
     let statusFora = document.getElementById('status-mapps-expurgo');
     if (statusFora) {
         let fora = mappsCalculados.filter(m => /FORA DO EXECUTIVO/.test(m.regra));
@@ -1272,8 +1499,6 @@ let propostasManuais = {};     // { chave: { valor, origem: 'manual' | 'redistri
 const CHAVE_PROPOSTAS_LOCAL = 'sipog_estudo_loa_propostas_v1';
 const TOLERANCIA_ALERTA = 1;   // R$ 1: abaixo disso a fonte "confere"
 
-function chaveParAj(orgao, fonte) { return N(orgao) + '||' + fonte; }
-
 function lerPropostasLocal(arquivo) {
     try {
         let s = JSON.parse(localStorage.getItem(CHAVE_PROPOSTAS_LOCAL) || 'null');
@@ -1287,15 +1512,16 @@ function salvarPropostasLocal() {
 
 function calcularPropostasAutomaticas() {
     let loaPar = {};
-    consolidadoAtual.forEach(l => { if (l.temLOA) loaPar[chaveParAj(l.orgao, l.fonte)] = l.loa; });
+    consolidadoAtual.forEach(l => { if (l.temLOA) loaPar[chavePar(l.orgao, l.programa, l.fonte)] = l.loa; });
     let somaNecPar = {}, ocorrencias = {};
     linhasAjustes = mappsCalculados.filter(m => !m.expurgado).map(m => {
         let base = N(m.mapp) + '||' + m.fonte + '||' + N(m.orgao);
         ocorrencias[base] = (ocorrencias[base] || 0) + 1;
-        let par = chaveParAj(m.orgao, m.fonte);
+        let programa = programaDoPar(m);
+        let par = chavePar(m.orgao, programa, m.fonte);
         let peso = Math.max(m.necAj || 0, 0);
         somaNecPar[par] = (somaNecPar[par] || 0) + peso;
-        return { chave: base + '#' + ocorrencias[base], par, peso, mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio,
+        return { chave: base + '#' + ocorrencias[base], par, peso, mapp: m.mapp, orgao: m.orgao, programa, nomePrograma: m.nomePrograma, fonte: m.fonte, estagio: m.estagio,
             classe: m.classe, necAj: m.necAj, p26: m.p26, p27: m.p27, prevEmpAj: m.prevEmpAj, loaPar: loaPar[par] !== undefined ? loaPar[par] : null };
     });
     // Proporcional à Necessidade Ajustada e nunca acima dela: se a LOA do par passa da soma
@@ -1345,27 +1571,31 @@ function filtrosAjustes() {
     return {
         fonte: (document.getElementById('filtro-aj-fonte') || {}).value || '',
         orgao: (document.getElementById('filtro-aj-orgao') || {}).value || '',
+        programa: cruzaPrograma ? ((document.getElementById('filtro-aj-programa') || {}).value || '') : '',
         texto: N((document.getElementById('filtro-aj-texto') || {}).value || ''),
         soEditados: !!(document.getElementById('filtro-aj-editados') || {}).checked
     };
 }
 
-// Fontes: LOA (pares do filtro) × soma das propostas, apurado par a par (Órgão × Fonte):
+// Fontes: LOA (pares do filtro) × soma das propostas, apurado par a par (Órgão × [Programa ×] Fonte):
 //   estouro    = Proposta acima da LOA do par;
 //   distribuível = sobra que cabe nos MAPPs não editados até a Nec. Ajustada deles ("Distribuir");
 //   sem destino = sobra que não cabe (par sem MAPP com necessidade, ou LOA além da necessidade):
 //                 só a grade de MAPPs sem necessidade pode recebê-la, à mão.
+function noFiltroAjustes(f, x) {
+    return (!f.fonte || x.fonte === f.fonte) && (!f.orgao || N(x.orgao) === N(f.orgao)) && (!f.programa || x.programa === f.programa);
+}
+
 function montarAlertasFontes(f) {
-    let noFiltro = (orgao, fonte) => (!f.fonte || fonte === f.fonte) && (!f.orgao || N(orgao) === N(f.orgao));
     let pares = {};
-    let obterPar = (orgao, fonte) => {
-        let k = chaveParAj(orgao, fonte);
-        return pares[k] || (pares[k] = { fonte, loa: 0, proposta: 0, folga: 0, qtd: 0, editados: 0 });
+    let obterPar = x => {
+        let k = chavePar(x.orgao, x.programa, x.fonte);
+        return pares[k] || (pares[k] = { fonte: x.fonte, loa: 0, proposta: 0, folga: 0, qtd: 0, editados: 0 });
     };
-    consolidadoAtual.forEach(c => { if (c.temLOA && noFiltro(c.orgao, c.fonte)) obterPar(c.orgao, c.fonte).loa += c.loa; });
+    consolidadoAtual.forEach(c => { if (c.temLOA && noFiltroAjustes(f, c)) obterPar(c).loa += c.loa; });
     linhasAjustes.forEach(l => {
-        if (!noFiltro(l.orgao, l.fonte)) return;
-        let p = obterPar(l.orgao, l.fonte), prop = propostaDe(l), man = propostasManuais[l.chave];
+        if (!noFiltroAjustes(f, l)) return;
+        let p = obterPar(l), prop = propostaDe(l), man = propostasManuais[l.chave];
         p.proposta += prop;
         p.qtd++;
         if (man) p.editados++;
@@ -1396,7 +1626,7 @@ function montarAlertasFontes(f) {
 function distribuirDiferencaFonte(fonte) {
     let f = filtrosAjustes();
     let pares = {};
-    linhasAjustes.filter(l => l.fonte === fonte && l.loaPar !== null && (!f.orgao || N(l.orgao) === N(f.orgao)))
+    linhasAjustes.filter(l => l.fonte === fonte && l.loaPar !== null && noFiltroAjustes(Object.assign({}, f, { fonte }), l))
         .forEach(l => { (pares[l.par] = pares[l.par] || []).push(l); });
     let alterados = 0;
     Object.values(pares).forEach(linhas => {
@@ -1474,12 +1704,12 @@ function renderizarAjustesFinais() {
     let divergentes = alertas.filter(a => a.status !== 'ok');
 
     // Linhas de MAPP no filtro
-    let linhas = linhasAjustes.filter(l => (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao)) &&
+    let linhas = linhasAjustes.filter(l => noFiltroAjustes(f, l) &&
         (!f.texto || N(l.mapp).includes(f.texto)) && (!f.soEditados || propostasManuais[l.chave]));
 
     let tLOA = alertas.reduce((s, a) => s + a.loa, 0), tProp = alertas.reduce((s, a) => s + a.proposta, 0);
     let tSemDest = alertas.reduce((s, a) => s + a.semDestino, 0);
-    let doFiltro = linhasAjustes.filter(l => (!f.fonte || l.fonte === f.fonte) && (!f.orgao || N(l.orgao) === N(f.orgao)));
+    let doFiltro = linhasAjustes.filter(l => noFiltroAjustes(f, l));
     let qtdEditados = doFiltro.filter(l => propostasManuais[l.chave]).length;
     let qtdExcede = doFiltro.filter(propostaExcede).length;
     let propAuto = doFiltro.filter(l => !propostasManuais[l.chave]).reduce((s, l) => s + l.auto, 0);
@@ -1532,12 +1762,12 @@ function renderizarAjustesFinais() {
     // Órgãos (todas as fontes do filtro)
     let porOrgao = {};
     consolidadoAtual.forEach(c => {
-        if (!c.temLOA || (f.fonte && c.fonte !== f.fonte) || (f.orgao && N(c.orgao) !== N(f.orgao))) return;
+        if (!c.temLOA || !noFiltroAjustes(f, c)) return;
         let o = porOrgao[N(c.orgao)] || (porOrgao[N(c.orgao)] = { orgao: c.orgao, loa: 0, necAj: 0, proposta: 0, qtd: 0, fontes: new Set() });
         o.loa += c.loa; o.fontes.add(c.fonte);
     });
     linhasAjustes.forEach(l => {
-        if ((f.fonte && l.fonte !== f.fonte) || (f.orgao && N(l.orgao) !== N(f.orgao))) return;
+        if (!noFiltroAjustes(f, l)) return;
         let o = porOrgao[N(l.orgao)] || (porOrgao[N(l.orgao)] = { orgao: l.orgao, loa: 0, necAj: 0, proposta: 0, qtd: 0, fontes: new Set() });
         o.necAj += l.necAj; o.proposta += propostaDe(l); o.qtd++; o.fontes.add(l.fonte);
     });
@@ -1579,9 +1809,9 @@ function tabelaMappsAjustes(linhas, msgVazia) {
         let excede = propostaExcede(l);
         let valorTxt = propostaDe(l).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         hm += `<tr class="${excede ? 'proposta-excede' : (man ? 'proposta-editada' : '')}"${excede ? ` title="Proposta acima da Nec. 2027 Ajustada (${escHtml(F(l.necAj))})"` : ''}>
-            <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>
+            <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>${COLUNA_PROGRAMA.celula(l)}
             <td class="col-fonte" style="font-size:11px;">${escHtml(l.fonte)}</td><td style="font-size:11px;">${escHtml(l.estagio)}</td>
-            <td class="num"${dica(l.loaPar === null ? 'Órgão sem LOA 2027 nesta fonte' : `LOA 2027 de ${l.orgao} na fonte ${l.fonte} = ${FT(l.loaPar)}\nΣ Nec. 2027 Ajustada dos MAPPs do par = ${FT(l.somaPar)}`)}>${l.loaPar === null ? 'sem LOA' : F(l.loaPar)}</td>
+            <td class="num"${dica(l.loaPar === null ? 'Sem LOA 2027 para este par (órgão' + (l.programa ? ', programa' : '') + ' e fonte)' : `LOA 2027 de ${l.orgao}${l.programa ? ' no programa ' + rotuloPrograma(l.programa, l.nomePrograma) : ''} na fonte ${l.fonte} = ${FT(l.loaPar)}\nΣ Nec. 2027 Ajustada dos MAPPs do par = ${FT(l.somaPar)}`)}>${l.loaPar === null ? 'sem LOA' : F(l.loaPar)}</td>
             ${tdNum(l.necAj, explicarNecAj(l))}
             <td class="num"${dica(explicarProposta(l))}><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="${escHtml(explicarProposta(l))}">
                 ${man ? `<button class="btn-link" onclick="restaurarProposta('${escHtml(l.chave.replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" title="${man.origem === 'redistribuicao' ? 'Valor da redistribuição' : 'Editado'} — voltar ao automático (${escHtml(F(l.auto))})">↺</button>` : ''}</td>
@@ -1591,7 +1821,7 @@ function tabelaMappsAjustes(linhas, msgVazia) {
     let paresVistos = {}; linhas.forEach(l => { if (l.loaPar !== null) paresVistos[l.par] = l.loaPar; });
     let loaPares = Object.values(paresVistos).reduce((s, v) => s + v, 0);
     let avisoLim = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; filtre por fonte ou órgão para ver todas` : '';
-    hm += `</tbody><tfoot><tr><td colspan="4">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${avisoLim})</td>
+    hm += `</tbody><tfoot><tr><td colspan="${colsTexto(4)}">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${avisoLim})</td>
         ${tdNum(loaPares, `Σ LOA 2027 dos ${Object.keys(paresVistos).length} pares Órgão × Fonte destes MAPPs (cada par uma vez) = ${FT(loaPares)}`)}
         ${tdNum(tm.necAj, `Σ Nec. 2027 Ajustada dos ${linhas.length} MAPPs = ${FT(tm.necAj)}`)}${tdNum(tm.proposta, `Σ Proposta dos ${linhas.length} MAPPs = ${FT(tm.proposta)}`)}</tr></tfoot></table>`;
     return hm;
@@ -1600,9 +1830,10 @@ function tabelaMappsAjustes(linhas, msgVazia) {
 const COLUNAS_AJUSTES = [
     { chave: 'mapp', titulo: 'MAPP', valor: l => l.mapp },
     { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao },
+    COLUNA_PROGRAMA,
     { chave: 'fonte', titulo: 'Fonte SIPOG', valor: l => l.fonte },
     { chave: 'estagio', titulo: 'Estágio', valor: l => l.estagio },
-    { chave: 'loaPar', titulo: 'LOA 2027 (órgão na fonte)', num: true, valor: l => l.loaPar },
+    { chave: 'loaPar', titulo: 'LOA 2027 do par', num: true, valor: l => l.loaPar },
     { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj },
     { chave: 'proposta', titulo: 'Proposta Programado 2027', num: true, valor: l => l.proposta }
 ];
@@ -1624,7 +1855,9 @@ function coletarParametrosEstudoTela() {
     let campos = {};
     for (let id in PADROES_ESTUDO) { let el = document.getElementById(id); if (el) campos[id] = el.value; }
     let elExp = document.getElementById('ep-expurgar-fisfin');
-    return { campos, expurgarFisFin: elExp ? elExp.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '' };
+    let recorte = {};
+    for (let id in RECORTE_LOA_PADRAO) recorte[id] = marcadoRecorte(id);
+    return { campos, expurgarFisFin: elExp ? elExp.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '', recorteLOA: recorte };
 }
 
 function aplicarParametrosEstudoTela(p) {
@@ -1632,6 +1865,8 @@ function aplicarParametrosEstudoTela(p) {
     for (let id in (p.campos || {})) { let el = document.getElementById(id); if (el) el.value = p.campos[id]; }
     let elExp = document.getElementById('ep-expurgar-fisfin');
     if (elExp && typeof p.expurgarFisFin === 'boolean') elExp.checked = p.expurgarFisFin;
+    let recorte = Object.assign({}, RECORTE_LOA_PADRAO, p.recorteLOA || {});
+    for (let id in recorte) { let el = document.getElementById(id); if (el) el.checked = !!recorte[id]; }
 }
 
 async function salvarEstudoNuvem() {
@@ -1651,7 +1886,10 @@ async function salvarEstudoNuvem() {
             ordemTabelas: ordemTabelas,
             propostasManuais: propostasManuais,
             // "dadosBrutos" alimenta o totalRegistros dos metadados (gravarPacoteFragmentado).
-            dados: { loaLinhas: loaLinhasArquivo, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
+            // PLOA por ação: guarda os créditos (o recorte é refeito ao carregar); senão, as linhas lidas.
+            dados: loaConferencia.origem === 'ploa'
+                ? { loaCreditos, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
+                : { loaLinhas: loaLinhasArquivo, loaConferencia, dadosBrutos: mappsOriginais, colunasMapps: mappsColunasOriginais }
         };
         await gravarPacoteFragmentado(fb, COLECAO_ESTUDOS, pacote);
         window.__setStatusNuvem('☁️ Estudo salvo na nuvem', true);
@@ -1700,8 +1938,13 @@ async function carregarEstudoNuvemPorId(id) {
         salvarDeParaManual();
         if (pacote.ordemTabelas) ordemTabelas = pacote.ordemTabelas;
         let dados = pacote.dados;
-        loaLinhas = []; loaLinhasArquivo = []; mappsBrutos = []; mappsOriginais = [];
-        if (Array.isArray(dados.loaLinhas) && dados.loaLinhas.length) carregarLOA(Object.assign({ linhas: dados.loaLinhas }, dados.loaConferencia || { conferido: false, divergencias: [] }), (pacote.arquivos || {}).loa);
+        loaLinhas = []; loaLinhasArquivo = []; loaCreditos = []; mappsBrutos = []; mappsOriginais = [];
+        if (Array.isArray(dados.loaCreditos) && dados.loaCreditos.length) {
+            let c = dados.loaConferencia || {};
+            loaCreditos = dados.loaCreditos;
+            carregarLOA({ linhas: montarLinhasPLOA(loaCreditos, lerParametrosEstudo()), conferido: true, origem: 'ploa',
+                divergencias: c.divergencias || [], resumoPloa: c.resumoPloa || null }, (pacote.arquivos || {}).loa);
+        } else if (Array.isArray(dados.loaLinhas) && dados.loaLinhas.length) carregarLOA(Object.assign({ linhas: dados.loaLinhas }, dados.loaConferencia || { conferido: false, divergencias: [] }), (pacote.arquivos || {}).loa);
         if (Array.isArray(dados.dadosBrutos) && dados.dadosBrutos.length) carregarMAPPs(dados.dadosBrutos, (pacote.arquivos || {}).mapps, dados.colunasMapps);
         // As edições da Proposta salvas com o estudo prevalecem sobre as deste navegador.
         propostasManuais = pacote.propostasManuais || {};
@@ -1757,6 +2000,7 @@ async function exportarEstudoXLSX() {
 
     adicionarAbaEstudo(wb, 'ORGAO_X_FONTE', [
         { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 16 },
+        { titulo: 'PROGRAMA', chave: 'programa', largura: 40 },
         { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 }, { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 },
         { titulo: 'QTD MAPPS', chave: 'qtd', largura: 11 }, { titulo: 'PROGRAMADO 2026', chave: 'p26', moeda: true, largura: 20 },
         { titulo: 'PREV. EMPENHO 2026', chave: 'prevEmp', moeda: true, largura: 20 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 20 },
@@ -1764,13 +2008,14 @@ async function exportarEstudoXLSX() {
         { titulo: '% DA LOA (NEC. AJ.)', chave: 'pct', pct: true, largura: 13 }, { titulo: 'SALDO (LOA − NEC. AJ.)', chave: 'saldo', moeda: true, largura: 20 },
         { titulo: 'SUB FONTES DA LOA', chave: 'sfs', largura: 40 }
     ], linhasConsolidadoOrdenadas().map(l => ({
-        fonte: l.fonte, orgao: l.orgao, sit: ROTULO_SITUACAO[l.situacao], loa: l.temLOA ? l.loa : null, qtd: l.qtd,
+        fonte: l.fonte, orgao: l.orgao, programa: rotuloPrograma(l.programa, l.nomePrograma), sit: ROTULO_SITUACAO[l.situacao], loa: l.temLOA ? l.loa : null, qtd: l.qtd,
         p26: l.p26, prevEmp: l.prevEmp, prevEmpAj: l.prevEmpAj, nec: l.nec, necAj: l.necAj, pct: l.pctLOA === null ? null : Number(l.pctLOA.toFixed(4)),
         saldo: l.saldo, sfs: l.subfontesTxt
     })));
 
     adicionarAbaEstudo(wb, 'DETALHE_MAPP', [
         { titulo: 'MAPP', chave: 'mapp', largura: 16 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
+        { titulo: 'PROGRAMA', chave: 'programa', largura: 40 },
         { titulo: 'FONTE', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
         { titulo: 'GRUPO', chave: 'grupo', largura: 20 }, { titulo: 'EXPURGADO', chave: 'exp', largura: 11 },
         { titulo: 'PROGRAMADO 2026', chave: 'p26', moeda: true, largura: 18 }, { titulo: 'LIMITE 2026', chave: 'l26', moeda: true, largura: 18 },
@@ -1780,7 +2025,7 @@ async function exportarEstudoXLSX() {
         { titulo: '% DELIBERADO', chave: 'pctDel', pct: true, largura: 12 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 18 },
         { titulo: 'TRF 2026 AJUSTADA', chave: 'trfAj', moeda: true, largura: 18 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 18 }
     ], linhasDetalheOrdenadas().map(m => ({
-        mapp: m.mapp, orgao: m.orgao, fonte: m.fonte, estagio: m.estagio, grupo: rotuloGrupo(m.classe), exp: m.expurgado ? 'SIM' : 'NÃO',
+        mapp: m.mapp, orgao: m.orgao, programa: rotuloPrograma(m.programa, m.nomePrograma), fonte: m.fonte, estagio: m.estagio, grupo: rotuloGrupo(m.classe), exp: m.expurgado ? 'SIM' : 'NÃO',
         p26: m.p26, l26: m.l26, e26: m.e26, regra: m.regra, prevEmp: m.prevEmp, trf: m.trf, p27: m.p27, nec: m.nec,
         pctDel: m.pctDeliberado, prevEmpAj: m.prevEmpAj, trfAj: m.trfAj, necAj: m.necAj
     })));
@@ -1800,7 +2045,23 @@ async function exportarEstudoXLSX() {
     }));
 
     // Abas com o conteúdo de cada arquivo carregado, para o xlsx ficar autossuficiente.
-    if (loaLinhasArquivo.length) {
+    if (loaConferencia.origem === 'ploa' && loaCreditos.length) {
+        // PLOA por ação: os créditos do recorte (GND/esfera/modalidade da aba 2), um por linha.
+        let prmRec = lerParametrosEstudo();
+        adicionarAbaEstudo(wb, 'LOA_ACOES', [
+            { titulo: 'ESFERA', chave: 'esfera', largura: 24 }, { titulo: 'CÓD. ÓRGÃO', chave: 'codOrgao', largura: 12 },
+            { titulo: 'ÓRGÃO', chave: 'orgao', largura: 50 }, { titulo: 'SIGLA', chave: 'sigla', largura: 14 },
+            { titulo: 'UO', chave: 'uo', largura: 40 }, { titulo: 'PROGRAMA', chave: 'programa', largura: 10 },
+            { titulo: 'NOME DO PROGRAMA', chave: 'nomePrograma', largura: 40 }, { titulo: 'TIPO', chave: 'tipoAcao', largura: 18 },
+            { titulo: 'AÇÃO', chave: 'codAcao', largura: 10 }, { titulo: 'NOME DA AÇÃO', chave: 'acao', largura: 60 },
+            { titulo: 'REGIÃO', chave: 'regiao', largura: 8 }, { titulo: 'GND', chave: 'gnd', largura: 6 },
+            { titulo: 'MODALIDADE', chave: 'modalidade', largura: 11 }, { titulo: 'FONTE (ID.FT.DT)', chave: 'fonteId', largura: 14 },
+            { titulo: 'IDUSO', chave: 'iduso', largura: 7 }, { titulo: 'VALOR', chave: 'valor', moeda: true, largura: 18 },
+            { titulo: 'EXPURGO', chave: 'expurgo', largura: 22 }
+        ], loaCreditos.filter(c => prmRec.gnds.has(c.gnd) && prmRec.esferas.has(c.esfera) && !(prmRec.semMod91 && c.modalidade === '91'))
+            .map(c => Object.assign({}, c, { sigla: SIGLAS_ORGAO_LOA[c.codOrgao] || '', fonteId: `${c.id}.${c.ft}.${c.dt}`,
+                expurgo: loaForaDoExecutivo(c) ? 'FORA DO EXECUTIVO' : '' })));
+    } else if (loaLinhasArquivo.length) {
         adicionarAbaEstudo(wb, 'ARQ_LOA_FONTE_X_ORGAO', [
             { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'SUB FONTE', chave: 'subfonte', largura: 18 },
             { titulo: 'DESCRIÇÃO DA SUB FONTE', chave: 'descSubfonte', largura: 60 }, { titulo: 'CÓDIGO ÓRGÃO', chave: 'codOrgao', largura: 14 },
@@ -1823,12 +2084,13 @@ async function exportarEstudoXLSX() {
     if (linhasAjustes.length) {
         adicionarAbaEstudo(wb, 'AJUSTES_FINAIS', [
             { titulo: 'MAPP', chave: 'mapp', largura: 60 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
+            { titulo: 'PROGRAMA', chave: 'programa', largura: 40 },
             { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
-            { titulo: 'LOA 2027 (ÓRGÃO NA FONTE)', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
+            { titulo: 'LOA 2027 DO PAR', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
             { titulo: 'PROPOSTA AUTOMÁTICA', chave: 'auto', moeda: true, largura: 20 }, { titulo: 'PROPOSTA PROGRAMADO 2027', chave: 'proposta', moeda: true, largura: 22 },
             { titulo: 'ORIGEM', chave: 'origem', largura: 16 }, { titulo: 'GRADE', chave: 'grade', largura: 18 },
             { titulo: 'ACIMA DA NEC. AJUSTADA', chave: 'excede', largura: 14 }
-        ], linhasAjustes.map(l => ({ mapp: l.mapp, orgao: l.orgao, fonte: l.fonte, estagio: l.estagio, loa: l.loaPar, necAj: l.necAj, auto: l.auto,
+        ], linhasAjustes.map(l => ({ mapp: l.mapp, orgao: l.orgao, programa: rotuloPrograma(l.programa, l.nomePrograma), fonte: l.fonte, estagio: l.estagio, loa: l.loaPar, necAj: l.necAj, auto: l.auto,
             proposta: propostaDe(l), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática',
             grade: l.grade === 1 ? 'com necessidade' : 'sem necessidade', excede: propostaExcede(l) ? 'SIM' : '' })));
         adicionarAbaEstudo(wb, 'ALERTAS_FONTES', [

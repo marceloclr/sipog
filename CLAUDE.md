@@ -66,7 +66,20 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 
 ## Página de estudo separada: `estudo-loa.html` + `js/estudo-loa.js`
 
-Cruza a LOA 2027 com a base de MAPPs (layout do `importar()`). LOA: de preferência o **PDF**
+Cruza a LOA 2027 com a base de MAPPs (layout do `importar()`). **LOA recomendada: PLOA 2027 por ação**
+(`dados/loa2027_acoes.json`, 8.667 créditos), gerado por `ferramentas/extrair_ploa.py` a partir dos PDFs do
+Volume II (Tomos I e II; os PDFs ficam em `LOA2027/`, fora do git). O extrator confere Σ créditos = resumo
+de cada programa e de cada órgão e Σ por GND = Volume I p. 213 (GND 44 = R$ 5.750.897.507, sem a modalidade
+91 e COM as Investimentos Estatais); a única diferença é do próprio PDF (SAP, GND 33, R$ 2.162.885 a mais no
+resumo do que nas linhas impressas), registrada em `conferencia.difResumos`. Na página: `carregarLOAPloa`/
+`carregarPLOADoRepositorio` guardam `loaCreditos`; `aplicarRecorteLOA` (início de `recalcularEstudo`) monta
+`loaLinhas` por Órgão × Programa × Fonte com o recorte da aba 2 (GND, padrão só 44; esferas Fiscal/Seguridade
+e Investimentos Estatais; sem modalidade 91 — `RECORTE_LOA_PADRAO`). Siglas e sub fontes vêm de
+`js/estudo-loa-tabelas.js` (`SIGLAS_ORGAO_LOA`, `FONTES_LOA`, `SUBFONTE_LOA_POR_ORGAO` para o 754.49 =
+Linha Leste na SEINFRA × IPF/BIRD nos demais). Programa dos MAPPs: coluna PROGRAMA da base ou arquivo
+"Programas dos MAPPs" (extração bruta; liga por órgão + texto do MAPP com "."→","); com PLOA e programa, o par
+é **Órgão × Programa × Fonte** (`cruzaPrograma`, `chavePar`, coluna/filtro Programa com classe `so-programa`).
+Alternativas (cruzamento Órgão × Fonte): o **PDF**
 "Demonstrativo Consolidado por Órgão e Fonte" emitido **só com Investimento** (`lerLOADePDF`,
 pdf.js 3.11.174 do cdnjs baixado sob demanda; grupo Tesouro/Outras Fontes pela coluna do
 valor; conferido por órgão e TOTAL GERAL — em 26/10: 205 pares, R$ 6.671.837.045); a planilha
