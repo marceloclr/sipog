@@ -256,7 +256,8 @@ async function selecionarArquivoPacote(input) {
         if (r.depara) {
             deParaManual = {};
             let d = aplicarDeParaImportado(r.depara);
-            r.relatorio.find(x => x.aba === 'DE_PARA_FONTES').txt += ` → ${d.aplicadas} manual(is)` + (d.rejeitadas.length ? `, ${d.rejeitadas.length} rejeitada(s) (fonte fora da base)` : '');
+            r.relatorio.find(x => x.aba === 'DE_PARA_FONTES').txt += ` → ${d.aplicadas} manual(is)` + (d.rejeitadas.length ? `, ${d.rejeitadas.length} rejeitada(s) (fonte fora da base)` : '') +
+                (d.conflitos.length ? `, ${d.conflitos.length} conflito(s) (mesma fonte da LOA em duas Fontes do MAPP; vale a 1ª): ${d.conflitos.slice(0, 4).join('; ')}` : '');
         }
         recalcularEstudo();
         if (r.propostas) {

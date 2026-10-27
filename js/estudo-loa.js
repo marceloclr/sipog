@@ -2596,8 +2596,9 @@ async function exportarEstudoXLSX() {
         { titulo: 'PREV. EMPENHO 2026', chave: 'prevEmp', moeda: true, largura: 20 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 20 },
         { titulo: 'NEC. 2027 CALCULADA', chave: 'nec', moeda: true, largura: 20 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
         { titulo: 'NECESSIDADE ÷ LOA', chave: 'pct', pct: true, largura: 13 }, { titulo: 'SALDO (LOA − NEC. AJ.)', chave: 'saldo', moeda: true, largura: 20 },
-        { titulo: 'SUB FONTES DA LOA', chave: 'sfs', largura: 40 }
+        { titulo: 'QTD FONTES DA LOA', chave: 'qtdSfs', largura: 10 }, { titulo: 'FONTES DA LOA', chave: 'sfs', largura: 40 }
     ], linhasConsolidadoOrdenadas().map(l => ({
+        qtdSfs: l.subfontes ? l.subfontes.size : 0,
         fonte: l.fonte, orgao: l.orgao, programa: rotuloPrograma(l.programa, l.nomePrograma), sit: ROTULO_SITUACAO[l.situacao], loa: l.temLOA ? l.loa : null, qtd: l.qtd,
         p26: l.p26, prevEmp: l.prevEmp, prevEmpAj: l.prevEmpAj, nec: l.nec, necAj: l.necAj, pct: l.pctLOA === null ? null : Number(l.pctLOA.toFixed(4)),
         saldo: l.saldo, sfs: l.subfontesTxt
@@ -2621,6 +2622,16 @@ async function exportarEstudoXLSX() {
     })));
 
     adicionarAbaDePara(wb);
+
+    // Composição de cada Fonte do MAPP: uma linha por fonte da LOA × órgão × programa ligada a ela.
+    let compos = loaLinhas.map(l => ({ fonte: fonteEfetiva(l.subfonte).fonte || '(sem fonte)', subfonte: l.subfonte, desc: l.descSubfonte,
+        orgao: l.sigla, programa: rotuloPrograma(l.programa, l.nomePrograma), valor: l.valor }))
+        .sort((a, b) => a.fonte.localeCompare(b.fonte) || a.subfonte.localeCompare(b.subfonte) || a.orgao.localeCompare(b.orgao));
+    adicionarAbaEstudo(wb, 'FONTE_MAPP_X_LOA', [
+        { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }, { titulo: 'FONTE DA LOA', chave: 'subfonte', largura: 18 },
+        { titulo: 'DESCRIÇÃO', chave: 'desc', largura: 50 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
+        { titulo: 'PROGRAMA', chave: 'programa', largura: 40 }, { titulo: 'VALOR LOA 2027', chave: 'valor', moeda: true, largura: 20 }
+    ], compos);
 
     // Abas com o conteúdo de cada arquivo carregado, para o xlsx ficar autossuficiente.
     if (loaConferencia.origem === 'ploa' && loaCreditos.length) {
@@ -2787,24 +2798,90 @@ function lerDeParaDeWorkbook(wb) {
     return linhas;
 }
 
-function aplicarDeParaImportado(linhas) {
-    let validas = new Set(fontesSIPOGDisponiveis());
-    let conhecidas = new Set(loaLinhasArquivo.map(l => l.subfonte));
-    // Sub fonte informada como código completo ou como FT.DT: usa a forma que a LOA carregada usa.
+// ─── RECONHECIMENTO DE DE-PARA (tolerante ao formato) ───────────────────────
+// Usado pelo "Carregar de-para", pela aba DE_PARA_FONTES do pacote e pelo importador de formato
+// livre. Várias fontes da LOA podem ir para a mesma Fonte do MAPP; a mesma fonte da LOA para duas
+// Fontes do MAPP é CONFLITO (vale a 1ª linha).
+
+// Fonte da LOA: código completo (500.9.1.0.00.00), FT.DT (500.00), ID.FT.DT (1.500.00), com ou sem
+// descrição depois. Devolve a chave usada pela LOA carregada; órgão (sigla) desfaz FT.DT ambíguo.
+function reconhecerFonteLOA(txt, orgao) {
+    let m = String(txt || '').match(/\d+(?:\.\d+)+/);
+    if (!m) return { erro: 'sem código' };
+    let cod = m[0], partes = cod.split('.');
+    let chaves = new Set(loaLinhasArquivo.map(l => l.subfonte));
+    if (chaves.has(cod)) return { sub: cod };
     let porCodigo = {};
     loaLinhasArquivo.forEach(l => (l.codigosSubfonte || []).forEach(c => { porCodigo[c] = l.subfonte; }));
-    let r = { aplicadas: 0, iguais: 0, rejeitadas: [], ignoradas: [] };
-    linhas.forEach(x => {
-        let sub = conhecidas.has(x.subfonte) ? x.subfonte : porCodigo[x.subfonte];
-        if (!sub) { r.ignoradas.push(x.subfonte); return; }
-        let fonte = /^\(?sem fonte\)?$/i.test(x.fonte) ? '' : x.fonte;
-        if (fonte && !validas.has(fonte)) { r.rejeitadas.push(`${x.subfonte} → ${x.fonte}`); return; }
-        if (fonteEfetiva(sub).fonte === fonte) { r.iguais++; return; }
-        deParaManual[sub] = fonte;
-        r.aplicadas++;
+    if (partes.length === 6) return porCodigo[cod] ? { sub: porCodigo[cod] } : { erro: 'não está na LOA carregada' };
+    let ftdt = partes.length === 3 ? `${partes[1]}.${partes[2]}` : (partes.length === 2 ? cod : null);
+    if (!ftdt) return { erro: 'código não reconhecido' };
+    if (chaves.has(ftdt)) return { sub: ftdt };
+    let [ft, dt] = ftdt.split('.');
+    let candidatas = [...chaves].filter(k => { let p = k.split('.'); return p[0] === ft && p[p.length - 1] === dt.padStart(2, '0'); });
+    if (candidatas.length === 1) return { sub: candidatas[0] };
+    if (candidatas.length > 1 && orgao) {
+        let cods = Object.keys(SIGLAS_ORGAO_LOA).filter(c => N(SIGLAS_ORGAO_LOA[c]) === N(orgao));
+        let porOrgao = cods.map(c => (SUBFONTE_LOA_POR_ORGAO[c] || {})[ftdt]).find(Boolean);
+        if (porOrgao && chaves.has(porOrgao)) return { sub: porOrgao };
+    }
+    return { erro: candidatas.length > 1 ? `ambígua (${candidatas.join(', ')}) — informe o código completo ou o órgão` : 'não está na LOA carregada' };
+}
+
+// Fonte do MAPP: texto exato, só o código ("(500)-(501)", "500-501", "759.070") ou só a descrição.
+function reconhecerFonteMAPP(txt) {
+    let t = String(txt === null || txt === undefined ? '' : txt).trim();
+    if (!t || /^\(?\s*sem fonte\s*\)?$/i.test(t)) return { fonte: '' };
+    let validas = fontesSIPOGDisponiveis();
+    if (validas.includes(t)) return { fonte: t };
+    let m = t.match(/^\(?\s*(\d{3})\s*\)?\s*[-.\/]\s*\(?\s*([\d,]{1,4})\s*\)?/);
+    if (m) {
+        let ddd = m[2].replace(/,/g, '').padStart(3, '0');
+        let achadas = validas.filter(f => { let p = partesFonteSIPOG(f); return p && p.fff === m[1] && p.ddd.replace(/,/g, '').padStart(3, '0') === ddd; });
+        if (achadas.length === 1) return { fonte: achadas[0] };
+    }
+    let desc = f => N(String(f).replace(/^\s*\(\d{3}\)\s*-\s*\([\d,]+\)\s*/, ''));
+    let porTexto = validas.filter(f => N(f) === N(t) || desc(f) === N(t));
+    if (porTexto.length === 1) return { fonte: porTexto[0] };
+    return { erro: porTexto.length > 1 ? 'descrição repetida em mais de uma fonte' : 'não existe na base de MAPPs' };
+}
+
+// linhas: [{ loa, mapp, orgao? }] → cada uma com status: nova | igual | substitui | loa | mapp | conflito.
+function classificarDePara(linhas) {
+    let escolhida = {};
+    return linhas.map((x, i) => {
+        let r = { n: i + 1, loa: x.loa, mapp: x.mapp, orgao: x.orgao || '' };
+        let a = reconhecerFonteLOA(x.loa, x.orgao);
+        if (a.erro) return Object.assign(r, { status: 'loa', msg: `fonte da LOA ${a.erro}` });
+        let b = reconhecerFonteMAPP(x.mapp);
+        if (b.erro) return Object.assign(r, { sub: a.sub, status: 'mapp', msg: `Fonte do MAPP ${b.erro}` });
+        Object.assign(r, { sub: a.sub, fonte: b.fonte });
+        if (escolhida[a.sub] !== undefined && escolhida[a.sub] !== b.fonte)
+            return Object.assign(r, { status: 'conflito', msg: `já ligada a "${escolhida[a.sub] || '(sem fonte)'}" numa linha anterior — vale a 1ª` });
+        escolhida[a.sub] = b.fonte;
+        let atual = fonteEfetiva(a.sub).fonte;
+        r.atual = atual;
+        r.status = atual === b.fonte ? 'igual' : (atual ? 'substitui' : 'nova');
+        return r;
     });
+}
+
+function aplicarDeParaClassificado(classif) {
+    let n = 0;
+    classif.forEach(c => { if (c.status === 'nova' || c.status === 'substitui') { deParaManual[c.sub] = c.fonte; n++; } });
     salvarDeParaManual();
-    return r;
+    return n;
+}
+
+function aplicarDeParaImportado(linhas) {
+    let classif = classificarDePara(linhas.map(x => ({ loa: x.subfonte, mapp: x.fonte, orgao: x.orgao })));
+    let aplicadas = aplicarDeParaClassificado(classif);
+    return {
+        aplicadas, iguais: classif.filter(c => c.status === 'igual').length,
+        rejeitadas: classif.filter(c => c.status === 'mapp').map(c => `${c.loa} → ${c.mapp}`),
+        conflitos: classif.filter(c => c.status === 'conflito').map(c => `${c.loa} → ${c.mapp}`),
+        ignoradas: classif.filter(c => c.status === 'loa').map(c => c.loa)
+    };
 }
 
 async function selecionarArquivoDePara(input) {
@@ -2819,6 +2896,7 @@ async function selecionarArquivoDePara(input) {
         recalcularEstudo();
         status.innerHTML = `<span class="ok">✅ ${escHtml(arquivo.name)}</span>: ${r.aplicadas} alterada(s), ${r.iguais} já iguais` +
             (r.rejeitadas.length ? `<br><span class="erro">✖ ${r.rejeitadas.length} rejeitada(s) — fonte que não existe na base de MAPPs: ${escHtml(r.rejeitadas.slice(0, 6).join('; '))}${r.rejeitadas.length > 6 ? '…' : ''}</span>` : '') +
+            (r.conflitos.length ? `<br><span class="erro">✖ ${r.conflitos.length} conflito(s) — a mesma fonte da LOA ligada a duas Fontes do MAPP (vale a 1ª linha): ${escHtml(r.conflitos.slice(0, 6).join('; '))}${r.conflitos.length > 6 ? '…' : ''}</span>` : '') +
             (r.ignoradas.length ? `<br><span class="aviso">⚠ ${r.ignoradas.length} sub fonte(s) que não estão na LOA carregada (ignoradas): ${escHtml(r.ignoradas.slice(0, 6).join(', '))}${r.ignoradas.length > 6 ? '…' : ''}</span>` : '');
     } catch (err) {
         console.error(err);
