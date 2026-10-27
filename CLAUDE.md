@@ -137,6 +137,9 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   fora do cruzamento + Σ alertas (sem destino + distribuível); Σ ações = Σ itens.
 - Layout: `input[type=checkbox]` volta ao tamanho natural (o css do SIPOG dá width:100% a todo input); a faixa de
   filtros (`.estudo-filtros-pagina`) rola com a página (sem sticky) e usa selects/buscas compactos.
+- De-para por xlsx (aba 3): `baixarDeParaXLSX` (abas DE_PARA_FONTES + FONTES_DO_MAPP) e `selecionarArquivoDePara` →
+  `lerDeParaDeWorkbook` + `aplicarDeParaImportado` (SUB FONTE completa ou FT.DT; "(sem fonte)" = sem fonte; fonte fora da base
+  de MAPPs é rejeitada); grava em `deParaManual`.
 - Termos: na tela e no XLSX é "Fonte do MAPP" (não "Fonte do SIPOG"); o percentual Nec. Ajustada ÷ LOA chama-se
   "Necessidade ÷ LOA" (só pares com LOA; card mostra quantas vezes e quanto falta/sobra).
 - Consolidado com programa: `gruposConsolidado` mostra uma linha por Órgão × Fonte (total) e, ao clicar

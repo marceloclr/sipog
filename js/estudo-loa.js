@@ -2420,19 +2420,7 @@ async function exportarEstudoXLSX() {
         pctDel: m.pctDeliberado, prevEmpAj: m.prevEmpAj, trfAj: m.trfAj, necAj: m.necAj
     })));
 
-    let porSubfonte = {};
-    loaLinhas.forEach(l => {
-        if (!porSubfonte[l.subfonte]) porSubfonte[l.subfonte] = { grupo: l.grupo, subfonte: l.subfonte, desc: l.descSubfonte, valor: 0 };
-        porSubfonte[l.subfonte].valor += l.valor;
-    });
-    adicionarAbaEstudo(wb, 'DE_PARA_FONTES', [
-        { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'SUB FONTE', chave: 'subfonte', largura: 18 },
-        { titulo: 'DESCRIÇÃO', chave: 'desc', largura: 60 }, { titulo: 'LOA 2027', chave: 'valor', moeda: true, largura: 20 },
-        { titulo: 'REGRA', chave: 'regra', largura: 10 }, { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }
-    ], Object.values(porSubfonte).sort((a, b) => a.subfonte.localeCompare(b.subfonte)).map(s => {
-        let ef = fonteEfetiva(s.subfonte);
-        return Object.assign({}, s, { regra: ROTULO_REGRA_DEPARA[ef.fonte || ef.regra === 'manual' ? ef.regra : 'sem'], fonte: ef.fonte || '(sem fonte)' });
-    }));
+    adicionarAbaDePara(wb);
 
     // Abas com o conteúdo de cada arquivo carregado, para o xlsx ficar autossuficiente.
     if (loaConferencia.origem === 'ploa' && loaCreditos.length) {
@@ -2535,16 +2523,109 @@ async function exportarEstudoXLSX() {
         ['Necessidade ÷ LOA', 'Necessidade 2027 Ajustada dos MAPPs ÷ LOA 2027 do órgão na fonte (' + (loaConferencia.origem === 'pdf' ? 'LOA de Investimento, do PDF por Órgão e Fonte' : 'planilha Fonte x Órgão: inclui pessoal, custeio e dívida') + ').']
     ].forEach((r, i) => { wsP.addRow(r); if (i === 0) wsP.getRow(1).font = { bold: true, size: 13 }; });
 
+    await baixarWorkbook(wb, `SIPOG_Estudo_LOA_MAPPs_${carimboDataHora()}.xlsx`);
+}
+
+async function baixarWorkbook(wb, nomeArquivo) {
     let buffer = await wb.xlsx.writeBuffer();
     let blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     let url = URL.createObjectURL(blob);
     let a = document.createElement('a');
     a.href = url;
-    a.download = `SIPOG_Estudo_LOA_MAPPs_${carimboDataHora()}.xlsx`;
+    a.download = nomeArquivo;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// ─── DE-PARA POR XLSX (aba 3) ───────────────────────────────────────────────
+// Mesmo layout da aba DE_PARA_FONTES da exportação: baixar → editar a coluna FONTE DO MAPP → carregar.
+const COLUNAS_DEPARA_XLSX = [
+    { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'SUB FONTE', chave: 'subfonte', largura: 18 },
+    { titulo: 'DESCRIÇÃO', chave: 'desc', largura: 60 }, { titulo: 'LOA 2027', chave: 'valor', moeda: true, largura: 20 },
+    { titulo: 'REGRA', chave: 'regra', largura: 10 }, { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }
+];
+
+function adicionarAbaDePara(wb) {
+    let porSubfonte = {};
+    loaLinhas.forEach(l => {
+        if (!porSubfonte[l.subfonte]) porSubfonte[l.subfonte] = { grupo: l.grupo, subfonte: l.subfonte, desc: l.descSubfonte, valor: 0 };
+        porSubfonte[l.subfonte].valor += l.valor;
+    });
+    adicionarAbaEstudo(wb, 'DE_PARA_FONTES', COLUNAS_DEPARA_XLSX, Object.values(porSubfonte).sort((a, b) => a.subfonte.localeCompare(b.subfonte)).map(s => {
+        let ef = fonteEfetiva(s.subfonte);
+        return Object.assign({}, s, { regra: ROTULO_REGRA_DEPARA[ef.fonte || ef.regra === 'manual' ? ef.regra : 'sem'], fonte: ef.fonte || '(sem fonte)' });
+    }));
+}
+
+async function baixarDeParaXLSX() {
+    if (typeof ExcelJS === 'undefined') return alert('A biblioteca de exportação (ExcelJS) não carregou — verifique a conexão.');
+    if (!loaLinhas.length) return alert('Carregue a LOA antes de baixar o de-para.');
+    let wb = new ExcelJS.Workbook();
+    adicionarAbaDePara(wb);
+    // Lista das fontes válidas (as da base de MAPPs), para copiar e colar na coluna FONTE DO MAPP.
+    adicionarAbaEstudo(wb, 'FONTES_DO_MAPP', [{ titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 50 }], fontesSIPOGDisponiveis().map(fonte => ({ fonte })));
+    await baixarWorkbook(wb, `SIPOG_DePara_Fontes_${carimboDataHora()}.xlsx`);
+}
+
+// Lê SUB FONTE e FONTE DO MAPP (as demais colunas são ignoradas). "(sem fonte)" ou vazio = sem
+// fonte; fonte que não existe na base de MAPPs é rejeitada. Grava no de-para manual.
+function lerDeParaDeWorkbook(wb) {
+    let ws = wb.worksheets.find(w => N(w.name).replace(/\s+/g, '_') === 'DE_PARA_FONTES') || wb.worksheets[0];
+    let cab = {};
+    ws.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => { cab[N(valorCelulaExcelJS(cell.value))] = col; });
+    let colSub = cab['SUB FONTE'], colFonte = cab['FONTE DO MAPP'] || cab['FONTE SIPOG'] || cab['FONTE DO SIPOG'];
+    if (!colSub || !colFonte) throw new Error(`A aba "${ws.name}" precisa das colunas SUB FONTE e FONTE DO MAPP.`);
+    let linhas = [];
+    ws.eachRow({ includeEmpty: false }, (row, n) => {
+        if (n === 1) return;
+        let sub = String(valorCelulaExcelJS(row.getCell(colSub).value) || '').trim();
+        if (!sub) return;
+        linhas.push({ subfonte: sub, fonte: String(valorCelulaExcelJS(row.getCell(colFonte).value) || '').trim() });
+    });
+    return linhas;
+}
+
+function aplicarDeParaImportado(linhas) {
+    let validas = new Set(fontesSIPOGDisponiveis());
+    let conhecidas = new Set(loaLinhasArquivo.map(l => l.subfonte));
+    // Sub fonte informada como código completo ou como FT.DT: usa a forma que a LOA carregada usa.
+    let porCodigo = {};
+    loaLinhasArquivo.forEach(l => (l.codigosSubfonte || []).forEach(c => { porCodigo[c] = l.subfonte; }));
+    let r = { aplicadas: 0, iguais: 0, rejeitadas: [], ignoradas: [] };
+    linhas.forEach(x => {
+        let sub = conhecidas.has(x.subfonte) ? x.subfonte : porCodigo[x.subfonte];
+        if (!sub) { r.ignoradas.push(x.subfonte); return; }
+        let fonte = /^\(?sem fonte\)?$/i.test(x.fonte) ? '' : x.fonte;
+        if (fonte && !validas.has(fonte)) { r.rejeitadas.push(`${x.subfonte} → ${x.fonte}`); return; }
+        if (fonteEfetiva(sub).fonte === fonte) { r.iguais++; return; }
+        deParaManual[sub] = fonte;
+        r.aplicadas++;
+    });
+    salvarDeParaManual();
+    return r;
+}
+
+async function selecionarArquivoDePara(input) {
+    let arquivo = input.files && input.files[0];
+    if (!arquivo) return;
+    let status = document.getElementById('status-depara-xlsx');
+    try {
+        if (!loaLinhas.length || !mappsBrutos.length) throw new Error('Carregue a LOA e a base de MAPPs antes do de-para.');
+        let wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(await lerArquivoComoBuffer(arquivo));
+        let r = aplicarDeParaImportado(lerDeParaDeWorkbook(wb));
+        recalcularEstudo();
+        status.innerHTML = `<span class="ok">✅ ${escHtml(arquivo.name)}</span>: ${r.aplicadas} alterada(s), ${r.iguais} já iguais` +
+            (r.rejeitadas.length ? `<br><span class="erro">✖ ${r.rejeitadas.length} rejeitada(s) — fonte que não existe na base de MAPPs: ${escHtml(r.rejeitadas.slice(0, 6).join('; '))}${r.rejeitadas.length > 6 ? '…' : ''}</span>` : '') +
+            (r.ignoradas.length ? `<br><span class="aviso">⚠ ${r.ignoradas.length} sub fonte(s) que não estão na LOA carregada (ignoradas): ${escHtml(r.ignoradas.slice(0, 6).join(', '))}${r.ignoradas.length > 6 ? '…' : ''}</span>` : '');
+    } catch (err) {
+        console.error(err);
+        status.innerHTML = `<span class="erro">❌ ${escHtml(err.message || err)}</span>`;
+    } finally {
+        input.value = '';
+    }
 }
 
 // ─── INICIALIZAÇÃO ──────────────────────────────────────────────────────────

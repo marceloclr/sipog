@@ -269,7 +269,11 @@
             </p>
             <div class="estudo-filtros">
                 <label>Grupo de Fonte <select id="filtro-dp-grupo" onchange="renderizarDePara()"><option value="">(todos)</option></select></label>
+                <button class="btn-mini-header" onclick="baixarDeParaXLSX()" title="Baixa o de-para atual em xlsx (aba DE_PARA_FONTES) com a lista das fontes válidas (aba FONTES_DO_MAPP)">⬇ Baixar de-para (xlsx)</button>
+                <label class="btn-mini-header" style="cursor:pointer;" title="Carrega um xlsx com as colunas SUB FONTE e FONTE DO MAPP (o mesmo layout do download); as escolhas viram de-para manual">⬆ Carregar de-para (xlsx)
+                    <input type="file" accept=".xlsx" onchange="selecionarArquivoDePara(this)" style="display:none;"></label>
             </div>
+            <div class="estudo-status" id="status-depara-xlsx" style="margin:-4px 0 10px;"></div>
             <div class="estudo-tabela-wrap"><div id="tabela-depara"><p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p></div></div>
         
         </div>
