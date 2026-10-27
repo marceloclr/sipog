@@ -137,6 +137,14 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   fora do cruzamento + Σ alertas (sem destino + distribuível); Σ ações = Σ itens.
 - Layout: `input[type=checkbox]` volta ao tamanho natural (o css do SIPOG dá width:100% a todo input); a faixa de
   filtros (`.estudo-filtros-pagina`) rola com a página (sem sticky) e usa selects/buscas compactos.
+- **Pacote do estudo (xlsx único)** — `js/estudo-loa-pacote.js` (carregado antes de `js/estudo-loa.js`): abas LEIA-ME,
+  PARAMETROS (PARAMETRO|VALOR, `PARAMETROS_PACOTE`), LOA (obrigatória; um crédito por linha, FONTE em ID.FT.DT/FT.DT/código
+  completo), MAPPS (obrigatória; layout da Consulta Primária + PROGRAMA), DE_PARA_FONTES, ORGAOS (COD_ORGAO, SIGLA,
+  FORA_EXECUTIVO S/N → `orgaosForaPacote`/`orgaosDentroPacote`), FONTES_LOA (substitui `FONTES_LOA`/
+  `SUBFONTE_LOA_POR_ORGAO`) e PROPOSTAS. `lerPacoteEstudo` valida aba por aba (erro em aba obrigatória = nada é
+  carregado); `baixarPacoteEstudo(true|false)` gera o modelo ou o pacote atual. Ida e volta conferida em 27/10 (mesmos
+  totais). LOA sem GND/esfera passa pelo recorte (`creditoNoRecorte`). Na aba 1 os carregamentos separados ficam em
+  "Avançado".
 - De-para por xlsx (aba 3): `baixarDeParaXLSX` (abas DE_PARA_FONTES + FONTES_DO_MAPP) e `selecionarArquivoDePara` →
   `lerDeParaDeWorkbook` + `aplicarDeParaImportado` (SUB FONTE completa ou FT.DT; "(sem fonte)" = sem fonte; fonte fora da base
   de MAPPs é rejeitada); grava em `deParaManual`.

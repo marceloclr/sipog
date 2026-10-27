@@ -177,27 +177,41 @@
         <h2 class="estudo-aba-titulo">1. Carga dos arquivos</h2>
         <div class="estudo-corpo">
             <p class="estudo-nota">Os arquivos são lidos só neste navegador — nada é enviado à nuvem nem altera o SIPOG (a não ser que você use "Salvar na nuvem").</p>
-            <div class="estudo-grid-carga">
-                <div class="estudo-carga">
-                    <h3>LOA 2027</h3>
-                    <p class="estudo-nota"><strong>Recomendado: PLOA 2027 por ação</strong> (<code>dados/loa2027_acoes.json</code>, extraído do Volume II e conferido com o Volume I): traz órgão, programa, ação, GND, esfera e fonte — o recorte de GND e esfera fica na aba 2 e o cruzamento passa a ser Órgão × Programa × Fonte. Alternativas: o PDF "Demonstrativo Consolidado por Órgão e Fonte" ou a planilha "Fonte x Órgão" (cruzamento Órgão × Fonte). <strong>Só o Executivo estadual entra:</strong> a LOA da Assembleia Legislativa, do Tribunal de Contas, do Tribunal de Justiça, do Ministério Público (PGJ) e dos órgãos vinculados a eles é expurgada.</p>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                        <button class="btn-mini-header" onclick="carregarPLOADoRepositorio()" title="Baixa dados/loa2027_acoes.json do site (não funciona com a página aberta por duplo clique — aí use o seletor de arquivo)">⬇ PLOA 2027 do sistema</button>
-                        <input type="file" id="arquivo-loa" accept=".json,.pdf,.xlsx" onchange="selecionarArquivoLOA(this)">
-                    </div>
-                    <div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div>
+            <div class="estudo-carga" style="border-color:var(--accent);">
+                <h3>Pacote do estudo (xlsx único) — recomendado</h3>
+                <p class="estudo-nota">Um xlsx com uma aba para cada dado: <strong>LOA</strong> e <strong>MAPPS</strong> (obrigatórias), PARAMETROS, DE_PARA_FONTES, ORGAOS, FONTES_LOA e PROPOSTAS (opcionais). Cada aba é conferida ao carregar. Use "Baixar modelo" para começar do zero ou "Baixar pacote atual" para guardar o que está carregado e reaproveitar (inclusive no próximo ano: troque as abas LOA e MAPPS).</p>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <label class="btn-mini-header" style="cursor:pointer;">⬆ Carregar pacote (xlsx)<input type="file" accept=".xlsx" onchange="selecionarArquivoPacote(this)" style="display:none;"></label>
+                    <button class="btn-mini-header" onclick="baixarPacoteEstudo(true)" title="Abas com os cabeçalhos, os parâmetros atuais e as tabelas de órgãos e fontes">⬇ Baixar modelo</button>
+                    <button class="btn-mini-header" onclick="baixarPacoteEstudo(false)" title="Tudo o que está carregado agora: LOA, MAPPs, parâmetros, de-para, órgãos, fontes e propostas editadas">⬇ Baixar pacote atual</button>
                 </div>
-                <div class="estudo-carga">
-                    <h3>Base de MAPPs (layout do SIPOG)</h3>
-                    <p class="estudo-nota">A mesma planilha importada no SIPOG (.xlsx: 1ª aba, cabeçalho na linha 1 — MAPP, ORGAO, FONTE, ESTAGIO_EXECUCAO, VLR_…) ou o CSV bruto da extração do MAPP (separado por ";"; VLR_PLANEJADO_26, VLR_LIMITE, VLR_EMPENHO_26 e VLR_PLANEJADO_27 são traduzidos automaticamente).</p>
-                    <input type="file" id="arquivo-mapps" accept=".xlsx,.csv" onchange="selecionarArquivoMAPPs(this)">
-                    <div class="estudo-status" id="status-mapps">Nenhum arquivo carregado.</div>
-                    <div class="estudo-status" id="status-mapps-expurgo"></div>
-                    <p class="estudo-nota" style="margin-top:12px;"><strong>Programas dos MAPPs</strong> (opcional): a base do SIPOG não tem a coluna PROGRAMA. Carregue a extração bruta do MAPP (CSV ou xlsx, com PROGRAMA) para ligar cada MAPP ao programa, pelo órgão e pelo texto do MAPP.</p>
-                    <input type="file" id="arquivo-programas" accept=".csv,.xlsx" onchange="selecionarArquivoProgramas(this)">
-                    <div class="estudo-status" id="status-programas"></div>
-                </div>
+                <div class="estudo-status" id="status-pacote"></div>
             </div>
+            <div class="estudo-grid-carga" style="margin-top:14px;">
+                <div class="estudo-carga"><h3>LOA 2027 carregada</h3><div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div></div>
+                <div class="estudo-carga"><h3>Base de MAPPs carregada</h3><div class="estudo-status" id="status-mapps">Nenhum arquivo carregado.</div>
+                    <div class="estudo-status" id="status-mapps-expurgo"></div><div class="estudo-status" id="status-programas"></div></div>
+            </div>
+            <details class="estudo-avancado" style="margin-top:14px;">
+                <summary style="cursor:pointer; font-weight:700; font-size:13px;">Avançado — carregar os arquivos separadamente</summary>
+                <div class="estudo-grid-carga" style="margin-top:10px;">
+                    <div class="estudo-carga">
+                        <h3>LOA 2027</h3>
+                        <p class="estudo-nota"><strong>PLOA 2027 por ação</strong> (<code>dados/loa2027_acoes.json</code>, extraído do Volume II e conferido com o Volume I): traz órgão, programa, ação, GND, esfera e fonte — o recorte de GND e esfera fica na aba 2 e o cruzamento passa a ser Órgão × Programa × Fonte. Alternativas: o PDF "Demonstrativo Consolidado por Órgão e Fonte" ou a planilha "Fonte x Órgão" (cruzamento Órgão × Fonte). <strong>Só o Executivo estadual entra:</strong> a LOA da Assembleia Legislativa, do Tribunal de Contas, do Tribunal de Justiça, do Ministério Público (PGJ) e dos órgãos vinculados a eles é expurgada.</p>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            <button class="btn-mini-header" onclick="carregarPLOADoRepositorio()" title="Baixa dados/loa2027_acoes.json do site (não funciona com a página aberta por duplo clique — aí use o seletor de arquivo)">⬇ PLOA 2027 do sistema</button>
+                            <input type="file" id="arquivo-loa" accept=".json,.pdf,.xlsx" onchange="selecionarArquivoLOA(this)">
+                        </div>
+                    </div>
+                    <div class="estudo-carga">
+                        <h3>Base de MAPPs (layout do SIPOG)</h3>
+                        <p class="estudo-nota">A mesma planilha importada no SIPOG (.xlsx: 1ª aba, cabeçalho na linha 1 — MAPP, ORGAO, FONTE, ESTAGIO_EXECUCAO, VLR_…) ou o CSV bruto da extração do MAPP (separado por ";"; VLR_PLANEJADO_26, VLR_LIMITE, VLR_EMPENHO_26 e VLR_PLANEJADO_27 são traduzidos automaticamente).</p>
+                        <input type="file" id="arquivo-mapps" accept=".xlsx,.csv" onchange="selecionarArquivoMAPPs(this)">
+                        <p class="estudo-nota" style="margin-top:12px;"><strong>Programas dos MAPPs</strong> (opcional): a base do SIPOG não tem a coluna PROGRAMA. Carregue a extração bruta do MAPP (CSV ou xlsx, com PROGRAMA) para ligar cada MAPP ao programa, pelo órgão e pelo texto do MAPP.</p>
+                        <input type="file" id="arquivo-programas" accept=".csv,.xlsx" onchange="selecionarArquivoProgramas(this)">
+                    </div>
+                </div>
+            </details>
         </div>
     </section>
 
@@ -438,6 +452,7 @@
 <script src="js/06-classificacao-gate.js"></script>
 <script src="js/05-nuvem-firestore.js"></script>
 <script src="js/estudo-loa-tabelas.js"></script>
+<script src="js/estudo-loa-pacote.js"></script>
 <script src="js/estudo-loa.js"></script>
 </body>
 </html>

@@ -46,13 +46,21 @@ const LOA_FORA_EXECUTIVO = [
     { prefixo: '15', nome: 'Ministério Público (PGJ) e órgãos vinculados', siglas: ['PGJ', 'FRMMP/CE', 'FDID'] }
 ];
 
+// A aba ORGAOS do pacote xlsx pode marcar órgãos por código: FORA_EXECUTIVO = S (expurga) ou N
+// (mantém, mesmo que o prefixo esteja na lista acima).
+let orgaosForaPacote = new Set(), orgaosDentroPacote = new Set();
+
 function loaForaDoExecutivo(l) {
-    return LOA_FORA_EXECUTIVO.some(o => String(l.codOrgao || '').startsWith(o.prefixo));
+    let cod = String(l.codOrgao || '');
+    if (orgaosDentroPacote.has(cod)) return false;
+    return orgaosForaPacote.has(cod) || LOA_FORA_EXECUTIVO.some(o => cod.startsWith(o.prefixo));
 }
 
 function siglasForaDoExecutivo() {
     let s = new Set();
     LOA_FORA_EXECUTIVO.forEach(o => o.siglas.forEach(x => s.add(N(x))));
+    orgaosForaPacote.forEach(cod => { if (SIGLAS_ORGAO_LOA[cod]) s.add(N(SIGLAS_ORGAO_LOA[cod])); });
+    orgaosDentroPacote.forEach(cod => { if (SIGLAS_ORGAO_LOA[cod]) s.delete(N(SIGLAS_ORGAO_LOA[cod])); });
     loaLinhasArquivo.filter(loaForaDoExecutivo).forEach(l => { if (l.sigla) s.add(N(l.sigla)); });
     return s;
 }
@@ -386,7 +394,7 @@ function carregarLOAPloa(pacote, nomeArquivo) {
     let conf = pacote.conferencia || {};
     carregarLOA({ linhas: montarLinhasPLOA(loaCreditos, lerParametrosEstudo()), conferido: true, origem: 'ploa',
         divergencias: (conf.difResumos || []).map(d => ({ item: `${d.orgao}${d.programa ? ' prog. ' + d.programa : ''} ${d.fonte} GND ${d.gnd}`, esperado: d.resumo, lido: d.creditos })),
-        resumoPloa: { creditos: loaCreditos.length, gndVolumeI: conf.gndVolumeI || {} } }, nomeArquivo);
+        resumoPloa: { creditos: loaCreditos.length, gndVolumeI: conf.gndVolumeI || {}, doPacote: !!pacote.doPacote } }, nomeArquivo);
 }
 
 // Sub fonte do crédito: o código completo quando dá para saber qual é (uma só sub fonte
@@ -402,10 +410,16 @@ function fonteLOADoCredito(c) {
         codigos: conhecidas.map(x => x.subfonte) };
 }
 
+// Crédito dentro do recorte da aba 2. GND ou esfera vazios (LOA de outra origem, sem essa
+// informação) não são filtrados por esse critério.
+function creditoNoRecorte(c, prm) {
+    return (!c.gnd || prm.gnds.has(c.gnd)) && (!c.esfera || prm.esferas.has(c.esfera)) && !(prm.semMod91 && c.modalidade === '91');
+}
+
 function montarLinhasPLOA(creditos, prm) {
     let agreg = {};
     creditos.forEach(c => {
-        if (!prm.gnds.has(c.gnd) || !prm.esferas.has(c.esfera) || (prm.semMod91 && c.modalidade === '91')) return;
+        if (!creditoNoRecorte(c, prm)) return;
         let f = fonteLOADoCredito(c);
         let k = c.codOrgao + '|' + c.programa + '|' + f.subfonte;
         let l = agreg[k] || (agreg[k] = { grupo: f.grupo, subfonte: f.subfonte, descSubfonte: f.desc, codigosSubfonte: f.codigos,
@@ -446,6 +460,8 @@ function atualizarStatusLOA() {
     let divs = loaConferencia.divergencias;
     let conf;
     if (!loaConferencia.conferido) conf = '<span class="aviso">⚠ Aba "Resumo por sub fonte" ausente — soma não conferida.</span>';
+    else if (origem === 'ploa' && loaConferencia.resumoPloa && loaConferencia.resumoPloa.doPacote && !divs.length)
+        conf = '<span class="aviso">Aba LOA do pacote: sem conferência automática com os resumos do PLOA — confira o total com a fonte da extração.</span>';
     else if (divs.length === 0) conf = origem === 'pdf' ? '<span class="ok">✔ Somas das fontes conferem com o total de cada órgão e com o TOTAL GERAL.</span>'
         : '<span class="ok">✔ Somas por sub fonte conferem com o Resumo.</span>';
     else if (origem === 'ploa') conf = `<span class="ok">✔ Créditos conferem com os resumos de programa e de órgão e com o Volume I</span>, salvo ${divs.length} diferença(s) do próprio PDF (resumo maior que as linhas impressas): ` +
@@ -560,8 +576,8 @@ function corrigirMojibakeLinhas(linhas) {
     return { celulas, exemplo };
 }
 
-function lerMAPPsDeWorkbook(wb) {
-    let ws = wb.worksheets[0];
+function lerMAPPsDeWorkbook(wb, aba) {
+    let ws = aba || wb.worksheets[0];
     let headers = [];
     ws.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => {
         headers[col] = String(valorCelulaExcelJS(cell.value)).trim().toUpperCase();
@@ -2055,7 +2071,7 @@ function acoesNaoAlocada(itens) {
     let prm = lerParametrosEstudo();
     let idx = {};
     loaCreditos.forEach(c => {
-        if (!prm.gnds.has(c.gnd) || !prm.esferas.has(c.esfera) || (prm.semMod91 && c.modalidade === '91') || loaForaDoExecutivo(c)) return;
+        if (!creditoNoRecorte(c, prm) || loaForaDoExecutivo(c)) return;
         let k = c.codOrgao + '|' + c.programa + '|' + fonteLOADoCredito(c).subfonte;
         (idx[k] = idx[k] || []).push(c);
     });
@@ -2436,7 +2452,7 @@ async function exportarEstudoXLSX() {
             { titulo: 'MODALIDADE', chave: 'modalidade', largura: 11 }, { titulo: 'FONTE (ID.FT.DT)', chave: 'fonteId', largura: 14 },
             { titulo: 'IDUSO', chave: 'iduso', largura: 7 }, { titulo: 'VALOR', chave: 'valor', moeda: true, largura: 18 },
             { titulo: 'EXPURGO', chave: 'expurgo', largura: 22 }
-        ], loaCreditos.filter(c => prmRec.gnds.has(c.gnd) && prmRec.esferas.has(c.esfera) && !(prmRec.semMod91 && c.modalidade === '91'))
+        ], loaCreditos.filter(c => creditoNoRecorte(c, prmRec))
             .map(c => Object.assign({}, c, { sigla: SIGLAS_ORGAO_LOA[c.codOrgao] || '', fonteId: `${c.id}.${c.ft}.${c.dt}`,
                 expurgo: loaForaDoExecutivo(c) ? 'FORA DO EXECUTIVO' : '' })));
     } else if (loaLinhasArquivo.length) {
