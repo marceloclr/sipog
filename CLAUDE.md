@@ -145,6 +145,18 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   carregado); `baixarPacoteEstudo(true|false)` gera o modelo ou o pacote atual. Ida e volta conferida em 27/10 (mesmos
   totais). LOA sem GND/esfera passa pelo recorte (`creditoNoRecorte`). Na aba 1 os carregamentos separados ficam em
   "Avançado".
+- **Exercício (troca de ano)**: `exercicioLOA` (campo "Exercício da LOA" da aba 2, `EXERCICIO_LOA` do pacote ou estudo
+  salvo) define LOA = exercício e ano base = exercício − 1. A base é lida por papel (`colunasPapel`/`valorPapel`:
+  VLR_PROGRAMADO/LIMITE/EMPENHADO do ano base e VLR_PROGRAMADO do ano da LOA, ou os nomes da extração bruta); os campos
+  internos p26/l26/e26/p27 significam "ano base / ano da LOA". Textos: `trocarAnos` (em `dica`, `thDesc`, cabeçalhos,
+  XLSX — exceto colunas `fixo` de dados —, regra, avisos), `trocarAnosRotulos` (cards) e `data-anos` no HTML
+  (`aplicarAnosNaPagina`). Conferido em 27/10: 2027 lê exatamente o mesmo que antes; base simulada 2027/2028 com
+  exercício 2028 dá os mesmos totais, com os rótulos trocados.
+- **Roteiro do próximo ano** (também na aba LEIA-ME do pacote): 1) preparar o SIPOG para o novo exercício (fora deste
+  estudo) e copiar a regra nova para `calcularPrevisaoEmpenhoEstudo`; 2) LOA: extração do SIOF na aba LOA do pacote, ou
+  PDFs em `LOA<ano>/` + `python -I ferramentas/extrair_ploa.py LOA<ano> dados/loa<ano>_acoes.json --ano <ano> --xlsx
+  loa<ano>.xlsx`; 3) baixar o pacote do ano anterior, trocar LOA, MAPPS e EXERCICIO_LOA; 4) revisar ORGAOS, FONTES_LOA e o
+  de-para (a página lista órgãos sem sigla e fontes sem par); 5) carregar e conferir os totais.
 - De-para por xlsx (aba 3): `baixarDeParaXLSX` (abas DE_PARA_FONTES + FONTES_DO_MAPP) e `selecionarArquivoDePara` →
   `lerDeParaDeWorkbook` + `aplicarDeParaImportado` (SUB FONTE completa ou FT.DT; "(sem fonte)" = sem fonte; fonte fora da base
   de MAPPs é rejeitada); grava em `deParaManual`.

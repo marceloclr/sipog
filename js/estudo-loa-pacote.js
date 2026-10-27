@@ -8,7 +8,7 @@ const ABAS_PACOTE = ['LEIA-ME', 'PARAMETROS', 'LOA', 'MAPPS', 'DE_PARA_FONTES', 
 
 // PARAMETROS: PARAMETRO | VALOR. Cada chave aponta para um campo da aba 2.
 const PARAMETROS_PACOTE = [
-    { chave: 'EXERCICIO_LOA', desc: 'Ano da LOA estudada (o ano base da execução é o anterior)', padrao: 2027 },
+    { chave: 'EXERCICIO_LOA', desc: 'Ano da LOA estudada (o ano base da execução é o anterior)', padrao: 2027, especial: true },
     { chave: 'CONVENIADO_PCT', id: 'ep-conveniado', desc: 'Previsão de Empenho: Conveniado (% do Programado, se Limite = 0)' },
     { chave: 'LICITADO_PCT', id: 'ep-licitado', desc: 'Previsão de Empenho: Licitado (%)' },
     { chave: 'EM_LICITACAO_PCT', id: 'ep-emlicitacao', desc: 'Previsão de Empenho: Em Licitação (%)' },
@@ -187,7 +187,7 @@ function aplicarParametrosPacote(p) {
         if (def.caixa) el.checked = simNao(p[def.chave]);
         else el.value = p[def.chave] === null ? '' : p[def.chave];
     });
-    if ('EXERCICIO_LOA' in p && Number(p.EXERCICIO_LOA) > 2000) exercicioLOA = Number(p.EXERCICIO_LOA);
+    if ('EXERCICIO_LOA' in p) definirExercicio(p.EXERCICIO_LOA);
     if ('GND' in p) {
         let gnds = new Set(String(p.GND).split(/[;,\s]+/).filter(Boolean).map(g => g.padStart(2, '0')));
         GNDS_LOA.forEach(g => { let el = document.getElementById('gnd-' + g); if (el) el.checked = gnds.has(g); });
@@ -350,9 +350,9 @@ async function baixarPacoteEstudo(modelo) {
         TIPO_ACAO: c.tipoAcao, COD_ACAO: c.codAcao, ACAO: c.acao, FUNCAO: c.funcao, SUBFUNCAO: c.subfuncao, REGIAO: c.regiao, GND: c.gnd,
         MODALIDADE: c.modalidade, FONTE: `${c.id}.${c.ft}.${c.dt}`, IDUSO: c.iduso, VALOR: c.valor })));
 
-    let colsM = (mappsColunasOriginais.length ? mappsColunasOriginais : ['SECRETARIA', 'ORGAO', 'MAPP', 'PROGRAMA', 'FONTE', 'ESTAGIO_EXECUCAO',
-        'VLR_PROGRAMADO_2026', 'VLR_LIMITE_2026', 'VLR_EMPENHADO_2026', 'VLR_PROGRAMADO_2027', 'ENTREGA_PRIORITARIA', 'PCF_CONVENIO', 'CONTRATO_GESTAO', 'CONTINUIDADE', 'OPERACA_CREDITO']);
-    adicionarAbaEstudo(wb, 'MAPPS', colsM.map(c => ({ titulo: c, chave: c, moeda: /^VLR_/.test(c), largura: /^VLR_/.test(c) ? 18 : (c === 'MAPP' ? 60 : 16) })),
+    let colsM = (!modelo && mappsColunasOriginais.length) ? mappsColunasOriginais : ['SECRETARIA', 'ORGAO', 'MAPP', 'PROGRAMA', 'FONTE', 'ESTAGIO_EXECUCAO',
+        COLS_PAPEL.pBase[0], COLS_PAPEL.lBase[0], COLS_PAPEL.eBase[0], COLS_PAPEL.pLOA[0], 'ENTREGA_PRIORITARIA', 'PCF_CONVENIO', 'CONTRATO_GESTAO', 'CONTINUIDADE', 'OPERACA_CREDITO'];
+    adicionarAbaEstudo(wb, 'MAPPS', colsM.map(c => ({ titulo: c, chave: c, fixo: true, moeda: /^VLR_/.test(c), largura: /^VLR_/.test(c) ? 18 : (c === 'MAPP' ? 60 : 16) })),
         modelo ? [] : mappsOriginais.map(r => { let o = {}; colsM.forEach(c => { o[c] = /^VLR_/.test(c) ? V(r[c]) : (r[c] === undefined ? '' : r[c]); }); return o; }));
 
     if (!modelo && loaLinhas.length) adicionarAbaDePara(wb);

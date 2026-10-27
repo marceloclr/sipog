@@ -6,7 +6,8 @@
 #   - Σ das ações de cada órgão × programa × fonte × GND = "Resumo do Programa" do PDF;
 #   - Σ por GND (esferas Fiscal/Seguridade) = Volume I, "Despesa por Categoria, Grupo
 #     de Despesa e Modalidade" (sem a modalidade 91, como o Volume I).
-# Uso: python -I ferramentas/extrair_ploa.py LOA2027 dados/loa2027_acoes.json
+# Uso: python -I ferramentas/extrair_ploa.py LOA2027 dados/loa2027_acoes.json [--ano 2027] [--xlsx loa2027.xlsx]
+# Próximo ano: PDFs em LOA2028/ com os nomes PLOA-2028-Volume-*.pdf e --ano 2028 (gera dados/loa2028_acoes.json).
 import json
 import re
 import sys
@@ -152,10 +153,42 @@ def totais_gnd_volume_i(caminho):
     return {}
 
 
+def gravar_xlsx(creditos, caminho):
+    """Aba LOA do "pacote do estudo" (mesmas colunas de COLUNAS_LOA_PACOTE em js/estudo-loa-pacote.js)."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'LOA'
+    ws.append(COLUNAS_LOA_XLSX)
+    for c in creditos:
+        ws.append([c['esfera'], c['codOrgao'], c['orgao'], c['codUO'], c['uo'], c['programa'], c['nomePrograma'], c['tipoAcao'],
+                   c['codAcao'], c['acao'], c['funcao'], c['subfuncao'], c['regiao'], c['gnd'], c['modalidade'],
+                   f"{c['id']}.{c['ft']}.{c['dt']}", c['iduso'], c['valor']])
+    wb.save(caminho)
+    print(f'Gravado {caminho} (aba LOA do pacote do estudo)')
+
+
+COLUNAS_LOA_XLSX = ['ESFERA', 'COD_ORGAO', 'ORGAO', 'COD_UO', 'UO', 'PROGRAMA', 'NOME_PROGRAMA', 'TIPO_ACAO', 'COD_ACAO', 'ACAO',
+                    'FUNCAO', 'SUBFUNCAO', 'REGIAO', 'GND', 'MODALIDADE', 'FONTE', 'IDUSO', 'VALOR']
+
+
 def main():
+    # Uso: extrair_ploa.py [PASTA_PDFS] [SAIDA_JSON] [--ano 2028] [--xlsx loa2028.xlsx]
+    # Os PDFs seguem o nome do PLOA: PLOA-<ano>-Volume-I.pdf e PLOA-<ano>-Volume-II-Tomo-I/II.pdf.
+    global TOMOS, VOLUME_I
     sys.stdout.reconfigure(encoding='utf-8')
-    pasta =Path(sys.argv[1] if len(sys.argv) > 1 else 'LOA2027')
-    saida = Path(sys.argv[2] if len(sys.argv) > 2 else 'dados/loa2027_acoes.json')
+    args, opcoes = [], {}
+    it = iter(sys.argv[1:])
+    for a in it:
+        if a.startswith('--'):
+            opcoes[a[2:]] = next(it, '')
+        else:
+            args.append(a)
+    ano = int(opcoes.get('ano', 2027))
+    TOMOS = [f'PLOA-{ano}-Volume-II-Tomo-I.pdf', f'PLOA-{ano}-Volume-II-Tomo-II.pdf']
+    VOLUME_I = f'PLOA-{ano}-Volume-I.pdf'
+    pasta = Path(args[0] if args else f'LOA{ano}')
+    saida = Path(args[1] if len(args) > 1 else f'dados/loa{ano}_acoes.json')
     creditos, resumos, resumos_orgao = [], {}, {}
     for tomo in TOMOS:
         extrair_tomo(pasta / tomo, creditos, resumos, resumos_orgao)
@@ -217,7 +250,7 @@ def main():
     if divergencias or dif_gnd:
         print(f'AVISO: diferenças do próprio PDF registradas no arquivo (Σ {dif_resumos:,.2f}).')
     saida.parent.mkdir(parents=True, exist_ok=True)
-    pacote = {'fonte': 'PLOA 2027 — Volume II (Tomos I e II), Demonstrativo de Créditos Orçamentários',
+    pacote = {'fonte': f'PLOA {ano} — Volume II (Tomos I e II), Demonstrativo de Créditos Orçamentários', 'exercicio': ano,
               'conferencia': {'resumosPrograma': len(resumos), 'resumosOrgao': len(resumos_orgao), 'gndVolumeI': vol1, 'estatais': estatais,
                               'difGndVolumeI': dif_gnd,
                               'difResumos': [{'nivel': 'órgão' if d[0] == 'ÓRGÃO' else 'programa', 'orgao': d[1] if d[0] == 'ÓRGÃO' else d[0],
@@ -226,6 +259,8 @@ def main():
               'creditos': creditos}
     saida.write_text(json.dumps(pacote, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
     print(f'Gravado {saida} ({len(creditos)} créditos, {saida.stat().st_size / 1e6:.1f} MB)')
+    if opcoes.get('xlsx'):
+        gravar_xlsx(creditos, opcoes['xlsx'])
 
 
 if __name__ == '__main__':

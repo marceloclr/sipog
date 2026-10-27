@@ -147,7 +147,7 @@
 <header class="top-header">
     <div class="header-row-main">
         <div class="header-title">
-            <h1>Estudo LOA 2027 × MAPPs</h1>
+            <h1 data-anos>Estudo LOA 2027 × MAPPs</h1>
             <p>Página de estudo, separada do SIPOG: cruza a LOA por Órgão e Sub fonte com a Previsão de Empenho por Estágio dos MAPPs</p>
         </div>
         <div class="header-actions">
@@ -188,7 +188,7 @@
                 <div class="estudo-status" id="status-pacote"></div>
             </div>
             <div class="estudo-grid-carga" style="margin-top:14px;">
-                <div class="estudo-carga"><h3>LOA 2027 carregada</h3><div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div></div>
+                <div class="estudo-carga"><h3 data-anos>LOA 2027 carregada</h3><div class="estudo-status" id="status-loa">Nenhum arquivo carregado.</div></div>
                 <div class="estudo-carga"><h3>Base de MAPPs carregada</h3><div class="estudo-status" id="status-mapps">Nenhum arquivo carregado.</div>
                     <div class="estudo-status" id="status-mapps-expurgo"></div><div class="estudo-status" id="status-programas"></div></div>
             </div>
@@ -196,8 +196,8 @@
                 <summary style="cursor:pointer; font-weight:700; font-size:13px;">Avançado — carregar os arquivos separadamente</summary>
                 <div class="estudo-grid-carga" style="margin-top:10px;">
                     <div class="estudo-carga">
-                        <h3>LOA 2027</h3>
-                        <p class="estudo-nota"><strong>PLOA 2027 por ação</strong> (<code>dados/loa2027_acoes.json</code>, extraído do Volume II e conferido com o Volume I): traz órgão, programa, ação, GND, esfera e fonte — o recorte de GND e esfera fica na aba 2 e o cruzamento passa a ser Órgão × Programa × Fonte. Alternativas: o PDF "Demonstrativo Consolidado por Órgão e Fonte" ou a planilha "Fonte x Órgão" (cruzamento Órgão × Fonte). <strong>Só o Executivo estadual entra:</strong> a LOA da Assembleia Legislativa, do Tribunal de Contas, do Tribunal de Justiça, do Ministério Público (PGJ) e dos órgãos vinculados a eles é expurgada.</p>
+                        <h3 data-anos>LOA 2027</h3>
+                        <p data-anos class="estudo-nota"><strong>PLOA 2027 por ação</strong> (<code>dados/loa2027_acoes.json</code>, extraído do Volume II e conferido com o Volume I): traz órgão, programa, ação, GND, esfera e fonte — o recorte de GND e esfera fica na aba 2 e o cruzamento passa a ser Órgão × Programa × Fonte. Alternativas: o PDF "Demonstrativo Consolidado por Órgão e Fonte" ou a planilha "Fonte x Órgão" (cruzamento Órgão × Fonte). <strong>Só o Executivo estadual entra:</strong> a LOA da Assembleia Legislativa, do Tribunal de Contas, do Tribunal de Justiça, do Ministério Público (PGJ) e dos órgãos vinculados a eles é expurgada.</p>
                         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                             <button class="btn-mini-header" onclick="carregarPLOADoRepositorio()" title="Baixa dados/loa2027_acoes.json do site (não funciona com a página aberta por duplo clique — aí use o seletor de arquivo)">⬇ PLOA 2027 do sistema</button>
                             <input type="file" id="arquivo-loa" accept=".json,.pdf,.xlsx" onchange="selecionarArquivoLOA(this)">
@@ -218,7 +218,11 @@
     <section class="estudo-aba estudo-secao" data-aba="parametros">
         <h2 class="estudo-aba-titulo">2. Parâmetros de estudo — Previsão de Empenho por Estágio</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">Mesmos percentuais e mesma regra da etapa "Previsão de Empenho por Estágio" do SIPOG (padrões da regra vigente). Os estágios com percentual só usam o % quando o Limite 2026 é zero; com Limite, a previsão é o próprio Limite 2026. Alterar um valor recalcula tudo.</p>
+            <p data-anos class="estudo-nota">Mesmos percentuais e mesma regra da etapa "Previsão de Empenho por Estágio" do SIPOG (padrões da regra vigente). Os estágios com percentual só usam o % quando o Limite 2026 é zero; com Limite, a previsão é o próprio Limite 2026. Alterar um valor recalcula tudo.</p>
+            <div class="estudo-params" style="margin-bottom:10px;">
+                <div><label for="exercicio-loa" title="Ano da LOA estudada. O ano base da execução é o anterior: as colunas lidas da base são VLR_PROGRAMADO/LIMITE/EMPENHADO do ano base e VLR_PROGRAMADO do ano da LOA.">Exercício da LOA</label>
+                    <input type="number" id="exercicio-loa" min="2020" max="2099" step="1" value="2027" onchange="definirExercicio(this.value); recalcularEstudo()"></div>
+            </div>
             <div class="estudo-params">
                 <div><label for="ep-conveniado">Conveniado (%)</label><input type="number" id="ep-conveniado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-licitado">Licitado (%)</label><input type="number" id="ep-licitado" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
@@ -229,8 +233,8 @@
                 <div><label for="ep-limiar">Em Execução — limiar (% do Prog.)</label><input type="number" id="ep-limiar" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="ep-meses" title="Regra (EMP/meses)×12 de Em Execução. O SIPOG fixa 5 (dados até maio). Use o nº de meses até a data da extração.">Em Execução — meses decorridos</label><input type="number" id="ep-meses" min="1" max="12" step="0.5" oninput="recalcularEstudo()"></div>
             </div>
-            <h3 style="font-size:13px; margin:18px 0 4px;">Recorte da LOA (PLOA 2027 por ação)</h3>
-            <p class="estudo-nota">Vale quando a LOA vem do PLOA 2027 por ação (aba 1). Padrão: só o GND 44 (Investimentos), as duas esferas e sem a modalidade 91 (aplicação direta intraorçamentária, que duplica valores — o Volume I também a exclui).</p>
+            <h3 data-anos style="font-size:13px; margin:18px 0 4px;">Recorte da LOA (PLOA 2027 por ação)</h3>
+            <p data-anos class="estudo-nota">Vale quando a LOA vem do PLOA 2027 por ação (aba 1). Padrão: só o GND 44 (Investimentos), as duas esferas e sem a modalidade 91 (aplicação direta intraorçamentária, que duplica valores — o Volume I também a exclui).</p>
             <div class="estudo-recorte" id="recorte-loa">
                 <fieldset><legend>Grupo de despesa (GND)</legend>
                     <label><input type="checkbox" id="gnd-31" onchange="recalcularEstudo()">31 – Pessoal e Encargos</label>
@@ -250,10 +254,10 @@
                 </fieldset>
             </div>
             <div style="margin-top:12px;">
-                <label class="estudo-check"><input type="checkbox" id="ep-expurgar-fisfin" checked onchange="recalcularEstudo()"> Expurgar MAPPs em <strong>Execução Físic/Finan. Concluída</strong> <span style="color:var(--muted);">(padrão, como no SIPOG; desmarcado: entram com 100% do Programado 2026 e TRF zero)</span></label>
+                <label data-anos class="estudo-check"><input type="checkbox" id="ep-expurgar-fisfin" checked onchange="recalcularEstudo()"> Expurgar MAPPs em <strong>Execução Físic/Finan. Concluída</strong> <span style="color:var(--muted);">(padrão, como no SIPOG; desmarcado: entram com 100% do Programado 2026 e TRF zero)</span></label>
             </div>
-            <h3 style="font-size:13px; margin:18px 0 4px;">Valor Deliberado por grupo — redução da Previsão de Empenho 2026</h3>
-            <p class="estudo-nota">Mesma regra do bloco "Valor Deliberado Máximo do Empenho 2026 por Grupo de Projetos" do SIPOG: Prev. Empenho Ajustada = Prev. Empenho × (1 − %); TRF Ajustada = Programado 2026 − Prev. Empenho Ajustada; Necessidade 2027 Ajustada = Programado 2027 + TRF Ajustada. No SIPOG o percentual vale só para a Fonte selecionada no momento do "Aplicar" — escolha abaixo a fonte (ou todas). Edições manuais e travas por MAPP do SIPOG não entram no estudo.</p>
+            <h3 data-anos style="font-size:13px; margin:18px 0 4px;">Valor Deliberado por grupo — redução da Previsão de Empenho 2026</h3>
+            <p data-anos class="estudo-nota">Mesma regra do bloco "Valor Deliberado Máximo do Empenho 2026 por Grupo de Projetos" do SIPOG: Prev. Empenho Ajustada = Prev. Empenho × (1 − %); TRF Ajustada = Programado 2026 − Prev. Empenho Ajustada; Necessidade 2027 Ajustada = Programado 2027 + TRF Ajustada. No SIPOG o percentual vale só para a Fonte selecionada no momento do "Aplicar" — escolha abaixo a fonte (ou todas). Edições manuais e travas por MAPP do SIPOG não entram no estudo.</p>
             <div class="estudo-params">
                 <div><label for="vd-contrato-gestao">Contrato Gestão (%)</label><input type="number" id="vd-contrato-gestao" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
                 <div><label for="vd-continuidade">Continuidade (%)</label><input type="number" id="vd-continuidade" min="0" max="100" step="0.01" oninput="recalcularEstudo()"></div>
@@ -296,7 +300,7 @@
     <section class="estudo-aba estudo-secao" data-aba="consolidado">
         <h2 class="estudo-aba-titulo">4. Consolidado Órgão × Fonte e MAPPs</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A LOA é a do recorte da aba 2 (PLOA por ação) ou a do arquivo da aba 1. "Necessidade ÷ LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs). Na grade de fontes, clique numa linha (▸) para abrir, logo abaixo e na própria grade, os programas e os MAPPs; novo clique recolhe.</p>
+            <p data-anos class="estudo-nota">A LOA é a do recorte da aba 2 (PLOA por ação) ou a do arquivo da aba 1. "Necessidade ÷ LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs). Na grade de fontes, clique numa linha (▸) para abrir, logo abaixo e na própria grade, os programas e os MAPPs; novo clique recolhe.</p>
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
@@ -312,16 +316,16 @@
             <h3 class="estudo-subtitulo">Fontes por órgão</h3>
             <div class="estudo-tabela-wrap"><div id="tabela-consolidado"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
             <h3 class="estudo-subtitulo" id="secao-detalhe">MAPPs — regra aplicada</h3>
-            <p class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos, Entrega Prioritária e, se marcado nos parâmetros, Execução Físic/Finan. Concluída.</p>
+            <p data-anos class="estudo-nota">TRF 2026 = Programado 2026 − Previsão de Empenho 2026. Necessidade 2027 (Calculada) = Programado 2027 + TRF 2026. As colunas "Ajustada" aplicam o Valor Deliberado por grupo. Expurgados: Concluídos, Cancelados, Transferidos, Entrega Prioritária e, se marcado nos parâmetros, Execução Físic/Finan. Concluída.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-detalhe"><p class="estudo-nota" style="padding:12px;">Carregue a base de MAPPs.</p></div></div>
         </div>
     </section>
 
     <section class="estudo-aba estudo-secao" data-aba="ajustes">
-        <h2 class="estudo-aba-titulo">5. Ajustes Finais — Proposta de Programado 2027</h2>
+        <h2 data-anos class="estudo-aba-titulo">5. Ajustes Finais — Proposta de Programado 2027</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A <strong>Proposta de Programado 2027</strong> distribui automaticamente a LOA 2027 de cada órgão em cada fonte entre os MAPPs ativos daquele órgão e fonte, na proporção da Necessidade 2027 Ajustada, <strong>sem passar da necessidade de cada MAPP</strong> (o excedente vira "LOA sem destino"). Edite a proposta de qualquer MAPP; as demais linhas não mudam — use "Distribuir diferença" na grade de alerta para reequilibrar a fonte. <strong>O filtro de fonte vale para a tela toda.</strong></p>
-            <details class="estudo-nota" style="margin:0 0 10px;"><summary style="cursor:pointer; font-weight:700;">O que compõe a Proposta 2027</summary>
+            <p data-anos class="estudo-nota">A <strong>Proposta de Programado 2027</strong> distribui automaticamente a LOA 2027 de cada órgão em cada fonte entre os MAPPs ativos daquele órgão e fonte, na proporção da Necessidade 2027 Ajustada, <strong>sem passar da necessidade de cada MAPP</strong> (o excedente vira "LOA sem destino"). Edite a proposta de qualquer MAPP; as demais linhas não mudam — use "Distribuir diferença" na grade de alerta para reequilibrar a fonte. <strong>O filtro de fonte vale para a tela toda.</strong></p>
+            <details data-anos class="estudo-nota" style="margin:0 0 10px;"><summary style="cursor:pointer; font-weight:700;">O que compõe a Proposta 2027</summary>
                 <ul style="margin:6px 0 0 18px;">
                     <li><strong>MAPPs com Nec. 2027 Ajustada:</strong> proposta automática = Nec. Ajustada × mín(1, LOA do par Órgão × Fonte ÷ Σ Nec. Ajustada dos MAPPs do par). A LOA do par é repartida na proporção da necessidade e nenhum MAPP passa da própria necessidade; o que sobra vira "LOA sem destino".</li>
                     <li><strong>Demais MAPPs (sem necessidade):</strong> proposta automática R$ 0; o valor só entra à mão.</li>
@@ -339,25 +343,25 @@
                 <button class="btn-mini-header" onclick="restaurarTodasPropostas()" title="Descarta todas as edições e volta à distribuição automática">↺ Voltar tudo ao automático</button>
             </div>
             <div class="estudo-resumo" id="resumo-ajustes"></div>
-            <h3 class="estudo-subtitulo">Alerta por fonte — LOA 2027 × Proposta de Programado 2027</h3>
+            <h3 data-anos class="estudo-subtitulo">Alerta por fonte — LOA 2027 × Proposta de Programado 2027</h3>
             <div class="estudo-tabela-wrap" style="max-height:360px;"><div id="tabela-alertas"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
             <div id="bloco-ajustes-orgaos">
                 <h3 class="estudo-subtitulo">Órgãos (todas as fontes, conforme o filtro)</h3>
                 <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-ajustes-orgaos"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
             </div>
-            <h3 class="estudo-subtitulo">MAPPs com Necessidade 2027 Ajustada — proposta editável</h3>
-            <p class="estudo-nota">A proposta automática nunca passa da Nec. 2027 Ajustada; linha <span style="background:rgba(233,79,14,0.18); padding:0 4px; border-radius:3px;">tarjada em vermelho</span> = proposta editada acima da necessidade.</p>
+            <h3 data-anos class="estudo-subtitulo">MAPPs com Necessidade 2027 Ajustada — proposta editável</h3>
+            <p data-anos class="estudo-nota">A proposta automática nunca passa da Nec. 2027 Ajustada; linha <span style="background:rgba(233,79,14,0.18); padding:0 4px; border-radius:3px;">tarjada em vermelho</span> = proposta editada acima da necessidade.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
-            <h3 class="estudo-subtitulo">Demais MAPPs (sem Necessidade 2027 Ajustada) — programado só manual</h3>
-            <p class="estudo-nota">Não recebem distribuição automática. Digite a proposta quando for preciso programar 2027 para eles — por exemplo, com a "LOA sem destino" da grade de alerta.</p>
+            <h3 data-anos class="estudo-subtitulo">Demais MAPPs (sem Necessidade 2027 Ajustada) — programado só manual</h3>
+            <p data-anos class="estudo-nota">Não recebem distribuição automática. Digite a proposta quando for preciso programar 2027 para eles — por exemplo, com a "LOA sem destino" da grade de alerta.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps-sem-nec"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
         </div>
     </section>
 
     <section class="estudo-aba estudo-secao" data-aba="naoalocada">
-        <h2 class="estudo-aba-titulo">6. LOA não alocada — recursos da LOA 2027 não vinculados a MAPP</h2>
+        <h2 data-anos class="estudo-aba-titulo">6. LOA não alocada — recursos da LOA 2027 não vinculados a MAPP</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">LOA 2027 do Executivo que não chegou à Proposta de Programado 2027 de nenhum MAPP, em três categorias:
+            <p data-anos class="estudo-nota">LOA 2027 do Executivo que não chegou à Proposta de Programado 2027 de nenhum MAPP, em três categorias:
                 <span class="na-chave" style="--na-cor:var(--na-fora)"></span><strong>Fora do cruzamento</strong> — sub fonte sem Fonte do MAPP no De-para (aba 3);
                 <span class="na-chave" style="--na-cor:var(--na-semmapp)"></span><strong>Par sem MAPP</strong> — órgão × programa × fonte com LOA e nenhum MAPP ativo;
                 <span class="na-chave" style="--na-cor:var(--na-sobra)"></span><strong>Sobra no par</strong> — o par tem MAPPs, mas a LOA passa da Proposta (necessidade menor que a LOA ou proposta não distribuída).
@@ -383,7 +387,7 @@
             <h3 class="estudo-subtitulo">Por par Órgão × <span class="so-programa">Programa × </span>Fonte</h3>
             <div class="estudo-tabela-wrap" style="max-height:480px;"><div id="tabela-na-par"></div></div>
             <h3 class="estudo-subtitulo">Por ação do PLOA (projeto / atividade / operação especial)</h3>
-            <p class="estudo-nota">Onde está a LOA não alocada no PLOA 2027 por ação. Na "Sobra no par", o valor de cada ação é a parte proporcional: valor da ação × (não alocado ÷ LOA do par).</p>
+            <p data-anos class="estudo-nota">Onde está a LOA não alocada no PLOA 2027 por ação. Na "Sobra no par", o valor de cada ação é a parte proporcional: valor da ação × (não alocado ÷ LOA do par).</p>
             <div class="estudo-tabela-wrap" style="max-height:480px;"><div id="tabela-na-acao"></div></div>
         </div>
     </section>

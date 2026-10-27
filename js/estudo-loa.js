@@ -109,6 +109,58 @@ function escHtml(v) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ─── EXERCÍCIO (ano da LOA e ano base da execução) ──────────────────────────
+// O estudo foi escrito para a LOA 2027 × execução 2026. Com outro exercício (campo da aba 2 ou
+// EXERCICIO_LOA do pacote), os dados são lidos por papel (colunasPapel) e os textos de tela
+// trocam os anos em trocarAnos — só textos do sistema, nunca dados (nomes de MAPP etc.).
+function anoBase() { return exercicioLOA - 1; }
+
+function trocarAnos(txt) {
+    if (exercicioLOA === 2027 || txt === null || txt === undefined) return txt;
+    return String(txt).replace(/\b(2026|2027)\b/g, a => String(a === '2026' ? anoBase() : exercicioLOA));
+}
+
+// Colunas da base de MAPPs por papel: layout do SIPOG (VLR_PROGRAMADO_<ano>) ou extração bruta
+// (VLR_PLANEJADO_<aa>, VLR_LIMITE sem ano = ano base, VLR_EMPENHO_<aa>).
+function colunasPapel() {
+    let B = anoBase(), L = exercicioLOA, b = String(B).slice(-2), l = String(L).slice(-2);
+    return {
+        pBase: [`VLR_PROGRAMADO_${B}`, `VLR_PLANEJADO_${b}`], lBase: [`VLR_LIMITE_${B}`, 'VLR_LIMITE'],
+        eBase: [`VLR_EMPENHADO_${B}`, `VLR_EMPENHO_${b}`], pLOA: [`VLR_PROGRAMADO_${L}`, `VLR_PLANEJADO_${l}`]
+    };
+}
+let COLS_PAPEL = colunasPapel();
+
+function valorPapel(r, nomes) {
+    for (let n of nomes) if (r[n] !== undefined && r[n] !== null && r[n] !== '') return V(r[n]);
+    return 0;
+}
+
+// Textos fixos do HTML com ano: marcados com data-anos (o original fica guardado).
+function aplicarAnosNaPagina() {
+    document.querySelectorAll('[data-anos]').forEach(el => {
+        if (el.dataset.anosOriginal === undefined) el.dataset.anosOriginal = el.innerHTML;
+        el.innerHTML = trocarAnos(el.dataset.anosOriginal);
+    });
+    document.title = trocarAnos('Estudo LOA 2027 × MAPPs — SIPOG');
+}
+
+// Rótulos dos cards (<span>) e avisos: troca o ano só nos textos, não nos valores (<b>).
+function trocarAnosRotulos(el) {
+    if (!el || exercicioLOA === 2027) return;
+    el.querySelectorAll('span, h3, p').forEach(s => { if (/\b202[67]\b/.test(s.textContent) && !s.children.length) s.textContent = trocarAnos(s.textContent); });
+}
+
+function definirExercicio(valor) {
+    let ano = Math.round(Number(valor));
+    if (!(ano > 2000 && ano < 2100)) return;
+    exercicioLOA = ano;
+    COLS_PAPEL = colunasPapel();
+    let el = document.getElementById('exercicio-loa');
+    if (el && Number(el.value) !== ano) el.value = ano;
+    aplicarAnosNaPagina();
+}
+
 // ─── TOOLTIPS DE CÁLCULO ────────────────────────────────────────────────────
 // Todo valor das grades e dos cards mostra, ao passar o mouse, a fórmula com os
 // números usados. FT() é o F() do SIPOG sem o "-" no zero (na fórmula o zero aparece).
@@ -116,7 +168,7 @@ function FT(v) { return (Number(v) || 0).toLocaleString('pt-BR', { style: 'curre
 
 function dica(...linhas) {
     let txt = linhas.filter(l => l !== null && l !== undefined && l !== '').join('\n');
-    return txt ? ` title="${escHtml(txt)}"` : '';
+    return txt ? ` title="${escHtml(trocarAnos(txt))}"` : '';
 }
 
 function tdNum(valor, titulo, extra) {
@@ -373,18 +425,19 @@ async function selecionarArquivoLOA(input) {
 // programa e de órgão e com o Volume I). Guarda todos os créditos; o recorte (GND, esfera,
 // modalidade 91) é aplicado a cada recálculo e agrega por Órgão × Programa × Fonte (FT.DT).
 let loaCreditos = [];
-const ARQUIVO_PLOA = 'dados/loa2027_acoes.json';
+// Arquivo gerado pelo extrator para o exercício (ferramentas/extrair_ploa.py --ano).
+function arquivoPLOA() { return `dados/loa${exercicioLOA}_acoes.json`; }
 
 async function carregarPLOADoRepositorio() {
     let status = document.getElementById('status-loa');
-    status.innerHTML = 'Baixando o PLOA 2027…';
+    status.innerHTML = `Baixando o PLOA ${exercicioLOA}…`;
     try {
-        let resp = await fetch(ARQUIVO_PLOA);
+        let resp = await fetch(arquivoPLOA());
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        carregarLOAPloa(await resp.json(), 'PLOA 2027 — Volume II (' + ARQUIVO_PLOA + ')');
+        carregarLOAPloa(await resp.json(), `PLOA ${exercicioLOA} — Volume II (${arquivoPLOA()})`);
     } catch (err) {
         console.error(err);
-        status.innerHTML = `<span class="erro">❌ Não foi possível baixar ${ARQUIVO_PLOA} (${escHtml(err.message || err)}). Com a página aberta por duplo clique, escolha o arquivo no seletor ao lado.</span>`;
+        status.innerHTML = `<span class="erro">❌ Não foi possível baixar ${arquivoPLOA()} (${escHtml(err.message || err)}). Com a página aberta por duplo clique, escolha o arquivo no seletor ao lado.</span>`;
     }
 }
 
@@ -494,7 +547,8 @@ const ALIASES_COLUNAS_MAPPS = {
     VLR_PROGRAMADO_2026: 'VLR_PLANEJADO_26', VLR_LIMITE_2026: 'VLR_LIMITE', VLR_EMPENHADO_2026: 'VLR_EMPENHO_26',
     VLR_PAGO_2026: 'VLR_PAGO_26', VLR_PROGRAMADO_2027: 'VLR_PLANEJADO_27'
 };
-const COLUNAS_OBRIGATORIAS_MAPPS = ['MAPP', 'ORGAO', 'FONTE', 'ESTAGIO_EXECUCAO', 'VLR_PROGRAMADO_2026', 'VLR_LIMITE_2026', 'VLR_EMPENHADO_2026', 'VLR_PROGRAMADO_2027'];
+// Os valores obrigatórios dependem do exercício: ver colunasPapel() (normalizarLayoutMAPPs).
+const COLUNAS_OBRIGATORIAS_MAPPS = ['MAPP', 'ORGAO', 'FONTE', 'ESTAGIO_EXECUCAO'];
 const COLUNAS_GRUPO_MAPPS = ['CONTRATO_GESTAO', 'CONTINUIDADE', 'PCF_CONVENIO', 'OPERACAO_CREDITO', 'ENTREGA_PRIORITARIA'];
 
 // Decodifica o arquivo texto: UTF-8 se for válido, senão Windows-1252 (padrão das extrações).
@@ -557,7 +611,8 @@ function normalizarLayoutMAPPs(linhas, headers) {
     let disponiveis = headers.concat(traduzidas.map(t => t[1]));
     return {
         traduzidas,
-        faltando: COLUNAS_OBRIGATORIAS_MAPPS.filter(c => !disponiveis.includes(c)),
+        faltando: COLUNAS_OBRIGATORIAS_MAPPS.filter(c => !disponiveis.includes(c))
+            .concat(Object.values(COLS_PAPEL).filter(nomes => !nomes.some(n => disponiveis.includes(n))).map(nomes => nomes[0])),
         semGrupo: COLUNAS_GRUPO_MAPPS.every(c => !disponiveis.includes(c) && !(c === 'OPERACAO_CREDITO' && disponiveis.includes('OPERACA_CREDITO')))
     };
 }
@@ -641,7 +696,7 @@ function carregarMAPPs(linhas, nomeArquivo, headers) {
     if (n.traduzidas.length)
         avisos += `<br>Colunas traduzidas para o layout do SIPOG: ${n.traduzidas.map(t => `${escHtml(t[0])} → ${escHtml(t[1])}`).join(', ')}`;
     if (n.faltando.length)
-        avisos += `<br><span class="erro">✖ Colunas não encontradas: ${n.faltando.map(escHtml).join(', ')}</span>`;
+        avisos += `<br><span class="erro">✖ Colunas não encontradas para o exercício ${exercicioLOA} (LOA ${exercicioLOA} × execução ${anoBase()}): ${n.faltando.map(escHtml).join(', ')} — confira o "Exercício da LOA" na aba 2.</span>`;
     if (corrigidos.celulas)
         avisos += `<br><span class="aviso">⚠ Acentuação corrompida corrigida em ${corrigidos.celulas.toLocaleString('pt-BR')} célula(s) (ex.: ${escHtml(corrigidos.exemplo)}) — sem a correção, o estágio não seria reconhecido.</span>`;
     if (n.semGrupo)
@@ -724,7 +779,8 @@ function calcularPrevisaoEmpenhoEstudo(r, pcts, limiar, opcoes) {
     let meses = (opcoes && opcoes.meses > 0) ? opcoes.meses : 5;
     let estagio = normalizarEstagio(r.ESTAGIO_EXECUCAO);
     let classe = classificarRegistro(r);
-    let p26 = V(r.VLR_PROGRAMADO_2026), l26 = V(r.VLR_LIMITE_2026), e26 = V(r.VLR_EMPENHADO_2026), p27 = V(r.VLR_PROGRAMADO_2027);
+    // p26/l26/e26 = ano base da execução; p27 = ano da LOA (colunas pelo exercício: COLS_PAPEL).
+    let p26 = valorPapel(r, COLS_PAPEL.pBase), l26 = valorPapel(r, COLS_PAPEL.lBase), e26 = valorPapel(r, COLS_PAPEL.eBase), p27 = valorPapel(r, COLS_PAPEL.pLOA);
     let base = {
         mapp: r.MAPP || 'SEM MAPP', orgao: String(r.ORGAO || 'NÃO INFORMADO').trim(), fonte: String(r.FONTE || 'NÃO INFORMADA').trim(),
         estagio: labelEstagio(estagio), classe, p26, l26, e26, p27
@@ -1126,7 +1182,7 @@ const DESC_COLUNAS = {
 };
 
 function thDesc(titulo, desc, cls) {
-    return `<th class="sem-ordem${cls ? ' ' + cls : ''}" data-desc="1"${dica(titulo, desc)}>${escHtml(titulo)}</th>`;
+    return `<th class="sem-ordem${cls ? ' ' + cls : ''}" data-desc="1"${dica(titulo, desc)}>${escHtml(trocarAnos(titulo))}</th>`;
 }
 
 function cabecalhoOrdenavel(tabela, colunas) {
@@ -1134,7 +1190,7 @@ function cabecalhoOrdenavel(tabela, colunas) {
     return '<tr>' + colunas.map(c => {
         let cls = [c.num ? 'num' : '', c.classe || '', o.chave === c.chave ? (o.desc ? 'ordem-desc' : 'ordem-asc') : ''].join(' ').trim();
         let desc = (DESC_COLUNAS[tabela] || {})[c.chave];
-        return `<th class="${cls}"${desc ? ' data-desc="1"' : ''} onclick="ordenarTabela('${tabela}', '${c.chave}')"${dica(c.titulo, desc, '(clique para ordenar)')}>${escHtml(c.titulo)}</th>`;
+        return `<th class="${cls}"${desc ? ' data-desc="1"' : ''} onclick="ordenarTabela('${tabela}', '${c.chave}')"${dica(c.titulo, desc, '(clique para ordenar)')}>${escHtml(trocarAnos(c.titulo))}</th>`;
     }).join('') + '</tr>';
 }
 
@@ -1217,6 +1273,7 @@ function renderizarConsolidado() {
             : `a LOA cobre a necessidade — sobram ${abreviarValor(tot.loa - tot.necAjComLOA)}`}</small></div>
         <div${dica(`Σ Nec. 2027 Ajustada dos ${semLOA.length} pares Órgão × Fonte sem LOA 2027 = ${FT(necSemLOA)}`)}><span>Nec. Ajustada em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
         <div${dica(`Σ LOA das sub fontes sem Fonte do MAPP no De-para (aba 3): ${resumoForaCruzamento.paresForaCruzamento} pares = ${FT(resumoForaCruzamento.loaForaCruzamento)}`)}><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
+    trocarAnosRotulos(resumoEl);
 
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
     // Os MAPPs abrem DENTRO da grade, na linha de baixo (não mexe nos filtros nem na grade de MAPPs).
@@ -1463,7 +1520,7 @@ const COLUNAS_DETALHE = [
     { chave: 'p26', titulo: 'Programado 2026', num: true, valor: m => m.p26, dica: () => 'Valor da base de MAPPs (Programado 2026)' },
     { chave: 'l26', titulo: 'Limite 2026', num: true, valor: m => m.l26, dica: () => 'Valor da base de MAPPs (Limite 2026)' },
     { chave: 'e26', titulo: 'Empenhado 2026', num: true, valor: m => m.e26, dica: () => 'Valor da base de MAPPs (Empenhado 2026)' },
-    { chave: 'regra', titulo: 'Regra aplicada', valor: m => m.regra, celula: m => `<td class="col-regra">${escHtml(m.regra)}</td>` },
+    { chave: 'regra', titulo: 'Regra aplicada', valor: m => m.regra, celula: m => `<td class="col-regra">${escHtml(trocarAnos(m.regra))}</td>` },
     { chave: 'prevEmp', titulo: 'Prev. Empenho 2026', num: true, valor: m => m.prevEmp, dica: explicarPrevEmp },
     { chave: 'trf', titulo: 'TRF 2026', num: true, valor: m => m.trf,
       dica: m => m.expurgado ? explicarPrevEmp(m) : `TRF 2026 = Programado 2026 − Prev. Empenho 2026\n= ${FT(m.p26)} − ${FT(m.prevEmp)} = ${FT(m.trf)}` },
@@ -1784,7 +1841,7 @@ function renderizarAjustesFinais() {
         // Nec. Ajustada < 0 só ocorre com Prev. Empenho acima do Programado 2026 (Limite ou Empenhado maiores que o Programado).
         let negativas = linhasAjustes.filter(l => l.necAj < -0.005).length;
         if (negativas) avisos.push(`⚠️ ${negativas} MAPP(s) com <strong>Necessidade 2027 Ajustada negativa</strong> (Limite ou Empenhado 2026 acima do Programado 2026 — base inconsistente): ficam na grade "sem necessidade".`);
-        aviso.innerHTML = avisos.join('<br>');
+        aviso.innerHTML = trocarAnos(avisos.join('<br>'));
     }
 
     // Selo do menu: fontes divergentes no total (sem filtro).
@@ -1826,6 +1883,7 @@ function renderizarAjustesFinais() {
         <div${dica(`Por par Órgão × Fonte: sobra (LOA − Proposta) que não cabe na Nec. Ajustada dos MAPPs não editados\nΣ dos pares = ${FT(tSemDest)}`)}><span>LOA sem destino (sem MAPP ou além da Nec. Ajustada)</span><b>${F(tSemDest)}</b></div>
         <div${dica(`MAPPs do filtro com proposta editada ou redistribuída, somando ${FT(propEdit)}`)}><span>MAPPs com proposta editada</span><b>${qtdEditados.toLocaleString('pt-BR')}</b></div>
         <div${dica('MAPPs com Nec. Ajustada cuja Proposta passa dela (linhas tarjadas em vermelho)')}><span>Proposta acima da Nec. Ajustada</span><b class="${qtdExcede ? 'valor-estouro' : ''}">${qtdExcede.toLocaleString('pt-BR')} MAPP(s)</b></div>`;
+    trocarAnosRotulos(resumo);
 
     // Grade de alerta (só fontes com diferença)
     if (!divergentes.length) {
@@ -2188,6 +2246,7 @@ function renderizarNaoAlocada() {
         <div${dica(`LOA − não alocada (sem filtro) = ${FT(loaExec)} − ${FT(itensNaoAlocada.reduce((s, i) => s + i.valor, 0))}`)}><span>LOA alocada em Proposta</span><b>${F(loaExec - itensNaoAlocada.reduce((s, i) => s + i.valor, 0))}</b></div>
         <div${dica(`Σ das três categorias${filtrado ? ' (filtro)' : ''} = ${CATEGORIAS_NA.map(c => FT(porCat[c.id])).join(' + ')} = ${FT(total)}`)}><span>LOA não alocada${filtrado ? ' (filtro)' : ''}</span><b class="valor-sobra">${F(total)}</b><small style="color:var(--muted);">${fmtPct(loaExec ? total / loaExec * 100 : null)} da LOA do Executivo</small></div>` +
         CATEGORIAS_NA.map(c => `<div${dica(c.desc + `\n= ${FT(porCat[c.id])}`)}><span><span class="na-chave" style="--na-cor:var(${c.cor}); margin-left:0;"></span>${c.rotulo}</span><b>${F(porCat[c.id])}</b><small style="color:var(--muted);">${itens.filter(i => i.categoria === c.id).length} item(ns) · ${fmtPct(total ? porCat[c.id] / total * 100 : null)}</small></div>`).join('');
+    trocarAnosRotulos(resumo);
 
     desenharGraficosNaoAlocada(itens);
 
@@ -2263,7 +2322,7 @@ function coletarParametrosEstudoTela() {
     let elExp = document.getElementById('ep-expurgar-fisfin');
     let recorte = {};
     for (let id in RECORTE_LOA_PADRAO) recorte[id] = marcadoRecorte(id);
-    return { campos, expurgarFisFin: elExp ? elExp.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '', recorteLOA: recorte };
+    return { campos, expurgarFisFin: elExp ? elExp.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '', recorteLOA: recorte, exercicioLOA };
 }
 
 function aplicarParametrosEstudoTela(p) {
@@ -2271,6 +2330,7 @@ function aplicarParametrosEstudoTela(p) {
     for (let id in (p.campos || {})) { let el = document.getElementById(id); if (el) el.value = p.campos[id]; }
     let elExp = document.getElementById('ep-expurgar-fisfin');
     if (elExp && typeof p.expurgarFisFin === 'boolean') elExp.checked = p.expurgarFisFin;
+    definirExercicio(p.exercicioLOA || 2027);
     let recorte = Object.assign({}, RECORTE_LOA_PADRAO, p.recorteLOA || {});
     for (let id in recorte) { let el = document.getElementById(id); if (el) el.checked = !!recorte[id]; }
 }
@@ -2386,7 +2446,8 @@ function fecharModalEstudos() {
 // ─── EXPORTAÇÃO XLSX ────────────────────────────────────────────────────────
 function adicionarAbaEstudo(wb, nome, colunas, linhas) {
     let ws = wb.addWorksheet(nome, { views: [{ state: 'frozen', ySplit: 1 }] });
-    ws.columns = colunas.map(c => ({ header: c.titulo, key: c.chave, width: c.largura || 16 }));
+    // c.fixo: cabeçalho de dado (coluna da base, ex.: VLR_PROGRAMADO_2026) — não troca o ano.
+    ws.columns = colunas.map(c => ({ header: c.fixo ? c.titulo : trocarAnos(c.titulo), key: c.chave, width: c.largura || 16 }));
     linhas.forEach(l => ws.addRow(l));
     ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF008241' } };
@@ -2466,7 +2527,7 @@ async function exportarEstudoXLSX() {
     }
     if (mappsOriginais.length) {
         // Colunas VLR_* viram número (o CSV traz texto com vírgula decimal).
-        let colunas = mappsColunasOriginais.map(c => ({ titulo: c, chave: c, moeda: /^VLR_/.test(c), largura: /^VLR_/.test(c) ? 18 : (c === 'MAPP' ? 60 : 16) }));
+        let colunas = mappsColunasOriginais.map(c => ({ titulo: c, chave: c, fixo: true, moeda: /^VLR_/.test(c), largura: /^VLR_/.test(c) ? 18 : (c === 'MAPP' ? 60 : 16) }));
         adicionarAbaEstudo(wb, 'ARQ_BASE_MAPPS', colunas, mappsOriginais.map(r => {
             let o = {};
             mappsColunasOriginais.forEach(c => { o[c] = /^VLR_/.test(c) ? V(r[c]) : (r[c] === undefined ? '' : r[c]); });
