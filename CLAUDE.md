@@ -112,6 +112,9 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   buscas) e `atualizarFiltrosAjustes` (aba 5: Fonte, Órgão + busca) montam cada lista só com os
   valores das linhas que atendem aos OUTROS filtros (`valoresLigados`/`preencherSelectLigado`);
   são chamadas no início de `renderizarConsolidado`/`renderizarAjustesFinais`.
+- Cabeçalhos: significado e cálculo de cada coluna no tooltip do `th` (`DESC_COLUNAS` para as grades
+  ordenáveis, `thDesc()` para as fixas; `DESC_PROPOSTA` = composição da Proposta, também no
+  quadro "O que compõe a Proposta 2027" da aba 5).
 - Tooltips de cálculo: todo valor de grade (`tdNum`/`dica`) e todo card mostra a fórmula com os
   números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
   Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de

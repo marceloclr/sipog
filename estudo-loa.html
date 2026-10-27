@@ -91,6 +91,9 @@
     tr.proposta-excede input.input-proposta { border-color: var(--danger); color: var(--danger); font-weight: 700; }
     /* Valores com a fórmula de cálculo no tooltip (title) */
     td.num[title], .estudo-resumo div[title] { cursor: help; }
+    /* Cabeçalho com significado/cálculo no tooltip */
+    .estudo-tabela-wrap th[data-desc] { text-decoration: underline dotted; text-underline-offset: 3px; }
+    .estudo-tabela-wrap th.sem-ordem[data-desc] { cursor: help; }
     .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
     @media (max-width: 900px) {
         .estudo-layout { flex-direction: column; }
@@ -236,6 +239,14 @@
         <h2 class="estudo-aba-titulo">5. Ajustes Finais — Proposta de Programado 2027</h2>
         <div class="estudo-corpo">
             <p class="estudo-nota">A <strong>Proposta de Programado 2027</strong> distribui automaticamente a LOA 2027 de cada órgão em cada fonte entre os MAPPs ativos daquele órgão e fonte, na proporção da Necessidade 2027 Ajustada, <strong>sem passar da necessidade de cada MAPP</strong> (o excedente vira "LOA sem destino"). Edite a proposta de qualquer MAPP; as demais linhas não mudam — use "Distribuir diferença" na grade de alerta para reequilibrar a fonte. <strong>O filtro de fonte vale para a tela toda.</strong></p>
+            <details class="estudo-nota" style="margin:0 0 10px;"><summary style="cursor:pointer; font-weight:700;">O que compõe a Proposta 2027</summary>
+                <ul style="margin:6px 0 0 18px;">
+                    <li><strong>MAPPs com Nec. 2027 Ajustada:</strong> proposta automática = Nec. Ajustada × mín(1, LOA do par Órgão × Fonte ÷ Σ Nec. Ajustada dos MAPPs do par). A LOA do par é repartida na proporção da necessidade e nenhum MAPP passa da própria necessidade; o que sobra vira "LOA sem destino".</li>
+                    <li><strong>Demais MAPPs (sem necessidade):</strong> proposta automática R$ 0; o valor só entra à mão.</li>
+                    <li><strong>Edições:</strong> o valor digitado (ou o redistribuído pelo botão "Distribuir") substitui o automático; edição acima da necessidade fica tarjada em vermelho.</li>
+                    <li><strong>Proposta de uma fonte ou órgão</strong> = Σ das propostas dos MAPPs (inclui os valores manuais da grade sem necessidade). Passe o mouse sobre qualquer valor para ver a conta.</li>
+                </ul>
+            </details>
             <p class="estudo-nota" id="aviso-loa-ajustes" style="color:var(--warning);"></p>
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-aj-fonte" onchange="renderizarAjustesFinais()"><option value="">(todas)</option></select></label>
