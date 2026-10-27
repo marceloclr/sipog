@@ -112,6 +112,13 @@
     tr.linha-grupo .seta-grupo { display: inline-block; width: 12px; color: var(--accent); }
     tr.linha-filha td { background: var(--panel2); font-size: 11.5px; }
     tr.linha-filha td.so-programa { padding-left: 26px; }
+    /* MAPPs abertos dentro da grade (abas 4 e 5): subtabela recuada, sem cabeçalho fixo */
+    tr.linha-mapps > td { padding: 6px 10px 12px 34px; background: var(--panel2); }
+    .subtabela-mapps { width: 100%; font-size: 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .estudo-tabela-wrap .subtabela-mapps thead th { position: static; font-size: 10px; }
+    .estudo-tabela-wrap .subtabela-mapps tfoot td { position: static; }
+    .subtabela-mapps th, .subtabela-mapps td { padding: 5px 8px; }
+    .subtabela-mapps input.input-proposta { width: 130px; }
     /* LOA não alocada: cores fixas por categoria (paleta categórica validada, slots 1–3, na ordem) */
     :root { --na-fora: #2a78d6; --na-semmapp: #eb6834; --na-sobra: #1baf7a; --na-superficie: #fcfcfb; }
     :root[data-theme="dark"] { --na-fora: #3987e5; --na-semmapp: #d95926; --na-sobra: #199e70; --na-superficie: #1a1a19; }
@@ -271,7 +278,7 @@
     <section class="estudo-aba estudo-secao" data-aba="consolidado">
         <h2 class="estudo-aba-titulo">4. Consolidado Órgão × Fonte e MAPPs</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">A LOA é o Investimento do órgão naquela fonte (pelo PDF da aba 1; a planilha "Fonte x Órgão" traz o orçamento inteiro). "Necessidade ÷ LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs); clique numa linha de fonte para ver os MAPPs dela logo abaixo.</p>
+            <p class="estudo-nota">A LOA é a do recorte da aba 2 (PLOA por ação) ou a do arquivo da aba 1. "Necessidade ÷ LOA" e "Saldo" usam a Necessidade 2027 Ajustada — referência, não teto rígido. <strong>Os filtros abaixo valem para a página toda</strong> (fontes e MAPPs). Na grade de fontes, clique numa linha (▸) para abrir, logo abaixo e na própria grade, os programas e os MAPPs; novo clique recolhe.</p>
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>

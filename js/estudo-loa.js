@@ -1203,30 +1203,42 @@ function renderizarConsolidado() {
         <div${dica(`Σ LOA das sub fontes sem Fonte do MAPP no De-para (aba 3): ${resumoForaCruzamento.paresForaCruzamento} pares = ${FT(resumoForaCruzamento.loaForaCruzamento)}`)}><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
 
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
-    let celulas = l => COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : '')).join('');
-    let attrsPar = l => `data-orgao="${escHtml(l.orgao)}" data-programa="${escHtml(l.programa || '')}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)"`;
+    // Os MAPPs abrem DENTRO da grade, na linha de baixo (não mexe nos filtros nem na grade de MAPPs).
+    let mappsPorPar = {};
+    mappsCalculados.forEach(m => { if (!m.expurgado) (mappsPorPar[chavePar(m.orgao, programaDoPar(m), m.fonte)] = mappsPorPar[chavePar(m.orgao, programaDoPar(m), m.fonte)] || []).push(m); });
+    let nCols = COLUNAS_CONSOLIDADO.length - (cruzaPrograma ? 0 : 1);
+    let seta = aberto => `<span class="seta-grupo">${aberto ? '▾' : '▸'}</span>`;
+    // Linha de um par (órgão [× programa] × fonte): o clique abre/fecha os MAPPs dele.
+    let linhaPar = (l, filha) => {
+        let k = chavePar(l.orgao, l.programa, l.fonte);
+        let aberto = expandidosConsPar.has(k);
+        let mapps = mappsPorPar[k] || [];
+        let cel = c => {
+            if (filha && (c.chave === 'fonte' || c.chave === 'orgao')) return '<td></td>';
+            let td = c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : '');
+            // A seta vai na 1ª coluna de texto da linha: Programa (filha) ou Fonte (sem programa).
+            if (mapps.length && ((filha && c.chave === 'programa') || (!cruzaPrograma && c.chave === 'fonte'))) td = td.replace(/^(<td[^>]*>)/, `$1${seta(aberto)} `);
+            return td;
+        };
+        let h = `<tr class="${mapps.length ? 'linha-clicavel ' : ''}${filha ? 'linha-filha' : ''}" data-par="${escHtml(k)}"${mapps.length ? ` onclick="alternarParConsolidado(this.dataset.par)" title="${aberto ? 'Recolher' : `Ver os ${mapps.length} MAPP(s)`}"` : ''}>` +
+            COLUNAS_CONSOLIDADO.map(cel).join('') + '</tr>';
+        if (aberto && mapps.length) h += `<tr class="linha-mapps"><td colspan="${nCols}">${subtabelaMappsConsolidado(mapps)}</td></tr>`;
+        return h;
+    };
     let h = `<table><thead>${cabecalhoOrdenavel('cons', COLUNAS_CONSOLIDADO)}</thead><tbody>`;
     let rotuloTotal;
     if (!cruzaPrograma) {
-        linhas.forEach(l => {
-            h += `<tr class="linha-clicavel" ${attrsPar(l)} title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte">${celulas(l)}</tr>`;
-        });
+        linhas.forEach(l => { h += linhaPar(l, false); });
         rotuloTotal = `${linhas.length} linhas`;
     } else {
-        // Com programa: uma linha por Órgão × Fonte (total da fonte no órgão); o clique abre os programas.
+        // Com programa: uma linha por Órgão × Fonte (total); o clique abre os programas e cada programa abre os MAPPs.
         let grupos = gruposConsolidado(linhas);
         grupos.forEach(g => {
             let aberto = expandidosCons.has(g.chave);
-            let celProg = `<td class="so-programa" style="white-space:nowrap;"><span class="seta-grupo">${aberto ? '▾' : '▸'}</span> ${g.filhos.length} programa(s)
-                <button class="btn-link" onclick="event.stopPropagation(); abrirMAPPsDoPar(this.closest('tr'))" title="Ver todos os MAPPs de ${escHtml(g.orgao)} nesta fonte">ver MAPPs</button></td>`;
-            h += `<tr class="linha-clicavel linha-grupo" data-chave="${escHtml(g.chave)}" data-orgao="${escHtml(g.orgao)}" data-programa="" data-fonte="${escHtml(g.fonte)}"
-                onclick="alternarGrupoConsolidado(this.dataset.chave)" title="${aberto ? 'Recolher' : 'Ver a distribuição nos programas'}">` +
+            let celProg = `<td class="so-programa" style="white-space:nowrap;">${seta(aberto)} ${g.filhos.length} programa(s)</td>`;
+            h += `<tr class="linha-clicavel linha-grupo" data-chave="${escHtml(g.chave)}" onclick="alternarGrupoConsolidado(this.dataset.chave)" title="${aberto ? 'Recolher' : 'Ver a distribuição nos programas'}">` +
                 COLUNAS_CONSOLIDADO.map(c => c.chave === 'programa' ? celProg : (c.celula ? c.celula(g) : tdNum(c.valor(g), c.dica ? c.dica(g) : ''))).join('') + '</tr>';
-            if (aberto) g.filhos.forEach(l => {
-                h += `<tr class="linha-clicavel linha-filha" ${attrsPar(l)} title="Ver os MAPPs deste programa">` +
-                    COLUNAS_CONSOLIDADO.map(c => (c.chave === 'fonte' || c.chave === 'orgao') ? '<td></td>'
-                        : (c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : ''))).join('') + '</tr>';
-            });
+            if (aberto) g.filhos.forEach(l => { h += linhaPar(l, true); });
         });
         rotuloTotal = `${grupos.length} órgão × fonte · ${linhas.length} pares com programa`;
     }
@@ -1266,6 +1278,32 @@ function gruposConsolidado(linhas) {
 function alternarGrupoConsolidado(chave) {
     if (expandidosCons.has(chave)) expandidosCons.delete(chave); else expandidosCons.add(chave);
     renderizarConsolidado();
+}
+
+// Pares (órgão [× programa] × fonte) com os MAPPs abertos na própria grade.
+let expandidosConsPar = new Set();
+
+function alternarParConsolidado(chave) {
+    if (expandidosConsPar.has(chave)) expandidosConsPar.delete(chave); else expandidosConsPar.add(chave);
+    renderizarConsolidado();
+}
+
+const COLUNAS_SUB_MAPPS = ['mapp', 'estagio', 'grupo', 'p26', 'prevEmp', 'prevEmpAj', 'p27', 'necAj', 'regra'];
+const LIMITE_SUB_MAPPS = 200;
+
+// Subtabela dos MAPPs de um par (mesmas células e dicas da grade "MAPPs — regra aplicada").
+function subtabelaMappsConsolidado(mapps) {
+    let cols = COLUNAS_SUB_MAPPS.map(k => COLUNAS_DETALHE.find(c => c.chave === k));
+    let ordenados = mapps.slice().sort((a, b) => b.necAj - a.necAj);
+    let h = `<table class="subtabela-mapps"><thead><tr>` +
+        cols.map(c => thDesc(c.titulo, DESC_COLUNAS.det[c.chave], c.num ? 'num' : '')).join('') + '</tr></thead><tbody>';
+    ordenados.slice(0, LIMITE_SUB_MAPPS).forEach(m => {
+        h += '<tr>' + cols.map(c => c.celula ? c.celula(m) : tdNum(c.valor(m), c.dica ? c.dica(m) : '')).join('') + '</tr>';
+    });
+    let t = mapps.reduce((s, m) => { ['p26', 'prevEmp', 'prevEmpAj', 'p27', 'necAj'].forEach(k => s[k] += m[k]); return s; }, { p26: 0, prevEmp: 0, prevEmpAj: 0, p27: 0, necAj: 0 });
+    h += `</tbody><tfoot><tr><td colspan="3">${mapps.length} MAPP(s)${mapps.length > LIMITE_SUB_MAPPS ? ` — exibindo os ${LIMITE_SUB_MAPPS} de maior necessidade` : ''}</td>` +
+        ['p26', 'prevEmp', 'prevEmpAj', 'p27', 'necAj'].map(k => tdNum(t[k], `Σ ${COLUNAS_DETALHE.find(c => c.chave === k).titulo} = ${FT(t[k])}`)).join('') + '<td></td></tr></tfoot></table>';
+    return h;
 }
 
 // ─── DETALHE POR MAPP ───────────────────────────────────────────────────────
@@ -1472,22 +1510,6 @@ function renderizarDetalhe() {
 }
 
 // ─── ABA 4: FILTRO ÚNICO DA PÁGINA ──────────────────────────────────────────
-// Clique numa linha de fonte: aplica Órgão e Fonte da linha ao filtro da página
-// (fontes e MAPPs) e rola até a lista de MAPPs, logo abaixo, na mesma aba.
-function abrirMAPPsDoPar(tr) {
-    document.getElementById('filtro-cons-orgao').value = tr.dataset.orgao;
-    document.getElementById('filtro-cons-fonte').value = tr.dataset.fonte;
-    document.getElementById('filtro-cons-programa').value = tr.dataset.programa || '';
-    document.getElementById('filtro-cons-situacao').value = '';
-    document.getElementById('filtro-cons-texto').value = '';
-    document.getElementById('filtro-det-estagio').value = '';
-    document.getElementById('filtro-det-texto').value = '';
-    renderizarConsolidado();
-    renderizarDetalhe();
-    let alvo = document.getElementById('secao-detalhe');
-    if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 function limparFiltrosConsolidado() {
     ['filtro-cons-fonte', 'filtro-cons-orgao', 'filtro-cons-programa', 'filtro-cons-situacao', 'filtro-det-estagio', 'filtro-cons-texto', 'filtro-det-texto']
         .forEach(id => { let el = document.getElementById(id); if (el) el.value = ''; });
@@ -1838,17 +1860,21 @@ function renderizarAjustesFinais() {
     // Órgãos com MAPPs primeiro (onde há proposta a ajustar), depois os só com LOA.
     let orgaos = Object.values(porOrgao).map(o => Object.assign(o, { dif: o.loa - o.proposta }))
         .sort((a, b) => ((b.qtd > 0) - (a.qtd > 0)) || b.loa - a.loa || b.proposta - a.proposta);
-    let ho = `<table><thead><tr>${thDesc('Órgão', 'Órgão (clique na linha para ver os MAPPs dele).')}${thDesc('Fontes', 'Fontes do órgão com LOA ou MAPP, conforme o filtro.', 'num')}
+    let mappsPorOrgao = {};
+    linhasAjustes.forEach(l => { if (noFiltroAjustes(f, l)) (mappsPorOrgao[N(l.orgao)] = mappsPorOrgao[N(l.orgao)] || []).push(l); });
+    let ho = `<table><thead><tr>${thDesc('Órgão', 'Órgão (clique na linha para abrir os MAPPs dele aqui mesmo; novo clique recolhe).')}${thDesc('Fontes', 'Fontes do órgão com LOA ou MAPP, conforme o filtro.', 'num')}
         ${thDesc('MAPPs', 'MAPPs ativos do órgão.', 'num')}${thDesc('LOA 2027', 'Σ LOA 2027 do órgão nas fontes do filtro.', 'num')}
         ${thDesc('Nec. 2027 Ajustada', 'Σ Nec. 2027 Ajustada dos MAPPs do órgão.', 'num')}${thDesc('Proposta 2027', 'Σ Proposta dos MAPPs do órgão. ' + DESC_PROPOSTA, 'num')}
         ${thDesc('Diferença', 'LOA − Proposta do órgão.', 'num')}</tr></thead><tbody>`;
     orgaos.forEach(o => {
         let st = Math.abs(o.dif) < TOLERANCIA_ALERTA ? 'ok' : (o.dif > 0 ? 'sobra' : 'estouro');
-        ho += `<tr class="linha-clicavel alerta-${st}" data-orgao="${escHtml(o.orgao)}" onclick="document.getElementById('filtro-aj-orgao').value=this.dataset.orgao; renderizarAjustesFinais(); document.getElementById('tabela-ajustes-mapps').scrollIntoView({behavior:'smooth'});" title="Ver os MAPPs de ${escHtml(o.orgao)}">
-            <td><strong>${escHtml(o.orgao)}</strong></td><td class="num"${dica(`Fontes com LOA ou MAPP: ${[...o.fontes].sort().join('; ')}`)}>${o.fontes.size}</td><td class="num"${dica('MAPPs ativos do órgão no filtro')}>${o.qtd || '—'}</td>
+        let k = N(o.orgao), aberto = expandidosAj.has(k), mapps = mappsPorOrgao[k] || [];
+        ho += `<tr class="${mapps.length ? 'linha-clicavel ' : ''}alerta-${st}" data-orgao="${escHtml(k)}"${mapps.length ? ` onclick="alternarOrgaoAjustes(this.dataset.orgao)" title="${aberto ? 'Recolher' : `Abrir os ${mapps.length} MAPP(s) de ${escHtml(o.orgao)}`}"` : ''}>
+            <td>${mapps.length ? `<span class="seta-grupo">${aberto ? '▾' : '▸'}</span> ` : ''}<strong>${escHtml(o.orgao)}</strong></td><td class="num"${dica(`Fontes com LOA ou MAPP: ${[...o.fontes].sort().join('; ')}`)}>${o.fontes.size}</td><td class="num"${dica('MAPPs ativos do órgão no filtro')}>${o.qtd || '—'}</td>
             <td class="num"${dica(`Σ LOA 2027 do órgão nas ${o.fontes.size} fonte(s) do filtro = ${FT(o.loa)}`)}>${o.loa ? F(o.loa) : '—'}</td>
             ${tdNum(o.necAj, `Σ Nec. 2027 Ajustada dos ${o.qtd} MAPPs do órgão = ${FT(o.necAj)}`)}<td class="num"${dica(`Σ Proposta dos ${o.qtd} MAPPs do órgão = ${FT(o.proposta)}`)}><strong>${F(o.proposta)}</strong></td>
             ${celulaDiferenca(o.dif, `Diferença = LOA − Proposta = ${FT(o.loa)} − ${FT(o.proposta)} = ${FT(o.dif)}`)}</tr>`;
+        if (aberto && mapps.length) ho += `<tr class="linha-mapps"><td colspan="7">${subtabelaMappsOrgaoAjustes(mapps)}</td></tr>`;
     });
     let to = orgaos.reduce((t, o) => { t.loa += o.loa; t.necAj += o.necAj; t.proposta += o.proposta; t.qtd += o.qtd; return t; }, { loa: 0, necAj: 0, proposta: 0, qtd: 0 });
     ho += `</tbody><tfoot><tr><td colspan="2">TOTAL (${orgaos.length} órgãos)</td><td class="num"${dica('Σ MAPPs ativos dos órgãos')}>${to.qtd.toLocaleString('pt-BR')}</td>${tdNum(to.loa, `Σ LOA 2027 dos ${orgaos.length} órgãos = ${FT(to.loa)}`)}
@@ -1867,24 +1893,47 @@ function renderizarAjustesFinais() {
     renderizarNaoAlocada();
 }
 
+// Linha de MAPP com a Proposta editável (grades de MAPPs e MAPPs abertos na grade "Órgãos").
+function linhaMappAjuste(l) {
+    let man = propostasManuais[l.chave];
+    let excede = propostaExcede(l);
+    let valorTxt = propostaDe(l).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `<tr class="${excede ? 'proposta-excede' : (man ? 'proposta-editada' : '')}"${excede ? ` title="Proposta acima da Nec. 2027 Ajustada (${escHtml(F(l.necAj))})"` : ''}>
+        <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>${COLUNA_PROGRAMA.celula(l)}
+        <td class="col-fonte" style="font-size:11px;">${escHtml(l.fonte)}</td><td style="font-size:11px;">${escHtml(l.estagio)}</td>
+        <td class="num"${dica(l.loaPar === null ? 'Sem LOA 2027 para este par (órgão' + (l.programa ? ', programa' : '') + ' e fonte)' : `LOA 2027 de ${l.orgao}${l.programa ? ' no programa ' + rotuloPrograma(l.programa, l.nomePrograma) : ''} na fonte ${l.fonte} = ${FT(l.loaPar)}\nΣ Nec. 2027 Ajustada dos MAPPs do par = ${FT(l.somaPar)}`)}>${l.loaPar === null ? 'sem LOA' : F(l.loaPar)}</td>
+        ${tdNum(l.necAj, explicarNecAj(l))}
+        <td class="num"${dica(explicarProposta(l))}><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="${escHtml(explicarProposta(l))}">
+            ${man ? `<button class="btn-link" onclick="restaurarProposta('${escHtml(l.chave.replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" title="${man.origem === 'redistribuicao' ? 'Valor da redistribuição' : 'Editado'} — voltar ao automático (${escHtml(F(l.auto))})">↺</button>` : ''}</td>
+    </tr>`;
+}
+
+// Órgãos da aba 5 com os MAPPs abertos na própria grade (o clique no órgão abre/fecha).
+let expandidosAj = new Set();
+
+function alternarOrgaoAjustes(orgaoN) {
+    if (expandidosAj.has(orgaoN)) expandidosAj.delete(orgaoN); else expandidosAj.add(orgaoN);
+    renderizarAjustesFinais();
+}
+
+function subtabelaMappsOrgaoAjustes(linhas) {
+    let ordenadas = linhas.slice().sort((a, b) => a.fonte.localeCompare(b.fonte) || (a.programa || '').localeCompare(b.programa || '') || b.necAj - a.necAj);
+    let h = `<table class="subtabela-mapps"><thead><tr>` +
+        COLUNAS_AJUSTES.map(c => `<th class="sem-ordem${c.num ? ' num' : ''}${c.classe ? ' ' + c.classe : ''}" data-desc="1"${dica(c.titulo, DESC_COLUNAS.aj[c.chave])}>${escHtml(c.titulo)}</th>`).join('') +
+        '</tr></thead><tbody>';
+    ordenadas.slice(0, LIMITE_SUB_MAPPS).forEach(l => { h += linhaMappAjuste(l); });
+    let t = linhas.reduce((s, l) => { s.necAj += l.necAj; s.proposta += propostaDe(l); return s; }, { necAj: 0, proposta: 0 });
+    h += `</tbody><tfoot><tr><td colspan="${colsTexto(5)}">${linhas.length} MAPP(s)${linhas.length > LIMITE_SUB_MAPPS ? ` — exibindo ${LIMITE_SUB_MAPPS}; use o filtro de fonte para ver os demais` : ''}</td>
+        ${tdNum(t.necAj, `Σ Nec. 2027 Ajustada = ${FT(t.necAj)}`)}${tdNum(t.proposta, `Σ Proposta = ${FT(t.proposta)}`)}</tr></tfoot></table>`;
+    return h;
+}
+
 function tabelaMappsAjustes(linhas, msgVazia) {
     if (!linhas.length) return `<p class="estudo-nota" style="padding:12px;">${msgVazia}</p>`;
     let ordenadas = ordenarLinhas(linhas.map(l => Object.assign(l, { proposta: propostaDe(l) })), COLUNAS_AJUSTES, ordemTabelas.aj);
     let exibidas = ordenadas.slice(0, LIMITE_LINHAS_DETALHE);
     let hm = `<table><thead>${cabecalhoOrdenavel('aj', COLUNAS_AJUSTES)}</thead><tbody>`;
-    exibidas.forEach(l => {
-        let man = propostasManuais[l.chave];
-        let excede = propostaExcede(l);
-        let valorTxt = propostaDe(l).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        hm += `<tr class="${excede ? 'proposta-excede' : (man ? 'proposta-editada' : '')}"${excede ? ` title="Proposta acima da Nec. 2027 Ajustada (${escHtml(F(l.necAj))})"` : ''}>
-            <td class="col-mapp" title="${escHtml(l.mapp)}"><span>${escHtml(l.mapp)}</span></td><td>${escHtml(l.orgao)}</td>${COLUNA_PROGRAMA.celula(l)}
-            <td class="col-fonte" style="font-size:11px;">${escHtml(l.fonte)}</td><td style="font-size:11px;">${escHtml(l.estagio)}</td>
-            <td class="num"${dica(l.loaPar === null ? 'Sem LOA 2027 para este par (órgão' + (l.programa ? ', programa' : '') + ' e fonte)' : `LOA 2027 de ${l.orgao}${l.programa ? ' no programa ' + rotuloPrograma(l.programa, l.nomePrograma) : ''} na fonte ${l.fonte} = ${FT(l.loaPar)}\nΣ Nec. 2027 Ajustada dos MAPPs do par = ${FT(l.somaPar)}`)}>${l.loaPar === null ? 'sem LOA' : F(l.loaPar)}</td>
-            ${tdNum(l.necAj, explicarNecAj(l))}
-            <td class="num"${dica(explicarProposta(l))}><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="${escHtml(explicarProposta(l))}">
-                ${man ? `<button class="btn-link" onclick="restaurarProposta('${escHtml(l.chave.replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" title="${man.origem === 'redistribuicao' ? 'Valor da redistribuição' : 'Editado'} — voltar ao automático (${escHtml(F(l.auto))})">↺</button>` : ''}</td>
-        </tr>`;
-    });
+    exibidas.forEach(l => { hm += linhaMappAjuste(l); });
     let tm = linhas.reduce((t, l) => { t.necAj += l.necAj; t.proposta += propostaDe(l); return t; }, { necAj: 0, proposta: 0 });
     let paresVistos = {}; linhas.forEach(l => { if (l.loaPar !== null) paresVistos[l.par] = l.loaPar; });
     let loaPares = Object.values(paresVistos).reduce((s, v) => s + v, 0);

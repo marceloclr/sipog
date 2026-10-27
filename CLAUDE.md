@@ -140,7 +140,10 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
 - Termos: na tela e no XLSX é "Fonte do MAPP" (não "Fonte do SIPOG"); o percentual Nec. Ajustada ÷ LOA chama-se
   "Necessidade ÷ LOA" (só pares com LOA; card mostra quantas vezes e quanto falta/sobra).
 - Consolidado com programa: `gruposConsolidado` mostra uma linha por Órgão × Fonte (total) e, ao clicar
-  (`alternarGrupoConsolidado`, `expandidosCons`), uma linha por programa; "ver MAPPs" filtra o par órgão × fonte.
+  (`alternarGrupoConsolidado`, `expandidosCons`), uma linha por programa; o clique no programa (ou no par, sem
+  programa) abre os MAPPs numa subtabela logo abaixo (`alternarParConsolidado`, `expandidosConsPar`,
+  `subtabelaMappsConsolidado`, até 200). Na aba 5 o clique no órgão abre os MAPPs dele com a Proposta editável
+  (`alternarOrgaoAjustes`, `expandidosAj`, `linhaMappAjuste`). Nada disso usa filtro.
 - Tooltips de cálculo: todo valor de grade (`tdNum`/`dica`) e todo card mostra a fórmula com os
   números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
   Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de
