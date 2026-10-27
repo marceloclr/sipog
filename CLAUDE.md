@@ -223,6 +223,17 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
   Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de
   "LOA inteira" só aparece quando a LOA veio da planilha (`loaConferencia.origem`).
-- De-para Sub fonte → Fonte do SIPOG: exata (`0`+det.; no 754, modalidade+det.), tesouro
-  (500/501 do grupo Tesouro → `(500)-(501) Tesouro`), prefixo (fonte única com o mesmo código,
-  ignorando emendas 3xx) e manual. Órgão casa pela sigla entre parênteses.
+- **De-para pela tabela oficial do SIAP** (27/10/2026, decisão do usuário: "essa é a verdade"): `FONTES_MAPP_LOA_OFICIAL`
+  (`js/estudo-loa-tabelas.js`, gerada de `LOA2027/FONTES_MAPP_LOA.xls`, aba DADOS = FONTE_MAPP | CODIGO_FONTE_ORCAMENTARIA |
+  DESCRICAO; a aba SQL tem a consulta de `db_siap.tb_mapp_financiador_subfonte`). Ordem em `recalcularDeParaSugerido`: manual →
+  **oficial** (`fonteOficialDaSubfonte` + `fonteMappNaBase`, que casa "(570)-(311.82)" da tabela com "(570)-(311,82)" da base) →
+  padrão do exercício (só para fonte fora da tabela) → sem par. As heurísticas antigas (exata/tesouro/prefixo, `sugerirFonteSIPOG`)
+  saíram. FT.DT do PLOA que a tabela separa em várias Fontes do MAPP (emendas x.x.x.3.1x.xx, PROPAG 500.9.1.0.02.00) usa o código
+  principal (….0.00.DT); sem acordo = ambíguo. Fonte oficial sem MAPP na base (754.67 MLW, 754.68 ICO) fica fora do cruzamento.
+  Manual que contraria a tabela: tag "≠ oficial" e "Voltar à tabela oficial" (`descartarManuaisDivergentes`). Aba 3: quadro
+  `#resumo-tabela-oficial`, upload de nova versão (.xls/.xlsx/.csv via SheetJS 0.18.5 do cdnjs sob demanda, `selecionarTabelaOficial`,
+  mostra a diferença antes de trocar; `localStorage` `sipog_estudo_loa_tabela_oficial_v1`), download e "↺ Tabela embutida". A tabela
+  vai em `ligacoesAtuais().tabelaOficial` (padrão do exercício: só substitui se mais nova — `carregadaEm`; estudo salvo: reabre com a
+  dele) e na aba FONTES_MAPP_LOA do pacote (as linhas de DE_PARA_FONTES iguais à oficial não viram manuais). Conferido em 27/10
+  (base real + PLOA GND 44): LOA do Executivo igual (R$ 5.682.613.358); fora do cruzamento R$ 1,44 bi → R$ 946 mi; 501.70
+  (R$ 629,5 mi) passa a (700)-(070); fora da tabela: 722.00, 754.64, 754.71, 754.72, 762.01. Órgão casa pela sigla entre parênteses.

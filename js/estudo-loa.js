@@ -972,35 +972,80 @@ function fontesSIPOGDisponiveis() {
     return Array.from(new Set(mappsBrutos.map(r => String(r.FONTE || '').trim()).filter(Boolean))).sort();
 }
 
-// Regras, em ordem: exata → tesouro → prefixo → sem par.
-// A sub fonte do PLOA por ação vem como "FT.DT" (ex.: "754.59"), sem a modalidade que a 754
-// usa no código do SIPOG ((754)-(259)): com uma só sub fonte conhecida para o FT.DT, usa o
-// código completo dela; senão, procura a fonte do MAPP com o mesmo FT terminada no DT.
-function sugerirFonteSIPOG(linhaLOA, fontesSIPOG) {
-    let seg = linhaLOA.subfonte.split('.');
-    if (seg.length === 2 && (linhaLOA.codigosSubfonte || []).length === 1) seg = linhaLOA.codigosSubfonte[0].split('.');
-    let fff = seg[0], modalidade = seg.length === 6 ? seg[3] : null, det = seg[seg.length - 1];
-    let comPartes = fontesSIPOG.map(f => ({ fonte: f, p: partesFonteSIPOG(f) })).filter(x => x.p);
-    let mesmoFFF = comPartes.filter(x => x.p.fff === fff);
+// ─── TABELA OFICIAL FONTE DO MAPP × FONTE DA LOA (SIAP) ─────────────────────
+// É a verdade do de-para (decisão do usuário, 27/10/2026): cada código completo da LOA vai para a
+// Fonte do MAPP da tabela; o que não está nela fica sem par (ou no padrão do exercício) — não há
+// mais adivinhação por código. Embutida em js/estudo-loa-tabelas.js; um arquivo novo (aba 3) a
+// substitui neste navegador e segue no padrão do exercício, no estudo salvo e no pacote.
+const CHAVE_TABELA_OFICIAL_LOCAL = 'sipog_estudo_loa_tabela_oficial_v1';
+const TABELA_OFICIAL_EMBUTIDA = { linhas: FONTES_MAPP_LOA_OFICIAL, origem: 'FONTES_MAPP_LOA.xls (embutida no sistema)', carregadaEm: '2026-10-27T16:36:18' };
+const RE_CODIGO_FONTE_COMPLETO = /^\d{3}(\.\d+){5}$/;
+let tabelaOficial = TABELA_OFICIAL_EMBUTIDA;
+let indiceOficialCache = null;
 
-    let exatas = (fff === '754' && modalidade === null)
-        ? mesmoFFF.filter(x => x.p.ddd.length === 3 && x.p.ddd.slice(1) === det)
-        : mesmoFFF.filter(x => x.p.ddd === ((fff === '754') ? (modalidade + det) : ('0' + det)));
-    if (exatas.length === 1) return { fonte: exatas[0].fonte, regra: 'exata' };
+function carregarTabelaOficialLocal() {
+    try {
+        let t = JSON.parse(localStorage.getItem(CHAVE_TABELA_OFICIAL_LOCAL) || 'null');
+        if (t && Array.isArray(t.linhas) && t.linhas.length) usarTabelaOficial(t, false);
+    } catch (e) {}
+}
 
-    if (linhaLOA.grupo === 'Tesouro' && (fff === '500' || fff === '501')) {
-        let tesouro = comPartes.find(x => x.p.fff === '500' && x.p.ddd === '501');
-        if (tesouro) return { fonte: tesouro.fonte, regra: 'tesouro' };
+// soSeMaisNova: o padrão do exercício (nuvem) não passa por cima de um arquivo mais novo deste navegador.
+function usarTabelaOficial(t, soSeMaisNova) {
+    if (!t || !Array.isArray(t.linhas) || !t.linhas.length) return false;
+    if (soSeMaisNova && String(t.carregadaEm || '') < String(tabelaOficial.carregadaEm || '')) return false;
+    tabelaOficial = t;
+    indiceOficialCache = null;
+    return true;
+}
+
+function indiceTabelaOficial() {
+    if (indiceOficialCache) return indiceOficialCache;
+    let porCodigo = {}, porFtDt = {}, conflitos = [], invalidas = [], comCodigo = new Set(), comTraco = new Set();
+    tabelaOficial.linhas.forEach(([mapp, cod, desc]) => {
+        mapp = String(mapp || '').trim(); cod = String(cod || '').trim();
+        if (!mapp) return;
+        if (cod === '-' || cod === '') { comTraco.add(mapp); return; }
+        if (!RE_CODIGO_FONTE_COMPLETO.test(cod)) { invalidas.push({ mapp, cod }); return; }
+        if (porCodigo[cod] && porCodigo[cod].mapp !== mapp) { conflitos.push({ cod, mapp, valendo: porCodigo[cod].mapp }); return; }
+        porCodigo[cod] = { mapp, desc: String(desc || '').trim() };
+        comCodigo.add(mapp);
+        let p = cod.split('.'), k = p[0] + '.' + p[5];
+        let lista = porFtDt[k] || (porFtDt[k] = []);
+        if (!lista.includes(cod)) lista.push(cod);
+    });
+    let semLOA = [...comTraco].filter(m => !comCodigo.has(m)).sort();
+    return (indiceOficialCache = { porCodigo, porFtDt, conflitos, invalidas, semLOA, fontesMapp: [...comCodigo].sort() });
+}
+
+// Fonte do MAPP oficial de uma sub fonte da LOA (código completo, ou FT.DT do PLOA com os códigos
+// conhecidos). O FT.DT junta códigos que a tabela separa — emendas (570.2.2.3.11.82…), PROPAG
+// (500.9.1.0.02.00) —; aí vale o código principal (….0.00.DT). Sem acordo: ambíguo.
+function fonteOficialDaSubfonte(subfonte, codigos) {
+    let idx = indiceTabelaOficial();
+    let cods = RE_CODIGO_FONTE_COMPLETO.test(subfonte) ? [subfonte] : Array.from(new Set((codigos || []).concat(idx.porFtDt[subfonte] || [])));
+    let achados = cods.filter(c => idx.porCodigo[c]);
+    if (!achados.length) return null;
+    let mapps = new Set(achados.map(c => idx.porCodigo[c].mapp));
+    if (mapps.size > 1) {
+        let principais = achados.filter(c => { let p = c.split('.'); return p[3] === '0' && p[4] === '00'; });
+        let mp = new Set(principais.map(c => idx.porCodigo[c].mapp));
+        if (mp.size !== 1) return { mapp: '', codigos: achados, ambiguo: [...mapps].sort() };
+        achados = principais; mapps = mp;
     }
+    return { mapp: [...mapps][0], codigos: achados };
+}
 
-    let semTesouro = mesmoFFF.filter(x => !(x.p.fff === '500' && x.p.ddd === '501'));
-    if (semTesouro.length === 1) return { fonte: semTesouro[0].fonte, regra: 'prefixo' };
-    // Emendas parlamentares (detalhamento 3xx, ex.: "(600)-(312) SUS - Emenda") são
-    // recortes da fonte principal: se, sem elas, sobrar uma única fonte, é a principal.
-    let semEmendas = semTesouro.filter(x => !/^3\d\d/.test(x.p.ddd));
-    if (semEmendas.length === 1) return { fonte: semEmendas[0].fonte, regra: 'prefixo' };
-
-    return { fonte: '', regra: 'sem' };
+// Texto da Fonte do MAPP na tabela → fonte como está na base de MAPPs (a base troca "." por ","
+// nos códigos: "(570)-(311,82)"). Casa pelo texto e, se não houver, pelo código.
+function fonteMappNaBase(texto, fontes) {
+    let alvo = N(texto).replace(/\s+/g, ' ');
+    let exata = fontes.find(f => N(f).replace(/\s+/g, ' ') === alvo);
+    if (exata) return exata;
+    let p = partesFonteSIPOG(texto);
+    if (!p) return '';
+    let cod = x => x.replace(/,/g, '.');
+    return fontes.find(f => { let q = partesFonteSIPOG(f); return q && q.fff === p.fff && cod(q.ddd) === cod(p.ddd); }) || '';
 }
 
 function recalcularDeParaSugerido() {
@@ -1014,14 +1059,37 @@ function recalcularDeParaSugerido() {
             deParaSugerido[l.subfonte] = { fonte: deParaManual[codigos[0]], regra: 'manual' };
             return;
         }
-        // Padrão do exercício: só se a Fonte do MAPP existir na base carregada ("" = sem fonte).
-        let chavePadrao = [l.subfonte].concat(codigos.length === 1 ? codigos : []).find(k => Object.prototype.hasOwnProperty.call(deParaPadrao, k));
-        if (chavePadrao !== undefined && (deParaPadrao[chavePadrao] === '' || fontes.includes(deParaPadrao[chavePadrao]))) {
-            deParaSugerido[l.subfonte] = { fonte: deParaPadrao[chavePadrao], regra: 'padrao' };
+        // Tabela oficial: vale mesmo que a Fonte do MAPP não tenha MAPP na base (aí a LOA fica fora do cruzamento).
+        let of = fonteOficialDaSubfonte(l.subfonte, codigos);
+        if (of && of.mapp) {
+            let naBase = fonteMappNaBase(of.mapp, fontes);
+            deParaSugerido[l.subfonte] = { fonte: naBase, regra: 'oficial', oficial: of.mapp, codigosOficiais: of.codigos, foraDaBase: !naBase };
             return;
         }
-        deParaSugerido[l.subfonte] = sugerirFonteSIPOG(l, fontes);
+        if (of && of.ambiguo) { deParaSugerido[l.subfonte] = { fonte: '', regra: 'sem', ambiguo: of.ambiguo, codigosOficiais: of.codigos }; return; }
+        // Fora da tabela oficial: padrão do exercício, só se a Fonte do MAPP existir na base ("" = sem fonte).
+        let chavePadrao = [l.subfonte].concat(codigos.length === 1 ? codigos : []).find(k => Object.prototype.hasOwnProperty.call(deParaPadrao, k));
+        if (chavePadrao !== undefined && (deParaPadrao[chavePadrao] === '' || fontes.includes(deParaPadrao[chavePadrao]))) {
+            deParaSugerido[l.subfonte] = { fonte: deParaPadrao[chavePadrao], regra: 'padrao', foraDaTabela: true };
+            return;
+        }
+        deParaSugerido[l.subfonte] = { fonte: '', regra: 'sem', foraDaTabela: true };
     });
+}
+
+// Escolha manual que contraria a tabela oficial.
+function divergeOficial(subfonte) {
+    let ef = fonteEfetiva(subfonte), sug = deParaSugerido[subfonte];
+    return ef.regra === 'manual' && !!sug && sug.regra === 'oficial' && ef.fonte !== sug.fonte;
+}
+
+function descartarManuaisDivergentes() {
+    let lista = Object.keys(deParaSugerido).filter(divergeOficial);
+    if (!lista.length) return;
+    if (!confirm(`Descartar ${lista.length} escolha(s) manual(is) que contrariam a tabela oficial?\n\n${lista.slice(0, 12).map(sf => `${sf}: ${deParaManual[sf] || '(sem fonte)'} → ${deParaSugerido[sf].fonte || '(sem fonte)'}`).join('\n')}${lista.length > 12 ? '\n…' : ''}`)) return;
+    lista.forEach(sf => { delete deParaManual[sf]; });
+    salvarDeParaManual();
+    recalcularEstudo();
 }
 
 // Fonte efetiva da sub fonte: escolha manual (inclusive "sem fonte") ou sugestão.
@@ -1038,7 +1106,38 @@ function alterarDePara(sel) {
     recalcularEstudo();
 }
 
-const ROTULO_REGRA_DEPARA = { exata: 'exata', tesouro: 'tesouro', prefixo: 'prefixo', padrao: 'padrão', manual: 'manual', sem: 'sem par' };
+const ROTULO_REGRA_DEPARA = { oficial: 'oficial', exata: 'exata', tesouro: 'tesouro', prefixo: 'prefixo', padrao: 'padrão', manual: 'manual', sem: 'sem par' };
+
+// Célula "Tabela oficial (SIAP)" da grade da aba 3.
+function textoOficialDePara(sug) {
+    if (!sug) return '';
+    if (sug.regra === 'oficial') return sug.foraDaBase ? `${sug.oficial} — sem MAPP na base` : sug.oficial;
+    if (sug.ambiguo) return `ambígua: ${sug.ambiguo.join(' | ')}`;
+    return 'não está na tabela';
+}
+
+// Quadro da aba 3: como a tabela oficial ligou as fontes da LOA carregada.
+function renderizarResumoOficial(todas) {
+    let cont = document.getElementById('resumo-tabela-oficial');
+    if (!cont) return;
+    let idx = indiceTabelaOficial();
+    let soma = l => l.reduce((s, x) => s + x.valor, 0);
+    let pela = todas.filter(s => (deParaSugerido[s.subfonte] || {}).regra === 'oficial');
+    let foraBase = pela.filter(s => deParaSugerido[s.subfonte].foraDaBase);
+    let fora = todas.filter(s => (deParaSugerido[s.subfonte] || {}).foraDaTabela);
+    let ambiguas = todas.filter(s => (deParaSugerido[s.subfonte] || {}).ambiguo);
+    let diverg = todas.filter(s => divergeOficial(s.subfonte));
+    let item = (s, extra) => `${escHtml(s.subfonte)} (${abreviarValor(s.valor)}${extra ? ' → ' + escHtml(extra) : ''})`;
+    let h = `<strong>Tabela oficial:</strong> ${escHtml(tabelaOficial.origem)} — ${Object.keys(idx.porCodigo).length} códigos da LOA em ${idx.fontesMapp.length} Fontes do MAPP` +
+        `${idx.semLOA.length ? `; ${idx.semLOA.length} Fontes do MAPP sem fonte da LOA` : ''}.` +
+        `<br>✅ ${pela.length} fonte(s) da LOA ligadas pela tabela (${abreviarValor(soma(pela))}).`;
+    if (foraBase.length) h += `<br>⚠ ${foraBase.length} ligada(s) a Fonte do MAPP <strong>sem MAPP na base</strong> — a LOA fica fora do cruzamento: ${foraBase.map(s => item(s, deParaSugerido[s.subfonte].oficial)).join('; ')}.`;
+    if (fora.length) h += `<br>⚠ ${fora.length} fonte(s) da LOA <strong>fora da tabela oficial</strong> (${abreviarValor(soma(fora))}): ${fora.map(s => item(s, fonteEfetiva(s.subfonte).fonte)).join('; ')}. Ficam sem par, salvo escolha manual ou padrão do exercício.`;
+    if (ambiguas.length) h += `<br>⚠ ${ambiguas.length} ambígua(s) (o FT.DT do PLOA cai em mais de uma Fonte do MAPP; o órgão não desfez): ${ambiguas.map(s => item(s)).join('; ')}.`;
+    if (diverg.length) h += `<br>✖ ${diverg.length} escolha(s) manual(is) <strong>contrariam a tabela oficial</strong>: ${diverg.map(s => item(s, fonteEfetiva(s.subfonte).fonte || '(sem fonte)')).join('; ')}. <button class="btn-mini-header" onclick="descartarManuaisDivergentes()">Voltar à tabela oficial</button>`;
+    if (idx.conflitos.length || idx.invalidas.length) h += `<br>ℹ Linhas da tabela ignoradas: ${idx.conflitos.map(c => `${escHtml(c.cod)} também em ${escHtml(c.mapp)} (vale ${escHtml(c.valendo)})`).concat(idx.invalidas.map(i => `${escHtml(i.mapp)}: código "${escHtml(i.cod)}" inválido`)).join('; ')}.`;
+    cont.innerHTML = h;
+}
 
 function renderizarDePara() {
     let cont = document.getElementById('tabela-depara');
@@ -1046,6 +1145,7 @@ function renderizarDePara() {
     if (loaLinhas.length === 0) {
         cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p>';
         badge.textContent = '';
+        renderizarResumoOficial([]);
         return;
     }
     let porSubfonte = {};
@@ -1075,12 +1175,15 @@ function renderizarDePara() {
         ${thDesc('Grupo', 'Grupo da sub fonte na LOA: Tesouro ou Outras Fontes (coluna do valor no relatório).')}${thDesc('Sub fonte', 'Código da sub fonte na LOA (fonte.detalhamento).')}
         ${thDesc('Descrição', 'Descrição da sub fonte na LOA.')}
         ${thDesc('Órgãos', 'Órgãos do Executivo com LOA nesta sub fonte.', 'num')}${thDesc('LOA 2027', 'Σ LOA 2027 da sub fonte em todos os órgãos do Executivo.', 'num')}
-        ${thDesc('Regra', 'Como a Fonte do MAPP foi achada: exata (código igual), tesouro (500/501 do grupo Tesouro), prefixo (fonte única com o mesmo código) ou manual.')}
+        ${thDesc('Tabela oficial (SIAP)', 'Fonte do MAPP que a tabela oficial Fonte do MAPP × fonte da LOA (SIAP) dá para esta sub fonte.')}
+        ${thDesc('Regra', 'Como a Fonte do MAPP foi achada: oficial (tabela do SIAP), padrão (padrão do exercício, só para fontes fora da tabela), manual ou sem par. "≠ oficial" = escolha manual que contraria a tabela.')}
         ${thDesc('Fonte do MAPP', 'Fonte do MAPP que recebe a LOA desta sub fonte. "Sem fonte" deixa a LOA fora do cruzamento.')}</tr></thead><tbody>`;
     lista.forEach(s => {
         let ef = fonteEfetiva(s.subfonte);
         let sug = deParaSugerido[s.subfonte] || { fonte: '', regra: 'sem' };
         let tag = ef.fonte || ef.regra === 'manual' ? ef.regra : 'sem';
+        let diverge = divergeOficial(s.subfonte);
+        let codOf = (sug.codigosOficiais || []).join(', ');
         let opcoes = `<option value="__auto__"${ef.regra !== 'manual' ? ' selected' : ''}>Automático${sug.fonte ? ': ' + escHtml(sug.fonte) : ' (sem par)'}</option>`;
         opcoes += `<option value=""${ef.regra === 'manual' && ef.fonte === '' ? ' selected' : ''}>— Sem fonte (fica fora do cruzamento) —</option>`;
         fontes.forEach(f => {
@@ -1090,16 +1193,18 @@ function renderizarDePara() {
             <td>${escHtml(s.grupo)}</td><td style="white-space:nowrap;">${escHtml(s.subfonte)}</td><td>${escHtml(s.desc)}</td>
             <td class="num"${dica(`Órgãos do Executivo com LOA 2027 na sub fonte ${s.subfonte}`)}>${s.orgaos}</td>
             ${tdNum(s.valor, `LOA 2027 da sub fonte = Σ LOA dos ${s.orgaos} órgão(s) = ${FT(s.valor)}`)}
-            <td><span class="estudo-tag tag-${tag === 'sem par' ? 'sem' : tag}">${ROTULO_REGRA_DEPARA[tag] || tag}</span></td>
-            <td><select data-subfonte="${escHtml(s.subfonte)}" onchange="alterarDePara(this)" style="max-width:340px;">${opcoes}</select></td>
+            <td${sug.foraDaBase || sug.ambiguo ? ' style="color:var(--warning);"' : ''}${dica(codOf ? `Código(s) da tabela oficial: ${codOf}` : 'Sub fonte sem linha na tabela oficial')}>${escHtml(textoOficialDePara(sug))}</td>
+            <td><span class="estudo-tag tag-${tag === 'sem par' ? 'sem' : tag}">${ROTULO_REGRA_DEPARA[tag] || tag}</span>${diverge ? ' <span class="estudo-tag tag-sem" title="Escolha manual diferente da tabela oficial">≠ oficial</span>' : ''}</td>
+            <td><select data-subfonte="${escHtml(s.subfonte)}" onchange="alterarDePara(this)" style="min-width:220px; max-width:340px;">${opcoes}</select></td>
         </tr>`;
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL${fGrupo ? ' ' + escHtml(fGrupo).toUpperCase() : ''} (${lista.length} sub fontes)</td>
         <td class="num"${dica('Σ pares Órgão × Sub fonte')}>${tot.orgaos}</td>
         ${tdNum(tot.valor, `Σ LOA das ${lista.length} sub fontes = com fonte do MAPP ${FT(tot.valorCom)} + sem fonte ${FT(tot.valorSem)} = ${FT(tot.valor)}`)}
-        <td colspan="2" style="font-weight:600; font-size:11px; white-space:normal;">Com fonte: ${tot.qtdCom} · ${F(tot.valorCom)} &nbsp;|&nbsp; Sem fonte: ${tot.qtdSem} · ${F(tot.valorSem)}</td>
+        <td colspan="3" style="font-weight:600; font-size:11px; white-space:normal;">Com fonte: ${tot.qtdCom} · ${F(tot.valorCom)} &nbsp;|&nbsp; Sem fonte: ${tot.qtdSem} · ${F(tot.valorSem)}</td>
         </tr></tfoot></table>`;
     cont.innerHTML = h;
+    renderizarResumoOficial(todas);
     renderizarDeParaPorMapp(todas, fGrupo);
 }
 
@@ -1173,7 +1278,7 @@ function renderizarDeParaPorMapp(todas, fGrupo) {
 
 function subtabelaComposicaoFonte(g, todas) {
     let h = `<table class="subtabela-mapps"><thead><tr>${thDesc('Fonte da LOA', 'Sub fonte da LOA ligada a esta Fonte do MAPP.')}${thDesc('Descrição', 'Descrição da sub fonte na LOA.')}
-        ${thDesc('Grupo', 'Tesouro ou Outras Fontes.')}${thDesc('Regra', 'exata, tesouro, prefixo ou manual.')}${thDesc('LOA 2027', 'LOA da sub fonte (Executivo).', 'num')}<th class="sem-ordem"></th></tr></thead><tbody>`;
+        ${thDesc('Grupo', 'Tesouro ou Outras Fontes.')}${thDesc('Regra', 'oficial (tabela do SIAP), padrão, manual ou sem par.')}${thDesc('LOA 2027', 'LOA da sub fonte (Executivo).', 'num')}<th class="sem-ordem"></th></tr></thead><tbody>`;
     g.subs.slice().sort((a, b) => b.valor - a.valor).forEach(s => {
         let ef = fonteEfetiva(s.subfonte);
         h += `<tr><td style="white-space:nowrap;">${escHtml(s.subfonte)}</td><td>${escHtml(s.desc)}</td><td>${escHtml(s.grupo)}</td>
@@ -3145,7 +3250,7 @@ function aceitarSugestaoEstudo(s) {
 function ligacoesAtuais() {
     let copia = o => JSON.parse(JSON.stringify(o));
     return { siglas: Object.assign({}, SIGLAS_ORGAO_LOA), fontesLoa: copia(FONTES_LOA), subfontePorOrgao: copia(SUBFONTE_LOA_POR_ORGAO),
-        fora: [...orgaosForaPacote], dentro: [...orgaosDentroPacote], dePara: Object.assign({}, deParaPadrao, deParaManual) };
+        fora: [...orgaosForaPacote], dentro: [...orgaosDentroPacote], dePara: Object.assign({}, deParaPadrao, deParaManual), tabelaOficial: copia(tabelaOficial) };
 }
 
 // comoPadrao: o de-para entra como padrão do exercício (abaixo do manual); senão, fica a cargo de quem chama.
@@ -3157,6 +3262,8 @@ function aplicarLigacoes(lig, comoPadrao) {
     trocar(SUBFONTE_LOA_POR_ORGAO, lig.subfontePorOrgao);
     if (lig.fora) orgaosForaPacote = new Set(lig.fora);
     if (lig.dentro) orgaosDentroPacote = new Set(lig.dentro);
+    // Padrão do exercício: só se a tabela for mais nova que a deste navegador; estudo salvo: reabre com a dele.
+    if (lig.tabelaOficial) usarTabelaOficial(lig.tabelaOficial, comoPadrao);
     if (comoPadrao) deParaPadrao = Object.assign({}, lig.dePara || {});
 }
 
@@ -3165,7 +3272,8 @@ async function salvarLigacoesPadrao() {
     let st = document.getElementById('status-ligacoes-padrao');
     let lig = ligacoesAtuais();
     // O de-para automático da tela também entra (é o que o usuário conferiu ao salvar).
-    Object.keys(deParaSugerido).forEach(sf => { if (!Object.prototype.hasOwnProperty.call(lig.dePara, sf) && deParaSugerido[sf].fonte) lig.dePara[sf] = deParaSugerido[sf].fonte; });
+    // As da tabela oficial não: elas acompanham a tabela, que vai junto (lig.tabelaOficial).
+    Object.keys(deParaSugerido).forEach(sf => { if (!Object.prototype.hasOwnProperty.call(lig.dePara, sf) && deParaSugerido[sf].fonte && deParaSugerido[sf].regra !== 'oficial') lig.dePara[sf] = deParaSugerido[sf].fonte; });
     let m = memoriaReferencias(exercicioLOA);
     m.ligacoes = Object.assign(lig, { salvoEm: new Date().toISOString() });
     deParaPadrao = Object.assign({}, lig.dePara);
@@ -3186,7 +3294,101 @@ async function carregarPadraoExercicio() {
     } else if (st) st.innerHTML = `Sem padrão salvo para ${exercicioLOA}: valem as tabelas do sistema.`;
 }
 
+// ─── UPLOAD DA TABELA OFICIAL (aba 3) ───────────────────────────────────────
+// O arquivo do SIAP vem em .xls (BIFF), que o ExcelJS não lê: SheetJS só é baixado quando um arquivo é escolhido.
+const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+
+function carregarSheetJS() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise((ok, falha) => {
+        let s = document.createElement('script');
+        s.src = SHEETJS_URL;
+        s.onload = () => ok(window.XLSX);
+        s.onerror = () => falha(new Error('Não foi possível baixar o leitor de planilhas (SheetJS). Verifique a conexão.'));
+        document.head.appendChild(s);
+    });
+}
+
+// Aba com as colunas FONTE_MAPP e CODIGO_FONTE_ORCAMENTARIA (DESCRICAO opcional), como no SQL do SIAP.
+function lerTabelaOficialDeWorkbook(wb, XLSX) {
+    let cab = c => N(c).replace(/[^A-Z]/g, '');
+    for (let nome of wb.SheetNames) {
+        let m = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: '', raw: false });
+        for (let i = 0; i < Math.min(m.length, 20); i++) {
+            let c = m[i].map(cab);
+            let iMapp = c.findIndex(x => x.includes('FONTE') && x.includes('MAPP'));
+            let iCod = c.findIndex(x => x.includes('CODIGO') || (x.includes('FONTE') && x.includes('ORCAMENT') && !x.includes('DESCRI')));
+            if (iMapp < 0 || iCod < 0) continue;
+            let iDesc = c.findIndex(x => x.includes('DESCRI'));
+            let linhas = m.slice(i + 1).map(r => [String(r[iMapp] || '').trim(), String(r[iCod] || '').trim(), iDesc >= 0 ? String(r[iDesc] || '').trim() : ''])
+                .filter(r => r[0]);
+            if (linhas.length) return { aba: nome, linhas };
+        }
+    }
+    throw new Error('Nenhuma aba com as colunas FONTE_MAPP e CODIGO_FONTE_ORCAMENTARIA.');
+}
+
+// Diferença de ligações (código → Fonte do MAPP) entre duas tabelas.
+function compararTabelasOficiais(antes, depois) {
+    let mapa = linhas => { let o = {}; linhas.forEach(([m, c]) => { if (RE_CODIGO_FONTE_COMPLETO.test(String(c).trim()) && !o[c]) o[String(c).trim()] = String(m).trim(); }); return o; };
+    let a = mapa(antes), d = mapa(depois);
+    let novas = Object.keys(d).filter(c => !a[c]), removidas = Object.keys(a).filter(c => !d[c]), trocadas = Object.keys(d).filter(c => a[c] && a[c] !== d[c]);
+    return { novas, removidas, trocadas, a, d };
+}
+
+async function selecionarTabelaOficial(input) {
+    let arq = input.files && input.files[0];
+    input.value = '';
+    if (!arq) return;
+    let st = document.getElementById('status-tabela-oficial');
+    st.innerHTML = 'Lendo…';
+    try {
+        let XLSX = await carregarSheetJS();
+        let wb = XLSX.read(new Uint8Array(await arq.arrayBuffer()), { type: 'array', codepage: 1252 });
+        let lida = lerTabelaOficialDeWorkbook(wb, XLSX);
+        let dif = compararTabelasOficiais(tabelaOficial.linhas, lida.linhas);
+        let validas = lida.linhas.filter(r => RE_CODIGO_FONTE_COMPLETO.test(r[1])).length;
+        if (!validas) throw new Error('Nenhum código de fonte da LOA no formato 500.9.1.0.00.00.');
+        let lista = (cods, f) => cods.slice(0, 8).map(f).join('\n') + (cods.length > 8 ? '\n…' : '');
+        if (!confirm(`Usar "${arq.name}" (aba ${lida.aba}) como tabela oficial Fonte do MAPP × fonte da LOA?\n\n` +
+            `${lida.linhas.length} linhas, ${validas} com código da LOA.\nEm relação à tabela atual: ${dif.novas.length} novas, ${dif.removidas.length} removidas, ${dif.trocadas.length} com outra Fonte do MAPP.` +
+            (dif.trocadas.length ? `\n\nTrocadas:\n${lista(dif.trocadas, c => `${c}: ${dif.a[c]} → ${dif.d[c]}`)}` : '') +
+            (dif.removidas.length ? `\n\nRemovidas:\n${lista(dif.removidas, c => `${c} (${dif.a[c]})`)}` : ''))) { st.innerHTML = 'Carga cancelada.'; return; }
+        let t = { linhas: lida.linhas, origem: `${arq.name} (carregada em ${new Date().toLocaleString('pt-BR')})`, carregadaEm: new Date().toISOString() };
+        usarTabelaOficial(t, false);
+        try { localStorage.setItem(CHAVE_TABELA_OFICIAL_LOCAL, JSON.stringify(t)); } catch (e) {}
+        st.innerHTML = `<span class="ok">✅ Tabela oficial trocada: ${validas} códigos.</span> Para levar a outros navegadores, use "☁ Salvar como padrão do exercício".`;
+        recalcularEstudo();
+    } catch (e) {
+        st.innerHTML = `<span class="erro">✖ ${escHtml(e.message)}</span>`;
+    }
+}
+
+function voltarTabelaOficialEmbutida() {
+    if (!confirm('Voltar à tabela oficial embutida no sistema (FONTES_MAPP_LOA.xls de 27/10/2026)?')) return;
+    try { localStorage.removeItem(CHAVE_TABELA_OFICIAL_LOCAL); } catch (e) {}
+    tabelaOficial = TABELA_OFICIAL_EMBUTIDA;
+    indiceOficialCache = null;
+    document.getElementById('status-tabela-oficial').innerHTML = 'Tabela embutida em uso.';
+    recalcularEstudo();
+}
+
+const COLUNAS_TABELA_OFICIAL = [{ titulo: 'FONTE_MAPP', chave: 'mapp', largura: 60 }, { titulo: 'CODIGO_FONTE_ORCAMENTARIA', chave: 'cod', largura: 24 },
+    { titulo: 'DESCRICAO_FONTE_ORCAMENTARIA', chave: 'desc', largura: 90 }];
+
+function linhasTabelaOficial() {
+    return tabelaOficial.linhas.map(([mapp, cod, desc]) => ({ mapp, cod, desc }));
+}
+
+async function baixarTabelaOficial() {
+    if (typeof ExcelJS === 'undefined') return alert('A biblioteca de exportação (ExcelJS) não carregou — verifique a conexão.');
+    let wb = new ExcelJS.Workbook();
+    adicionarAbaEstudo(wb, 'FONTES_MAPP_LOA', COLUNAS_TABELA_OFICIAL, linhasTabelaOficial());
+    await baixarWorkbook(wb, `SIPOG_Fontes_MAPP_LOA_${carimboDataHora()}.xlsx`);
+}
+
 // ─── INICIALIZAÇÃO ──────────────────────────────────────────────────────────
+carregarTabelaOficialLocal();
 carregarDeParaManual();
 restaurarParametrosEstudo();
 carregarPadraoExercicio();

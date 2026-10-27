@@ -52,6 +52,7 @@
     .estudo-tag { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
     .tag-exata { background: rgba(38,167,55,0.15); color: var(--success); }
     .tag-tesouro { background: rgba(245,156,0,0.15); color: var(--warning); }
+    .tag-oficial { background: rgba(38,167,55,0.15); color: var(--success); }
     .tag-prefixo { background: rgba(45,179,158,0.15); color: var(--teal); }
     .tag-manual { background: rgba(176,124,255,0.15); color: var(--purple); }
     .tag-padrao { background: rgba(70,85,100,0.15); color: var(--text); }
@@ -285,15 +286,25 @@
         <h2 class="estudo-aba-titulo">3. De-para de fontes (Sub fonte da LOA → Fonte do MAPP)</h2>
         <div class="estudo-corpo">
             <p class="estudo-nota">
-                Sugestão automática:
-                <span class="estudo-tag tag-exata">exata</span> código de detalhamento igual (ex.: 700.2.2.0.00.<b>82</b> → (700)-(0<b>82</b>); no 754, a modalidade entra no código: 754.3.2.<b>2</b>.00.<b>59</b> → (754)-(<b>259</b>));
-                <span class="estudo-tag tag-tesouro">tesouro</span> sub fontes 500/501 do grupo Tesouro → (500)-(501) Tesouro;
-                <span class="estudo-tag tag-prefixo">prefixo</span> única fonte do MAPP com o mesmo código de 3 dígitos;
-                <span class="estudo-tag tag-sem">sem par</span> escolha manual.
-                Escolhas manuais (<span class="estudo-tag tag-manual">manual</span>) ficam guardadas neste navegador e no estudo salvo.
-                <span class="estudo-tag tag-padrao">padrão</span> veio do padrão do exercício: as ligações (siglas dos órgãos, fontes da LOA e de-para)
-                salvas para todos os estudos do ano. Elas são só o ponto de partida — qualquer escolha manual prevalece.
+                A ligação vem da <strong>tabela oficial Fonte do MAPP × fonte da LOA do SIAP</strong>
+                (<span class="estudo-tag tag-oficial">oficial</span>): cada código da LOA vai para a Fonte do MAPP que a tabela indica.
+                No PLOA por ação a fonte vem só como FT.DT (ex.: 570.82); quando a tabela separa esse FT.DT em mais de uma Fonte do MAPP
+                (emendas 570.2.2.<b>3.11</b>.82, PROPAG 500.9.1.0.<b>02</b>.00), vale o código principal (….0.00.DT).
+                Fonte da LOA que não está na tabela fica <span class="estudo-tag tag-sem">sem par</span>, salvo o
+                <span class="estudo-tag tag-padrao">padrão</span> do exercício ou uma escolha <span class="estudo-tag tag-manual">manual</span>
+                (guardada neste navegador e no estudo salvo). Escolha manual que contraria a tabela aparece como
+                <span class="estudo-tag tag-sem">≠ oficial</span>.
             </p>
+            <div class="estudo-carga" style="margin-bottom:12px;">
+                <div class="estudo-nota" id="resumo-tabela-oficial" style="margin:0 0 8px;"></div>
+                <div class="estudo-filtros" style="margin:0;">
+                    <label class="btn-mini-header" style="cursor:pointer;" title="Arquivo do SIAP com as colunas FONTE_MAPP e CODIGO_FONTE_ORCAMENTARIA (.xls, .xlsx ou .csv); substitui a tabela oficial neste navegador">⬆ Carregar tabela oficial (xls/xlsx/csv)
+                        <input type="file" accept=".xls,.xlsx,.csv" onchange="selecionarTabelaOficial(this)" style="display:none;"></label>
+                    <button class="btn-mini-header" onclick="baixarTabelaOficial()" title="Baixa a tabela oficial em uso (aba FONTES_MAPP_LOA)">⬇ Baixar tabela oficial (xlsx)</button>
+                    <button class="btn-mini-header" onclick="voltarTabelaOficialEmbutida()" title="Descarta a tabela carregada neste navegador e volta à embutida no sistema">↺ Tabela embutida</button>
+                </div>
+                <div class="estudo-status" id="status-tabela-oficial" style="margin-top:6px;"></div>
+            </div>
             <div class="estudo-filtros">
                 <label>Grupo de Fonte <select id="filtro-dp-grupo" onchange="renderizarDePara()"><option value="">(todos)</option></select></label>
                 <button class="btn-mini-header" onclick="baixarDeParaXLSX()" title="Baixa o de-para atual em xlsx (aba DE_PARA_FONTES) com a lista das fontes válidas (aba FONTES_DO_MAPP)">⬇ Baixar de-para (xlsx)</button>

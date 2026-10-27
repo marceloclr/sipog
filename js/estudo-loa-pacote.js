@@ -4,7 +4,7 @@
 // modelo vazio ou o pacote com o que está carregado. Script clássico (escopo global); usa
 // funções de js/estudo-loa.js, chamadas só em tempo de execução.
 
-const ABAS_PACOTE = ['LEIA-ME', 'PARAMETROS', 'LOA', 'MAPPS', 'DE_PARA_FONTES', 'ORGAOS', 'FONTES_LOA', 'PROPOSTAS'];
+const ABAS_PACOTE = ['LEIA-ME', 'PARAMETROS', 'LOA', 'MAPPS', 'DE_PARA_FONTES', 'ORGAOS', 'FONTES_LOA', 'FONTES_MAPP_LOA', 'PROPOSTAS'];
 
 // PARAMETROS: PARAMETRO | VALOR. Cada chave aponta para um campo da aba 2.
 const PARAMETROS_PACOTE = [
@@ -119,6 +119,18 @@ function lerPacoteEstudo(wb) {
         }
     } else nota('FONTES_LOA', 'aviso', 'aba ausente — fica a tabela de fontes padrão do sistema');
 
+    // FONTES_MAPP_LOA: tabela oficial do SIAP (Fonte do MAPP × fonte da LOA)
+    let wsT = abaPacote(wb, 'FONTES_MAPP_LOA');
+    if (wsT) {
+        let a = lerAbaPacote(wsT);
+        if (!a.colunas.includes('FONTE_MAPP') || !a.colunas.includes('CODIGO_FONTE_ORCAMENTARIA')) nota('FONTES_MAPP_LOA', 'erro', 'precisa das colunas FONTE_MAPP e CODIGO_FONTE_ORCAMENTARIA');
+        else {
+            r.tabelaOficial = a.linhas.map(l => [String(l.FONTE_MAPP || '').trim(), String(l.CODIGO_FONTE_ORCAMENTARIA || '').trim(),
+                String(l.DESCRICAO_FONTE_ORCAMENTARIA || '').trim()]).filter(l => l[0]);
+            nota('FONTES_MAPP_LOA', 'ok', `${r.tabelaOficial.filter(l => RE_CODIGO_FONTE_COMPLETO.test(l[1])).length} código(s) da LOA`);
+        }
+    } else nota('FONTES_MAPP_LOA', 'aviso', 'aba ausente — fica a tabela oficial deste navegador');
+
     // LOA (obrigatória)
     let wsL = abaPacote(wb, 'LOA');
     if (!wsL) nota('LOA', 'erro', 'aba obrigatória ausente');
@@ -219,6 +231,7 @@ function aplicarTabelasPacote(r) {
             if (f.codOrgao) (SUBFONTE_LOA_POR_ORGAO[f.codOrgao] = SUBFONTE_LOA_POR_ORGAO[f.codOrgao] || {})[f.ftdt] = f.subfonte;
         });
     }
+    if (r.tabelaOficial && r.tabelaOficial.length) usarTabelaOficial({ linhas: r.tabelaOficial, origem: 'pacote do estudo (aba FONTES_MAPP_LOA)', carregadaEm: new Date().toISOString() }, false);
 }
 
 // Proposta editada: pela CHAVE (exportada pelo próprio sistema) ou por MAPP + ÓRGÃO + FONTE.
@@ -262,6 +275,9 @@ async function selecionarArquivoPacote(input) {
                 (d.conflitos.length ? `, ${d.conflitos.length} conflito(s) (mesma fonte da LOA em duas Fontes do MAPP; vale a 1ª): ${d.conflitos.slice(0, 4).join('; ')}` : '');
         }
         recalcularEstudo();
+        // A aba DE_PARA_FONTES traz também as ligações da tabela oficial: as iguais a ela não viram manuais.
+        let iguaisOficial = Object.keys(deParaManual).filter(sf => (deParaSugerido[sf] || {}).regra === 'oficial' && deParaSugerido[sf].fonte === deParaManual[sf]);
+        if (iguaisOficial.length) { iguaisOficial.forEach(sf => { delete deParaManual[sf]; }); salvarDeParaManual(); recalcularEstudo(); }
         if (r.propostas) {
             let n = aplicarPropostasPacote(r.propostas);
             r.relatorio.find(x => x.aba === 'PROPOSTAS').txt += ` → ${n} aplicada(s)`;
@@ -339,6 +355,7 @@ async function baixarPacoteEstudo(modelo) {
         ['DE_PARA_FONTES', 'SUB FONTE da LOA → FONTE DO MAPP. "(sem fonte)" deixa a LOA fora do cruzamento.'],
         ['ORGAOS', 'COD_ORGAO → SIGLA usada nos MAPPs; FORA_EXECUTIVO = S expurga a LOA e os MAPPs do órgão.'],
         ['FONTES_LOA', 'FT_DT → SUB_FONTE completa, GRUPO (Tesouro/Outras Fontes), DESCRICAO; COD_ORGAO quando o FT.DT tem mais de uma sub fonte (ex.: 754.49).'],
+        ['FONTES_MAPP_LOA', 'Tabela oficial do SIAP: FONTE_MAPP → CODIGO_FONTE_ORCAMENTARIA (500.9.1.0.00.00) e DESCRICAO_FONTE_ORCAMENTARIA. É a base do de-para; "-" = Fonte do MAPP sem fonte da LOA.'],
         ['PROPOSTAS', 'Edições da Proposta de Programado (CHAVE ou MAPP + ORGAO + FONTE, PROPOSTA, ORIGEM).'],
         ['', ''],
         ['Próximo ano', '1) receber a LOA nova; 2) baixar este pacote como modelo; 3) trocar LOA e MAPPS e o EXERCICIO_LOA; 4) revisar ORGAOS, FONTES_LOA e o de-para; 5) carregar e conferir os totais na aba 1.']
@@ -365,6 +382,8 @@ async function baixarPacoteEstudo(modelo) {
         { titulo: 'NOME', chave: 'nome', largura: 60 }, { titulo: 'FORA_EXECUTIVO', chave: 'fora', largura: 16 }], linhasOrgaosPacote());
     adicionarAbaEstudo(wb, 'FONTES_LOA', [{ titulo: 'FT_DT', chave: 'ftdt', largura: 10 }, { titulo: 'SUB_FONTE', chave: 'subfonte', largura: 18 },
         { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'DESCRICAO', chave: 'desc', largura: 70 }, { titulo: 'COD_ORGAO', chave: 'cod', largura: 12 }], linhasFontesPacote());
+
+    adicionarAbaEstudo(wb, 'FONTES_MAPP_LOA', COLUNAS_TABELA_OFICIAL, linhasTabelaOficial());
 
     let porChave = {};
     linhasAjustes.forEach(l => { porChave[l.chave] = l; });
