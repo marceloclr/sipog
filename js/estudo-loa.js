@@ -91,6 +91,8 @@ function alternarTemaEstudo() {
     let novo = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', novo);
     try { localStorage.setItem('spopic_theme', novo); } catch (e) {}
+    // Gráficos da aba 6 levam as cores do tema: redesenha.
+    if (typeof renderizarNaoAlocada === 'function') renderizarNaoAlocada();
 }
 
 // ─── UTILITÁRIOS ────────────────────────────────────────────────────────────
@@ -1442,6 +1444,7 @@ function mostrarAbaEstudo(aba) {
     document.querySelectorAll('.estudo-aba').forEach(s => s.classList.toggle('ativa', s.dataset.aba === aba));
     document.querySelectorAll('.estudo-menu-item').forEach(b => b.classList.toggle('ativo', b.dataset.aba === aba));
     try { localStorage.setItem(CHAVE_ABA_LOCAL, aba); } catch (e) {}
+    if (aba === 'naoalocada' && naoAlocadaSuja) renderizarNaoAlocada();
     window.scrollTo({ top: 0 });
 }
 
@@ -1797,6 +1800,10 @@ function renderizarAjustesFinais() {
     // MAPPs — proposta editável: com Nec. Ajustada (distribuição automática) e sem (só manual)
     contM.innerHTML = tabelaMappsAjustes(linhas.filter(l => l.grade === 1), 'Nenhum MAPP com Necessidade 2027 Ajustada para o filtro.');
     contM2.innerHTML = tabelaMappsAjustes(linhas.filter(l => l.grade === 2), 'Nenhum MAPP sem necessidade para o filtro.');
+
+    // A LOA não alocada (aba 6) depende da Proposta: refaz a cada mudança aqui.
+    montarNaoAlocada();
+    renderizarNaoAlocada();
 }
 
 function tabelaMappsAjustes(linhas, msgVazia) {
@@ -1837,6 +1844,279 @@ const COLUNAS_AJUSTES = [
     { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj },
     { chave: 'proposta', titulo: 'Proposta Programado 2027', num: true, valor: l => l.proposta }
 ];
+
+// ─── ABA 6: LOA NÃO ALOCADA (LOA 2027 não vinculada a MAPP) ─────────────────
+// Três categorias, sempre nesta ordem e com a mesma cor (CSS --na-*):
+//   fora    = sub fonte sem Fonte do SIPOG no De-para (fora do cruzamento);
+//   semmapp = par com LOA e nenhum MAPP ativo;
+//   sobra   = par com MAPPs cuja Proposta não usa toda a LOA (LOA − Proposta > 0).
+const CATEGORIAS_NA = [
+    { id: 'fora', rotulo: 'Fora do cruzamento', cor: '--na-fora', desc: 'LOA de sub fonte sem Fonte do SIPOG no De-para (aba 3): não há MAPP que possa recebê-la.' },
+    { id: 'semmapp', rotulo: 'Par sem MAPP', cor: '--na-semmapp', desc: 'LOA de órgão × programa × fonte sem nenhum MAPP ativo.' },
+    { id: 'sobra', rotulo: 'Sobra no par', cor: '--na-sobra', desc: 'LOA do par − Proposta dos MAPPs do par, quando positiva (necessidade menor que a LOA ou proposta não distribuída).' }
+];
+const ROTULO_CAT_NA = Object.fromEntries(CATEGORIAS_NA.map(c => [c.id, c.rotulo]));
+let itensNaoAlocada = [];      // um item por par (ou por linha da LOA fora do cruzamento)
+let graficosNaoAlocada = {};   // instâncias do Chart.js, recriadas a cada desenho
+let naoAlocadaSuja = true;
+
+function montarNaoAlocada() {
+    let itens = [];
+    // LOA por par (só as linhas que cruzam), para chegar às ações do PLOA.
+    let linhasPorPar = {};
+    loaLinhas.forEach(l => {
+        let fonte = fonteEfetiva(l.subfonte).fonte;
+        if (!fonte) {
+            itens.push({ categoria: 'fora', orgao: l.sigla, programa: cruzaPrograma ? (l.programa || '') : '', nomePrograma: l.nomePrograma || '',
+                fonte: `(sem fonte) ${l.subfonte}`, subfontes: l.subfonte, descFonte: l.descSubfonte, loa: l.valor, proposta: 0, valor: l.valor,
+                qtd: 0, necAj: 0, linhasLOA: [l] });
+            return;
+        }
+        let k = chavePar(l.sigla, cruzaPrograma ? l.programa : '', fonte);
+        (linhasPorPar[k] = linhasPorPar[k] || []).push(l);
+    });
+    let propPar = {};
+    linhasAjustes.forEach(l => { propPar[l.par] = (propPar[l.par] || 0) + propostaDe(l); });
+    consolidadoAtual.forEach(c => {
+        if (!c.temLOA) return;
+        let k = chavePar(c.orgao, c.programa, c.fonte);
+        let prop = propPar[k] || 0;
+        let livre = c.loa - prop;
+        if (livre < TOLERANCIA_ALERTA) return;
+        itens.push({ categoria: c.qtd > 0 ? 'sobra' : 'semmapp', orgao: c.orgao, programa: c.programa || '', nomePrograma: c.nomePrograma || '',
+            fonte: c.fonte, subfontes: c.subfontesTxt, loa: c.loa, proposta: prop, valor: livre, qtd: c.qtd, necAj: c.necAj, linhasLOA: linhasPorPar[k] || [] });
+    });
+    itensNaoAlocada = itens;
+    let badge = document.getElementById('badge-naoalocada');
+    let total = itens.reduce((s, i) => s + i.valor, 0);
+    if (badge) badge.textContent = total >= TOLERANCIA_ALERTA ? abreviarValor(total) : '';
+}
+
+// "R$ 1,44 bi" / "R$ 328 mi" para selos e rótulos de gráfico.
+function abreviarValor(v) {
+    let a = Math.abs(v);
+    if (a >= 1e9) return 'R$ ' + (v / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' bi';
+    if (a >= 1e6) return 'R$ ' + (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi';
+    if (a >= 1e3) return 'R$ ' + (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' mil';
+    return F(v);
+}
+
+function filtrosNaoAlocada() {
+    let val = id => (document.getElementById(id) || {}).value || '';
+    return { categoria: val('filtro-na-categoria'), fonte: val('filtro-na-fonte'), orgao: val('filtro-na-orgao'), programa: cruzaPrograma ? val('filtro-na-programa') : '' };
+}
+
+function itemNoFiltroNA(f, i) {
+    return (!f.categoria || i.categoria === f.categoria) && (!f.fonte || i.fonte === f.fonte) &&
+        (!f.orgao || N(i.orgao) === N(f.orgao)) && (!f.programa || i.programa === f.programa);
+}
+
+function atualizarFiltrosNaoAlocada() {
+    let f = filtrosNaoAlocada();
+    let filtros = {
+        categoria: f.categoria ? u => u.categoria === f.categoria : null, fonte: f.fonte ? u => u.fonte === f.fonte : null,
+        orgao: f.orgao ? u => N(u.orgao) === N(f.orgao) : null, programa: f.programa ? u => u.programa === f.programa : null
+    };
+    preencherSelectLigado('filtro-na-categoria', valoresLigados(itensNaoAlocada, filtros, 'categoria'), '(todas)', v => ROTULO_CAT_NA[v] || v);
+    preencherSelectLigado('filtro-na-fonte', valoresLigados(itensNaoAlocada, filtros, 'fonte'), '(todas)');
+    preencherSelectLigado('filtro-na-orgao', valoresLigados(itensNaoAlocada, filtros, 'orgao'), '(todos)');
+    if (cruzaPrograma) preencherSelectLigado('filtro-na-programa', valoresLigados(itensNaoAlocada, filtros, 'programa'), '(todos)', v => rotuloPrograma(v, nomesProgramas[v]));
+}
+
+function limparFiltrosNaoAlocada() {
+    ['filtro-na-categoria', 'filtro-na-fonte', 'filtro-na-orgao', 'filtro-na-programa'].forEach(id => { let el = document.getElementById(id); if (el) el.value = ''; });
+    renderizarNaoAlocada();
+}
+
+// Agrupa os itens do filtro por uma dimensão, com o valor por categoria.
+function agruparNaoAlocada(itens, chave, rotulo) {
+    let grupos = {};
+    itens.forEach(i => {
+        let k = chave(i);
+        let g = grupos[k] || (grupos[k] = { chave: k, rotulo: rotulo(i), fora: 0, semmapp: 0, sobra: 0, valor: 0, loa: 0, proposta: 0, pares: 0 });
+        g[i.categoria] += i.valor; g.valor += i.valor; g.loa += i.loa; g.proposta += i.proposta; g.pares++;
+    });
+    return Object.values(grupos).sort((a, b) => b.valor - a.valor);
+}
+
+// Ações do PLOA por trás de cada item: valor da ação × (não alocado ÷ LOA do item).
+function acoesNaoAlocada(itens) {
+    if (loaConferencia.origem !== 'ploa' || !loaCreditos.length) return null;
+    let prm = lerParametrosEstudo();
+    let idx = {};
+    loaCreditos.forEach(c => {
+        if (!prm.gnds.has(c.gnd) || !prm.esferas.has(c.esfera) || (prm.semMod91 && c.modalidade === '91') || loaForaDoExecutivo(c)) return;
+        let k = c.codOrgao + '|' + c.programa + '|' + fonteLOADoCredito(c).subfonte;
+        (idx[k] = idx[k] || []).push(c);
+    });
+    let acoes = {};
+    itens.forEach(i => {
+        let fator = i.loa > 0 ? i.valor / i.loa : 0;
+        i.linhasLOA.forEach(l => {
+            (idx[l.codOrgao + '|' + l.programa + '|' + l.subfonte] || []).forEach(c => {
+                let k = c.codOrgao + '|' + c.programa + '|' + c.codAcao;
+                let a = acoes[k] || (acoes[k] = { orgao: SIGLAS_ORGAO_LOA[c.codOrgao] || c.orgao, programa: c.programa, nomePrograma: c.nomePrograma,
+                    codAcao: c.codAcao, acao: c.acao, tipo: c.tipoAcao, fontes: new Set(), regioes: new Set(), categorias: new Set(), loa: 0, valor: 0 });
+                a.loa += c.valor; a.valor += c.valor * fator;
+                a.fontes.add(i.fonte); a.regioes.add(c.regiao); a.categorias.add(i.categoria);
+            });
+        });
+    });
+    return Object.values(acoes).filter(a => a.valor >= 0.5).sort((a, b) => b.valor - a.valor);
+}
+
+function corCategoriaNA(id) {
+    return getComputedStyle(document.documentElement).getPropertyValue(CATEGORIAS_NA.find(c => c.id === id).cor).trim();
+}
+
+function desenharGraficosNaoAlocada(itens) {
+    if (typeof Chart === 'undefined') return;
+    Object.values(graficosNaoAlocada).forEach(g => g.destroy());
+    graficosNaoAlocada = {};
+    let estilo = getComputedStyle(document.documentElement);
+    let texto = estilo.getPropertyValue('--text').trim() || '#333';
+    let muted = estilo.getPropertyValue('--muted').trim() || '#777';
+    let grade = estilo.getPropertyValue('--border').trim() || '#ddd';
+    let superficie = estilo.getPropertyValue('--na-superficie').trim();
+    let tooltipValor = ctx => `${ctx.dataset.label || ctx.label}: ${F(ctx.parsed.x !== undefined && typeof ctx.parsed === 'object' ? ctx.parsed.x : ctx.parsed)}`;
+    let comuns = { responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { labels: { color: texto, boxWidth: 12, boxHeight: 12 } } } };
+
+    // Rosca por categoria (parte do todo; legenda + rótulos no tooltip).
+    let porCat = CATEGORIAS_NA.map(c => itens.filter(i => i.categoria === c.id).reduce((s, i) => s + i.valor, 0));
+    let total = porCat.reduce((s, v) => s + v, 0);
+    graficosNaoAlocada.categoria = new Chart(document.getElementById('graf-na-categoria'), {
+        type: 'doughnut',
+        data: { labels: CATEGORIAS_NA.map(c => c.rotulo), datasets: [{ data: porCat, backgroundColor: CATEGORIAS_NA.map(c => corCategoriaNA(c.id)), borderColor: superficie, borderWidth: 2 }] },
+        options: Object.assign({}, comuns, { cutout: '62%', plugins: { legend: { position: 'right', labels: { color: texto, boxWidth: 12, boxHeight: 12 } },
+            tooltip: { callbacks: { label: ctx => `${ctx.label}: ${F(ctx.parsed)} (${fmtPct(total ? ctx.parsed / total * 100 : 0)})` } } } })
+    });
+
+    // Barras horizontais empilhadas por categoria (rótulos longos ficam legíveis).
+    let barras = (id, grupos) => {
+        let top = grupos.slice(0, 15);
+        graficosNaoAlocada[id] = new Chart(document.getElementById('graf-na-' + id), {
+            type: 'bar',
+            data: { labels: top.map(g => g.rotulo.length > 32 ? g.rotulo.slice(0, 31) + '…' : g.rotulo),
+                datasets: CATEGORIAS_NA.map(c => ({ label: c.rotulo, data: top.map(g => g[c.id]), backgroundColor: corCategoriaNA(c.id),
+                    borderColor: superficie, borderWidth: { right: 2 }, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 18 })) },
+            options: Object.assign({}, comuns, { indexAxis: 'y',
+                scales: {
+                    x: { stacked: true, ticks: { color: muted, maxTicksLimit: 5, maxRotation: 0, callback: v => abreviarValor(v) }, grid: { color: grade } },
+                    y: { stacked: true, ticks: { color: texto, font: { size: 11 }, autoSkip: false }, grid: { display: false } }
+                },
+                plugins: { legend: { labels: { color: texto, boxWidth: 12, boxHeight: 12 } },
+                    tooltip: { callbacks: { title: ctx => top[ctx[0].dataIndex].rotulo, label: ctx => `${ctx.dataset.label}: ${F(ctx.parsed.x)}`,
+                        footer: ctx => `Total não alocado: ${F(top[ctx[0].dataIndex].valor)}` } } } })
+        });
+    };
+    barras('fonte', agruparNaoAlocada(itens, i => i.fonte, i => i.fonte));
+    barras('orgao', agruparNaoAlocada(itens, i => N(i.orgao), i => i.orgao));
+    if (cruzaPrograma) barras('programa', agruparNaoAlocada(itens, i => i.programa, i => rotuloPrograma(i.programa, i.nomePrograma || nomesProgramas[i.programa]) || '(sem programa)'));
+}
+
+function tabelaAgrupadaNA(grupos, titulo, descTitulo, vazio) {
+    if (!grupos.length) return `<p class="estudo-nota" style="padding:12px;">${vazio}</p>`;
+    let h = `<table><thead><tr>${thDesc(titulo, descTitulo)}` +
+        CATEGORIAS_NA.map(c => thDesc(c.rotulo, c.desc, 'num')).join('') +
+        `${thDesc('Não alocado', 'Σ das três categorias.', 'num')}${thDesc('LOA 2027', 'Σ LOA dos itens não alocados (pares e linhas fora do cruzamento) — a LOA dos pares totalmente alocados não entra.', 'num')}
+        ${thDesc('Proposta', 'Σ Proposta dos MAPPs desses pares.', 'num')}${thDesc('% não alocado', 'Não alocado ÷ LOA 2027 × 100.', 'num')}</tr></thead><tbody>`;
+    grupos.slice(0, LIMITE_LINHAS_DETALHE).forEach(g => {
+        h += `<tr><td><strong>${escHtml(g.rotulo)}</strong></td>` +
+            CATEGORIAS_NA.map(c => g[c.id] ? tdNum(g[c.id], `${c.rotulo} em ${g.rotulo} = ${FT(g[c.id])}`) : '<td class="num">—</td>').join('') +
+            `<td class="num"${dica(`Não alocado = ${CATEGORIAS_NA.map(c => FT(g[c.id])).join(' + ')} = ${FT(g.valor)}`)}><strong>${F(g.valor)}</strong></td>
+            ${tdNum(g.loa, `Σ LOA 2027 dos ${g.pares} item(ns) = ${FT(g.loa)}`)}${tdNum(g.proposta, `Σ Proposta = ${FT(g.proposta)}`)}
+            <td class="num"${dica(`${FT(g.valor)} ÷ ${FT(g.loa)} × 100`)}>${fmtPct(g.loa ? g.valor / g.loa * 100 : null)}</td></tr>`;
+    });
+    let t = grupos.reduce((s, g) => { CATEGORIAS_NA.forEach(c => s[c.id] += g[c.id]); s.valor += g.valor; s.loa += g.loa; s.proposta += g.proposta; return s; }, { fora: 0, semmapp: 0, sobra: 0, valor: 0, loa: 0, proposta: 0 });
+    h += `</tbody><tfoot><tr><td>TOTAL (${grupos.length})</td>` + CATEGORIAS_NA.map(c => tdNum(t[c.id], `Σ ${c.rotulo} = ${FT(t[c.id])}`)).join('') +
+        `${tdNum(t.valor, `Σ não alocado = ${FT(t.valor)}`)}${tdNum(t.loa, `Σ LOA 2027 = ${FT(t.loa)}`)}${tdNum(t.proposta, `Σ Proposta = ${FT(t.proposta)}`)}
+        <td class="num">${fmtPct(t.loa ? t.valor / t.loa * 100 : null)}</td></tr></tfoot></table>`;
+    return h;
+}
+
+function renderizarNaoAlocada() {
+    let secao = document.querySelector('.estudo-aba[data-aba="naoalocada"]');
+    // Gráficos só desenham com a aba visível (canvas oculto não tem tamanho): marca e adia.
+    if (!secao || !secao.classList.contains('ativa')) { naoAlocadaSuja = true; return; }
+    naoAlocadaSuja = false;
+    let resumo = document.getElementById('resumo-naoalocada');
+    let ids = ['tabela-na-fonte', 'tabela-na-orgao', 'tabela-na-par', 'tabela-na-acao'];
+    if (!loaLinhas.length || !mappsCalculados.length) {
+        resumo.innerHTML = '';
+        ids.forEach(id => { document.getElementById(id).innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregue a LOA e a base de MAPPs.</p>'; });
+        Object.values(graficosNaoAlocada).forEach(g => g.destroy()); graficosNaoAlocada = {};
+        return;
+    }
+    atualizarFiltrosNaoAlocada();
+    let f = filtrosNaoAlocada();
+    let itens = itensNaoAlocada.filter(i => itemNoFiltroNA(f, i));
+
+    // Cards
+    let loaExec = loaLinhas.reduce((s, l) => s + l.valor, 0);
+    let total = itens.reduce((s, i) => s + i.valor, 0);
+    let porCat = Object.fromEntries(CATEGORIAS_NA.map(c => [c.id, itens.filter(i => i.categoria === c.id).reduce((s, i) => s + i.valor, 0)]));
+    let filtrado = f.categoria || f.fonte || f.orgao || f.programa;
+    resumo.innerHTML = `
+        <div${dica(`Σ LOA 2027 do Executivo no recorte atual = ${FT(loaExec)}`)}><span>LOA 2027 do Executivo</span><b>${F(loaExec)}</b></div>
+        <div${dica(`LOA − não alocada (sem filtro) = ${FT(loaExec)} − ${FT(itensNaoAlocada.reduce((s, i) => s + i.valor, 0))}`)}><span>LOA alocada em Proposta</span><b>${F(loaExec - itensNaoAlocada.reduce((s, i) => s + i.valor, 0))}</b></div>
+        <div${dica(`Σ das três categorias${filtrado ? ' (filtro)' : ''} = ${CATEGORIAS_NA.map(c => FT(porCat[c.id])).join(' + ')} = ${FT(total)}`)}><span>LOA não alocada${filtrado ? ' (filtro)' : ''}</span><b class="valor-sobra">${F(total)}</b><small style="color:var(--muted);">${fmtPct(loaExec ? total / loaExec * 100 : null)} da LOA do Executivo</small></div>` +
+        CATEGORIAS_NA.map(c => `<div${dica(c.desc + `\n= ${FT(porCat[c.id])}`)}><span><span class="na-chave" style="--na-cor:var(${c.cor}); margin-left:0;"></span>${c.rotulo}</span><b>${F(porCat[c.id])}</b><small style="color:var(--muted);">${itens.filter(i => i.categoria === c.id).length} item(ns) · ${fmtPct(total ? porCat[c.id] / total * 100 : null)}</small></div>`).join('');
+
+    desenharGraficosNaoAlocada(itens);
+
+    document.getElementById('tabela-na-fonte').innerHTML = tabelaAgrupadaNA(agruparNaoAlocada(itens, i => i.fonte, i => i.fonte),
+        'Fonte', 'Fonte do SIPOG; "(sem fonte)" + código = sub fonte da LOA sem par no De-para.', 'Nada para o filtro.');
+    document.getElementById('tabela-na-orgao').innerHTML = tabelaAgrupadaNA(agruparNaoAlocada(itens, i => N(i.orgao), i => i.orgao),
+        'Órgão', 'Órgão (sigla).', 'Nada para o filtro.');
+
+    // Pares
+    let pares = itens.slice().sort((a, b) => b.valor - a.valor);
+    let hp = `<table><thead><tr>${thDesc('Categoria', 'Fora do cruzamento, Par sem MAPP ou Sobra no par.')}${thDesc('Órgão', 'Órgão (sigla).')}
+        <th class="sem-ordem so-programa" data-desc="1"${dica('Programa', 'Programa do PLOA.')}>Programa</th>${thDesc('Fonte', 'Fonte do SIPOG (ou sub fonte sem par).')}
+        ${thDesc('LOA 2027', 'LOA do par (ou da linha fora do cruzamento).', 'num')}${thDesc('Proposta', 'Σ Proposta dos MAPPs do par (aba 5).', 'num')}
+        ${thDesc('MAPPs', 'MAPPs ativos do par.', 'num')}${thDesc('Nec. 2027 Ajustada', 'Σ Nec. Ajustada dos MAPPs do par.', 'num')}
+        ${thDesc('Não alocado', 'LOA − Proposta (fora do cruzamento e par sem MAPP: a LOA inteira).', 'num')}</tr></thead><tbody>`;
+    pares.slice(0, LIMITE_LINHAS_DETALHE).forEach(i => {
+        hp += `<tr><td><span class="na-chave" style="--na-cor:var(${CATEGORIAS_NA.find(c => c.id === i.categoria).cor}); margin-left:0;"></span>${ROTULO_CAT_NA[i.categoria]}</td>
+            <td><strong>${escHtml(i.orgao)}</strong></td><td class="so-programa" style="font-size:11px;">${escHtml(rotuloPrograma(i.programa, i.nomePrograma))}</td>
+            <td class="col-fonte" style="font-size:11px;"${i.descFonte ? dica(i.descFonte) : ''}>${escHtml(i.fonte)}</td>
+            ${tdNum(i.loa, `LOA 2027 = ${FT(i.loa)}${i.subfontes ? '\nSub fontes: ' + i.subfontes : ''}`)}${tdNum(i.proposta, `Σ Proposta dos ${i.qtd} MAPP(s) = ${FT(i.proposta)}`)}
+            <td class="num">${i.qtd || '—'}</td>${tdNum(i.necAj, `Σ Nec. 2027 Ajustada = ${FT(i.necAj)}`)}
+            <td class="num"${dica(`Não alocado = LOA − Proposta = ${FT(i.loa)} − ${FT(i.proposta)} = ${FT(i.valor)}`)}><strong>${F(i.valor)}</strong></td></tr>`;
+    });
+    let tp = pares.reduce((s, i) => { s.loa += i.loa; s.proposta += i.proposta; s.valor += i.valor; s.necAj += i.necAj; s.qtd += i.qtd; return s; }, { loa: 0, proposta: 0, valor: 0, necAj: 0, qtd: 0 });
+    hp += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}">TOTAL (${pares.length.toLocaleString('pt-BR')} itens${pares.length > LIMITE_LINHAS_DETALHE ? ` — exibindo ${LIMITE_LINHAS_DETALHE}` : ''})</td>
+        ${tdNum(tp.loa, `Σ LOA = ${FT(tp.loa)}`)}${tdNum(tp.proposta, `Σ Proposta = ${FT(tp.proposta)}`)}<td class="num">${tp.qtd.toLocaleString('pt-BR')}</td>
+        ${tdNum(tp.necAj, `Σ Nec. Ajustada = ${FT(tp.necAj)}`)}${tdNum(tp.valor, `Σ não alocado = ${FT(tp.valor)}`)}</tr></tfoot></table>`;
+    document.getElementById('tabela-na-par').innerHTML = pares.length ? hp : '<p class="estudo-nota" style="padding:12px;">Nada para o filtro.</p>';
+
+    // Ações do PLOA
+    let acoes = acoesNaoAlocada(itens);
+    let contA = document.getElementById('tabela-na-acao');
+    if (acoes === null) {
+        contA.innerHTML = '<p class="estudo-nota" style="padding:12px;">Disponível com a LOA do PLOA 2027 por ação (aba 1).</p>';
+    } else if (!acoes.length) {
+        contA.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nada para o filtro.</p>';
+    } else {
+        let ha = `<table><thead><tr>${thDesc('Órgão', 'Órgão (sigla).')}${thDesc('Programa', 'Programa do PLOA.')}${thDesc('Ação', 'Código e nome da ação no PLOA 2027.')}
+            ${thDesc('Tipo', 'Projeto, Atividade ou Operação Especial.')}${thDesc('Fonte(s)', 'Fontes (do SIPOG ou sem par) dos créditos da ação.')}
+            ${thDesc('Região(ões)', 'Códigos de região dos créditos (15 = Estado do Ceará).')}${thDesc('Categoria(s)', 'Categorias de não alocação dos créditos.')}
+            ${thDesc('LOA da ação', 'Σ dos créditos da ação no recorte (nos itens não alocados).', 'num')}
+            ${thDesc('Não alocado', 'Σ crédito × (não alocado do item ÷ LOA do item). Fora do cruzamento e par sem MAPP: o crédito inteiro.', 'num')}</tr></thead><tbody>`;
+        acoes.slice(0, LIMITE_LINHAS_DETALHE).forEach(a => {
+            ha += `<tr><td><strong>${escHtml(a.orgao)}</strong></td><td style="font-size:11px;">${escHtml(rotuloPrograma(a.programa, a.nomePrograma))}</td>
+                <td class="col-mapp" title="${escHtml(a.codAcao + ' - ' + a.acao)}"><span>${escHtml(a.codAcao + ' - ' + a.acao)}</span></td>
+                <td style="font-size:11px;">${escHtml(a.tipo)}</td><td class="col-fonte" style="font-size:11px;">${escHtml([...a.fontes].join('; '))}</td>
+                <td style="font-size:11px;">${escHtml([...a.regioes].sort().join(', '))}</td><td style="font-size:11px;">${escHtml([...a.categorias].map(c => ROTULO_CAT_NA[c]).join('; '))}</td>
+                ${tdNum(a.loa, `Σ créditos da ação = ${FT(a.loa)}`)}<td class="num"${dica(`Parte não alocada da ação = ${FT(a.valor)}`)}><strong>${F(a.valor)}</strong></td></tr>`;
+        });
+        let ta = acoes.reduce((s, a) => { s.loa += a.loa; s.valor += a.valor; return s; }, { loa: 0, valor: 0 });
+        ha += `</tbody><tfoot><tr><td colspan="7">TOTAL (${acoes.length.toLocaleString('pt-BR')} ações${acoes.length > LIMITE_LINHAS_DETALHE ? ` — exibindo ${LIMITE_LINHAS_DETALHE}` : ''})</td>
+            ${tdNum(ta.loa, `Σ LOA das ações = ${FT(ta.loa)}`)}${tdNum(ta.valor, `Σ não alocado = ${FT(ta.valor)}`)}</tr></tfoot></table>`;
+        contA.innerHTML = ha;
+    }
+}
 
 // ─── NOMEAÇÃO ───────────────────────────────────────────────────────────────
 // Regra dos demais sistemas: nome + data e hora no formato DDMMAAAA-HHMM.
@@ -2100,6 +2380,27 @@ async function exportarEstudoXLSX() {
             { titulo: 'A DISTRIBUIR', chave: 'difDistribuivel', moeda: true, largura: 20 },
             { titulo: 'MAPPS', chave: 'qtd', largura: 10 }, { titulo: 'EDITADOS', chave: 'editados', largura: 10 }
         ], montarAlertasFontes({ fonte: '', orgao: '' }).map(a => Object.assign({}, a, { sit: ROTULO_ALERTA[a.status] })));
+    }
+
+    // LOA não alocada (aba 6): todos os itens e, com o PLOA, as ações (sem os filtros da tela).
+    montarNaoAlocada();
+    if (itensNaoAlocada.length) {
+        adicionarAbaEstudo(wb, 'LOA_NAO_ALOCADA', [
+            { titulo: 'CATEGORIA', chave: 'cat', largura: 20 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
+            { titulo: 'PROGRAMA', chave: 'prog', largura: 40 }, { titulo: 'FONTE', chave: 'fonte', largura: 42 },
+            { titulo: 'SUB FONTES DA LOA', chave: 'subfontes', largura: 30 }, { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 },
+            { titulo: 'PROPOSTA', chave: 'proposta', moeda: true, largura: 20 }, { titulo: 'MAPPS', chave: 'qtd', largura: 9 },
+            { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 }, { titulo: 'NÃO ALOCADO', chave: 'valor', moeda: true, largura: 20 }
+        ], itensNaoAlocada.slice().sort((a, b) => b.valor - a.valor).map(i => Object.assign({}, i, { cat: ROTULO_CAT_NA[i.categoria], prog: rotuloPrograma(i.programa, i.nomePrograma) })));
+        let acoes = acoesNaoAlocada(itensNaoAlocada);
+        if (acoes && acoes.length) adicionarAbaEstudo(wb, 'LOA_NAO_ALOCADA_ACOES', [
+            { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 }, { titulo: 'PROGRAMA', chave: 'prog', largura: 40 },
+            { titulo: 'AÇÃO', chave: 'codAcao', largura: 10 }, { titulo: 'NOME DA AÇÃO', chave: 'acao', largura: 60 },
+            { titulo: 'TIPO', chave: 'tipo', largura: 18 }, { titulo: 'FONTES', chave: 'fontesTxt', largura: 40 },
+            { titulo: 'REGIÕES', chave: 'regioesTxt', largura: 14 }, { titulo: 'CATEGORIAS', chave: 'catTxt', largura: 30 },
+            { titulo: 'LOA DA AÇÃO', chave: 'loa', moeda: true, largura: 20 }, { titulo: 'NÃO ALOCADO', chave: 'valor', moeda: true, largura: 20 }
+        ], acoes.map(a => Object.assign({}, a, { prog: rotuloPrograma(a.programa, a.nomePrograma), fontesTxt: [...a.fontes].join('; '),
+            regioesTxt: [...a.regioes].sort().join(', '), catTxt: [...a.categorias].map(c => ROTULO_CAT_NA[c]).join('; ') })));
     }
 
     let wsP = wb.addWorksheet('PARAMETROS');

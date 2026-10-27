@@ -128,6 +128,15 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
 - Cabeçalhos: significado e cálculo de cada coluna no tooltip do `th` (`DESC_COLUNAS` para as grades
   ordenáveis, `thDesc()` para as fixas; `DESC_PROPOSTA` = composição da Proposta, também no
   quadro "O que compõe a Proposta 2027" da aba 5).
+- Aba 6 "LOA não alocada" (LOA do Executivo não vinculada a MAPP): `montarNaoAlocada` (chamada no fim de
+  `renderizarAjustesFinais`) gera `itensNaoAlocada` em 3 categorias de cor fixa (`CATEGORIAS_NA`, CSS `--na-*`,
+  paleta categórica validada slots 1–3): fora do cruzamento (sub fonte sem de-para), par sem MAPP e sobra no par
+  (LOA − Proposta > 0). Cards, 4 gráficos Chart.js 4.4.0 (rosca + barras horizontais empilhadas; desenhados só com a
+  aba visível — `naoAlocadaSuja`), grades por fonte/órgão/par e por ação do PLOA (`acoesNaoAlocada`: crédito ×
+  não alocado ÷ LOA do item), filtros ligados e abas LOA_NAO_ALOCADA(_ACOES) no XLSX. Conferido em 27/10: Σ = de-para
+  fora do cruzamento + Σ alertas (sem destino + distribuível); Σ ações = Σ itens.
+- Layout: `input[type=checkbox]` volta ao tamanho natural (o css do SIPOG dá width:100% a todo input); a faixa de
+  filtros (`.estudo-filtros-pagina`) rola com a página (sem sticky) e usa selects/buscas compactos.
 - Tooltips de cálculo: todo valor de grade (`tdNum`/`dica`) e todo card mostra a fórmula com os
   números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
   Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de

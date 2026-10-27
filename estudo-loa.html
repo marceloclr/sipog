@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Maitree:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="css/styles.css">
 <style>
     /* Estilos exclusivos da página de estudo — o restante vem de css/styles.css (SIPOG). */
@@ -72,7 +73,12 @@
     .estudo-aba.ativa { display: block; }
     .estudo-aba-titulo { font-size: 16px; padding: 16px 18px 6px; }
     .estudo-subtitulo { font-size: 13px; margin: 18px 0 8px; }
-    .estudo-filtros-pagina { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; position: sticky; top: 0; z-index: 3; }
+    /* Faixa de filtros: rola com a página (não fica presa ao topo) e cabe numa linha larga. */
+    .estudo-filtros-pagina { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; gap: 8px 14px; }
+    .estudo-filtros label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+    .estudo-filtros select { width: auto; max-width: 280px; padding: 5px 8px; }
+    .estudo-filtros input[type="search"] { width: 200px; padding: 5px 8px; }
+    .estudo-filtros .btn-mini-header { padding: 5px 10px; }
     /* Ajustes Finais: cores do SIPOG (sucesso / atenção / estouro) */
     tr.alerta-ok td { background: rgba(38,167,55,0.08); }
     tr.alerta-sobra td { background: rgba(245,156,0,0.12); }
@@ -94,6 +100,22 @@
     /* Cabeçalho com significado/cálculo no tooltip */
     .estudo-tabela-wrap th[data-desc] { text-decoration: underline dotted; text-underline-offset: 3px; }
     .estudo-tabela-wrap th.sem-ordem[data-desc] { cursor: help; }
+    /* css/styles.css dá width:100% a todo input: nas caixas de seleção, volta ao tamanho natural. */
+    input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; vertical-align: middle; accent-color: var(--accent); }
+    .estudo-recorte { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, max-content)); gap: 12px 28px; margin: 8px 0 4px; align-items: start; }
+    .estudo-recorte fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 10px; margin: 0; }
+    .estudo-recorte legend { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; padding: 0 4px; }
+    .estudo-recorte label { display: flex; align-items: center; gap: 2px; font-size: 12px; padding: 3px 0; cursor: pointer; }
+    .estudo-check { display: block; font-size: 12px; cursor: pointer; }
+    /* LOA não alocada: cores fixas por categoria (paleta categórica validada, slots 1–3, na ordem) */
+    :root { --na-fora: #2a78d6; --na-semmapp: #eb6834; --na-sobra: #1baf7a; --na-superficie: #fcfcfb; }
+    :root[data-theme="dark"] { --na-fora: #3987e5; --na-semmapp: #d95926; --na-sobra: #199e70; --na-superficie: #1a1a19; }
+    .na-chave { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--na-cor); margin: 0 4px 0 6px; vertical-align: baseline; }
+    .na-graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; margin-bottom: 8px; }
+    .na-grafico { margin: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+    .na-grafico figcaption { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+    .na-canvas { position: relative; height: 380px; }
+    @media (max-width: 640px) { .na-graficos { grid-template-columns: 1fr; } }
     /* Filtro/coluna Programa: só quando o cruzamento é Órgão × Programa × Fonte */
     body:not(.cruza-programa) .so-programa { display: none; }
     .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
@@ -134,6 +156,7 @@
     <button class="estudo-menu-item" data-aba="depara" onclick="mostrarAbaEstudo('depara')"><span class="estudo-menu-num">3</span> De-para de fontes <span class="estudo-tag tag-manual" id="badge-depara"></span></button>
     <button class="estudo-menu-item" data-aba="consolidado" onclick="mostrarAbaEstudo('consolidado')"><span class="estudo-menu-num">4</span> Consolidado e MAPPs</button>
     <button class="estudo-menu-item" data-aba="ajustes" onclick="mostrarAbaEstudo('ajustes')"><span class="estudo-menu-num">5</span> Ajustes Finais <span class="estudo-tag tag-sem" id="badge-ajustes"></span></button>
+    <button class="estudo-menu-item" data-aba="naoalocada" onclick="mostrarAbaEstudo('naoalocada')"><span class="estudo-menu-num">6</span> LOA não alocada <span class="estudo-tag tag-semdestino" id="badge-naoalocada"></span></button>
 </nav>
 
 <main class="wrap estudo-conteudo">
@@ -182,24 +205,26 @@
             </div>
             <h3 style="font-size:13px; margin:18px 0 4px;">Recorte da LOA (PLOA 2027 por ação)</h3>
             <p class="estudo-nota">Vale quando a LOA vem do PLOA 2027 por ação (aba 1). Padrão: só o GND 44 (Investimentos), as duas esferas e sem a modalidade 91 (aplicação direta intraorçamentária, que duplica valores — o Volume I também a exclui).</p>
-            <div class="estudo-filtros" id="recorte-loa" style="gap:14px;">
-                <span><strong>GND:</strong>
-                    <label><input type="checkbox" id="gnd-31" onchange="recalcularEstudo()"> 31 Pessoal</label>
-                    <label><input type="checkbox" id="gnd-32" onchange="recalcularEstudo()"> 32 Juros</label>
-                    <label><input type="checkbox" id="gnd-33" onchange="recalcularEstudo()"> 33 Outras Correntes</label>
-                    <label><input type="checkbox" id="gnd-44" checked onchange="recalcularEstudo()"> 44 Investimentos</label>
-                    <label><input type="checkbox" id="gnd-45" onchange="recalcularEstudo()"> 45 Inversões</label>
-                    <label><input type="checkbox" id="gnd-46" onchange="recalcularEstudo()"> 46 Amortização</label>
-                    <label><input type="checkbox" id="gnd-02" onchange="recalcularEstudo()"> Reserva de Contingência</label>
-                </span>
-                <span><strong>Esfera:</strong>
-                    <label><input type="checkbox" id="esf-fiscal" checked onchange="recalcularEstudo()"> Fiscal / Seguridade</label>
-                    <label><input type="checkbox" id="esf-estatais" checked onchange="recalcularEstudo()"> Investimentos Estatais</label>
-                </span>
-                <label><input type="checkbox" id="loa-sem-mod91" checked onchange="recalcularEstudo()"> Excluir modalidade 91</label>
+            <div class="estudo-recorte" id="recorte-loa">
+                <fieldset><legend>Grupo de despesa (GND)</legend>
+                    <label><input type="checkbox" id="gnd-31" onchange="recalcularEstudo()">31 – Pessoal e Encargos</label>
+                    <label><input type="checkbox" id="gnd-32" onchange="recalcularEstudo()">32 – Juros e Encargos da Dívida</label>
+                    <label><input type="checkbox" id="gnd-33" onchange="recalcularEstudo()">33 – Outras Despesas Correntes</label>
+                    <label><input type="checkbox" id="gnd-44" checked onchange="recalcularEstudo()">44 – Investimentos</label>
+                    <label><input type="checkbox" id="gnd-45" onchange="recalcularEstudo()">45 – Inversões Financeiras</label>
+                    <label><input type="checkbox" id="gnd-46" onchange="recalcularEstudo()">46 – Amortização da Dívida</label>
+                    <label><input type="checkbox" id="gnd-02" onchange="recalcularEstudo()">Reserva de Contingência</label>
+                </fieldset>
+                <fieldset><legend>Esfera</legend>
+                    <label><input type="checkbox" id="esf-fiscal" checked onchange="recalcularEstudo()">Fiscal / Seguridade Social</label>
+                    <label><input type="checkbox" id="esf-estatais" checked onchange="recalcularEstudo()">Investimentos Estatais</label>
+                </fieldset>
+                <fieldset><legend>Modalidade</legend>
+                    <label><input type="checkbox" id="loa-sem-mod91" checked onchange="recalcularEstudo()">Excluir a modalidade 91 (intraorçamentária)</label>
+                </fieldset>
             </div>
-            <div style="margin-top:10px; font-size:12px;">
-                <label><input type="checkbox" id="ep-expurgar-fisfin" checked onchange="recalcularEstudo()"> Expurgar MAPPs em <strong>Execução Físic/Finan. Concluída</strong> <span style="color:var(--muted);">(padrão, como no SIPOG; desmarcado: entram com 100% do Programado 2026 e TRF zero)</span></label>
+            <div style="margin-top:12px;">
+                <label class="estudo-check"><input type="checkbox" id="ep-expurgar-fisfin" checked onchange="recalcularEstudo()"> Expurgar MAPPs em <strong>Execução Físic/Finan. Concluída</strong> <span style="color:var(--muted);">(padrão, como no SIPOG; desmarcado: entram com 100% do Programado 2026 e TRF zero)</span></label>
             </div>
             <h3 style="font-size:13px; margin:18px 0 4px;">Valor Deliberado por grupo — redução da Previsão de Empenho 2026</h3>
             <p class="estudo-nota">Mesma regra do bloco "Valor Deliberado Máximo do Empenho 2026 por Grupo de Projetos" do SIPOG: Prev. Empenho Ajustada = Prev. Empenho × (1 − %); TRF Ajustada = Programado 2026 − Prev. Empenho Ajustada; Necessidade 2027 Ajustada = Programado 2027 + TRF Ajustada. No SIPOG o percentual vale só para a Fonte selecionada no momento do "Aplicar" — escolha abaixo a fonte (ou todas). Edições manuais e travas por MAPP do SIPOG não entram no estudo.</p>
@@ -296,6 +321,40 @@
             <h3 class="estudo-subtitulo">Demais MAPPs (sem Necessidade 2027 Ajustada) — programado só manual</h3>
             <p class="estudo-nota">Não recebem distribuição automática. Digite a proposta quando for preciso programar 2027 para eles — por exemplo, com a "LOA sem destino" da grade de alerta.</p>
             <div class="estudo-tabela-wrap"><div id="tabela-ajustes-mapps-sem-nec"><p class="estudo-nota" style="padding:12px;">Carregue os arquivos.</p></div></div>
+        </div>
+    </section>
+
+    <section class="estudo-aba estudo-secao" data-aba="naoalocada">
+        <h2 class="estudo-aba-titulo">6. LOA não alocada — recursos da LOA 2027 não vinculados a MAPP</h2>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">LOA 2027 do Executivo que não chegou à Proposta de Programado 2027 de nenhum MAPP, em três categorias:
+                <span class="na-chave" style="--na-cor:var(--na-fora)"></span><strong>Fora do cruzamento</strong> — sub fonte sem Fonte do SIPOG no De-para (aba 3);
+                <span class="na-chave" style="--na-cor:var(--na-semmapp)"></span><strong>Par sem MAPP</strong> — órgão × programa × fonte com LOA e nenhum MAPP ativo;
+                <span class="na-chave" style="--na-cor:var(--na-sobra)"></span><strong>Sobra no par</strong> — o par tem MAPPs, mas a LOA passa da Proposta (necessidade menor que a LOA ou proposta não distribuída).
+                Segue a Proposta da aba 5 (edições e "Distribuir" mudam os valores). <strong>Os filtros abaixo valem para a aba toda.</strong></p>
+            <div class="estudo-filtros estudo-filtros-pagina">
+                <label>Categoria <select id="filtro-na-categoria" onchange="renderizarNaoAlocada()"><option value="">(todas)</option></select></label>
+                <label>Fonte <select id="filtro-na-fonte" onchange="renderizarNaoAlocada()"><option value="">(todas)</option></select></label>
+                <label>Órgão <select id="filtro-na-orgao" onchange="renderizarNaoAlocada()"><option value="">(todos)</option></select></label>
+                <label class="so-programa">Programa <select id="filtro-na-programa" onchange="renderizarNaoAlocada()"><option value="">(todos)</option></select></label>
+                <button class="btn-mini-header" onclick="limparFiltrosNaoAlocada()">✕ Limpar filtros</button>
+            </div>
+            <div class="estudo-resumo" id="resumo-naoalocada"></div>
+            <div class="na-graficos">
+                <figure class="na-grafico"><figcaption>Por categoria</figcaption><div class="na-canvas" style="height:260px;"><canvas id="graf-na-categoria" role="img" aria-label="LOA não alocada por categoria"></canvas></div></figure>
+                <figure class="na-grafico"><figcaption>Por fonte (15 maiores)</figcaption><div class="na-canvas"><canvas id="graf-na-fonte" role="img" aria-label="LOA não alocada por fonte"></canvas></div></figure>
+                <figure class="na-grafico"><figcaption>Por órgão (15 maiores)</figcaption><div class="na-canvas"><canvas id="graf-na-orgao" role="img" aria-label="LOA não alocada por órgão"></canvas></div></figure>
+                <figure class="na-grafico so-programa"><figcaption>Por programa (15 maiores)</figcaption><div class="na-canvas"><canvas id="graf-na-programa" role="img" aria-label="LOA não alocada por programa"></canvas></div></figure>
+            </div>
+            <h3 class="estudo-subtitulo">Por fonte</h3>
+            <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-na-fonte"></div></div>
+            <h3 class="estudo-subtitulo">Por órgão</h3>
+            <div class="estudo-tabela-wrap" style="max-height:420px;"><div id="tabela-na-orgao"></div></div>
+            <h3 class="estudo-subtitulo">Por par Órgão × <span class="so-programa">Programa × </span>Fonte</h3>
+            <div class="estudo-tabela-wrap" style="max-height:480px;"><div id="tabela-na-par"></div></div>
+            <h3 class="estudo-subtitulo">Por ação do PLOA (projeto / atividade / operação especial)</h3>
+            <p class="estudo-nota">Onde está a LOA não alocada no PLOA 2027 por ação. Na "Sobra no par", o valor de cada ação é a parte proporcional: valor da ação × (não alocado ÷ LOA do par).</p>
+            <div class="estudo-tabela-wrap" style="max-height:480px;"><div id="tabela-na-acao"></div></div>
         </div>
     </section>
 
