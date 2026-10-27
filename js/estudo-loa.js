@@ -217,6 +217,14 @@ function fmtPct(v) {
     return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
 }
 
+// Razão em relação a uma referência (Necessidade ÷ LOA, Atendimento): até 100% mostra o percentual;
+// acima, só o excedente sobre a referência — 128% vira "+28%". O tooltip guarda o valor completo.
+function fmtRazao(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    if (v > 100.005) return '+' + fmtPct(v - 100);
+    return fmtPct(v);
+}
+
 function lerArquivoComoBuffer(arquivo) {
     return new Promise((resolve, reject) => {
         let r = new FileReader();
@@ -1111,7 +1119,7 @@ function renderizarDeParaPorMapp(todas, fGrupo) {
             <td><span class="seta-grupo">${aberto ? '▾' : '▸'}</span> <strong>${escHtml(g.fonte)}</strong></td>
             <td class="num"${dica(compos)}>${g.subs.length || '—'}</td>${g.loa ? tdNum(g.loa, compos) : '<td class="num">—</td>'}
             <td class="num">${g.mapps || '—'}</td>${tdNum(g.necAj, `Σ Nec. 2027 Ajustada dos ${g.mapps} MAPPs = ${FT(g.necAj)}`)}
-            <td class="num ${pct !== null && pct > 100 ? 'pct-alto' : ''}"${dica(pct === null ? 'Sem LOA ligada' : `${FT(g.necAj)} ÷ ${FT(g.loa)} × 100`)}>${fmtPct(pct)}</td></tr>`;
+            <td class="num ${pct !== null && pct > 100 ? 'pct-alto' : ''}"${dica(pct === null ? 'Sem LOA ligada' : `${FT(g.necAj)} ÷ ${FT(g.loa)} × 100`)}>${fmtRazao(pct)}</td></tr>`;
         if (aberto) h += `<tr class="linha-mapps"><td colspan="6">${subtabelaComposicaoFonte(g, todas)}</td></tr>`;
     });
     let semLOA = linhas.filter(g => !g.subs.length && g.necAj > 0.5);
@@ -1285,7 +1293,8 @@ const DESC_COLUNAS = {
         fonte: 'Fonte do MAPP.', estagio: 'Estágio de execução.',
         loaPar: 'LOA 2027 do par do MAPP (órgão [× programa] × fonte), repartida entre os MAPPs do par.',
         necAj: 'Nec. 2027 Ajustada do MAPP = Programado 2027 + (Programado 2026 − Prev. Empenho Ajustada). É o teto da proposta automática.',
-        proposta: DESC_PROPOSTA
+        proposta: 'LOA alocada ao MAPP. ' + DESC_PROPOSTA,
+        atend: 'Atendimento = Proposta (LOA alocada) ÷ Nec. Ajustada (demanda) × 100. Até 100% mostra o percentual; acima, só o excedente (ex.: +28%).'
     }
 };
 
@@ -1328,7 +1337,7 @@ const COLUNAS_CONSOLIDADO = [
     { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj,
       celula: l => `<td class="num"${dica(`Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(l.p27)} + (${FT(l.p26)} − ${FT(l.prevEmpAj)}) = ${FT(l.necAj)}`)}><strong>${F(l.necAj)}</strong></td>` },
     { chave: 'pctLOA', titulo: 'Necessidade ÷ LOA', num: true, valor: l => l.pctLOA,
-      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}"${dica(l.pctLOA === null ? 'Sem LOA 2027: não há percentual' : `Necessidade ÷ LOA = Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''} ÷ LOA 2027 × 100\n= ${FT(l.filhos ? l.necAjComLOA : l.necAj)} ÷ ${FT(l.loa)} × 100 = ${fmtPct(l.pctLOA)}`)}>${fmtPct(l.pctLOA)}</td>` },
+      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}"${dica(l.pctLOA === null ? 'Sem LOA 2027: não há percentual' : `Necessidade ÷ LOA = Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''} ÷ LOA 2027 × 100\n= ${FT(l.filhos ? l.necAjComLOA : l.necAj)} ÷ ${FT(l.loa)} × 100 = ${fmtPct(l.pctLOA)}`)}>${fmtRazao(l.pctLOA)}</td>` },
     { chave: 'saldo', titulo: 'Saldo (LOA − Nec. Aj.)', num: true, valor: l => l.saldo,
       celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}"${dica(l.saldo === null ? 'Sem LOA 2027: não há saldo' : `Saldo = LOA 2027 − Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''}\n= ${FT(l.loa)} − ${FT(l.filhos ? l.necAjComLOA : l.necAj)} = ${FT(l.saldo)}`)}>${l.saldo === null ? '—' : F(l.saldo)}</td>` },
     { chave: 'subfontes', titulo: 'Fontes da LOA', num: true, valor: l => l.subfontes ? l.subfontes.size : 0,
@@ -1378,7 +1387,7 @@ function renderizarConsolidado() {
         <div${dica(`Σ LOA 2027 dos ${tot.paresLOA} pares Órgão × Fonte do filtro = ${FT(tot.loa)}`)}><span>LOA 2027 (filtro)</span><b>${F(tot.loa)}</b></div>
         <div${dica(dNec)}><span>Necessidade 2027 Calculada</span><b>${F(tot.nec)}</b></div>
         <div${dica(dNecAj)}><span>Necessidade 2027 Ajustada</span><b>${F(tot.necAj)}</b></div>
-        <div${dica(dPct)}><span>Necessidade ÷ LOA (onde há LOA)</span><b class="${pctTot > 100 ? 'valor-estouro' : ''}">${fmtPct(pctTot)}</b><small style="color:var(--muted);">${pctTot === null ? '' : pctTot > 100
+        <div${dica(dPct)}><span>Necessidade ÷ LOA (onde há LOA)</span><b class="${pctTot > 100 ? 'valor-estouro' : ''}">${fmtRazao(pctTot)}</b><small style="color:var(--muted);">${pctTot === null ? '' : pctTot > 100
             ? `necessidade ${(pctTot / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}× a LOA — faltam ${abreviarValor(tot.necAjComLOA - tot.loa)}`
             : `a LOA cobre a necessidade — sobram ${abreviarValor(tot.loa - tot.necAjComLOA)}`}</small></div>
         <div${dica(`Σ Nec. 2027 Ajustada dos ${semLOA.length} pares Órgão × Fonte sem LOA 2027 = ${FT(necSemLOA)}`)}><span>Nec. Ajustada em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
@@ -1435,7 +1444,7 @@ function renderizarConsolidado() {
     h += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}" title="Soma de TODAS as linhas da grade (todos os órgãos e fontes do filtro) — não é o total da linha aberta">TOTAL GERAL DA GRADE (${rotuloTotal})</td>
         ${tdNum(tot.loa, `Σ LOA 2027 das ${linhas.length} linhas = ${FT(tot.loa)}`)}<td class="num"${dica('Σ MAPPs ativos das linhas')}>${tot.qtd}</td>${tdNum(tot.p26, `Σ Programado 2026 = ${FT(tot.p26)}`)}
         ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada = ${FT(tot.prevEmpAj)}`)}${tdNum(tot.nec, dNec)}${tdNum(tot.necAj, dNecAj)}
-        <td class="num"${dica(dPct)}>${fmtPct(pctTot)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
+        <td class="num"${dica(dPct)}>${fmtRazao(pctTot)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
     cont.innerHTML = h;
 }
 
@@ -1617,7 +1626,7 @@ function renderizarGrupos() {
         let pct = prm.vd[g.classe] * 100;
         let c = celulas(s, doGrupo.length, 'do grupo');
         h += `<tr><td>${escHtml(g.label)}</td><td class="num"${dica(`MAPPs ativos (não expurgados) do grupo ${g.label}`)}>${doGrupo.length.toLocaleString('pt-BR')}</td>${c[0]}
-            ${c[1]}<td class="num"${dica(`Valor Deliberado do grupo (parâmetro acima)${prm.vdFonte ? ', só na fonte ' + prm.vdFonte : ', em todas as fontes'}`)}>${fmtPct(pct)}</td>
+            ${c[1]}<td class="num"${dica(`Valor Deliberado do grupo (parâmetro acima)${prm.vdFonte ? ', só na fonte ' + prm.vdFonte : ', em todas as fontes'}`)}>${fmtRazao(pct)}</td>
             ${tdNum(s.prevEmpAj, `Prev. Empenho Ajustada = Σ Prev. Empenho × (1 − ${fmtPct(pct)})${prm.vdFonte ? ' nos MAPPs da fonte ' + prm.vdFonte + ' (demais sem redução)' : ''}\n= ${FT(s.prevEmpAj)}`)}
             ${c[2]}${c[3]}</tr>`;
     });
@@ -2016,7 +2025,7 @@ function renderizarAjustesFinais() {
     } else {
         let h = `<table><thead><tr><th class="sem-ordem" style="width:86px;"></th>${thDesc('Fonte do MAPP', 'Fonte com diferença entre LOA e Proposta (só as divergentes aparecem).')}
             ${thDesc('Situação', 'Acima da LOA: a Proposta passa da LOA em algum órgão. LOA sobrando: há sobra que cabe nos MAPPs não editados (use Distribuir). LOA sem destino: só sobra que não cabe na necessidade dos MAPPs.')}
-            ${thDesc('LOA 2027', 'Σ LOA 2027 dos órgãos do filtro nesta fonte.', 'num')}${thDesc('Proposta 2027', 'Σ Proposta de Programado 2027 dos MAPPs da fonte. ' + DESC_PROPOSTA, 'num')}
+            ${thDesc('LOA 2027', 'Σ LOA 2027 dos órgãos do filtro nesta fonte.', 'num')}${thDesc('Proposta 2027 (LOA alocada)', 'Σ Proposta de Programado 2027 dos MAPPs da fonte. ' + DESC_PROPOSTA, 'num')}
             ${thDesc('Diferença', 'LOA − Proposta. Positivo (laranja): sobra; negativo (vermelho): estouro.', 'num')}
             ${thDesc('LOA sem destino', 'Por órgão: sobra (LOA − Proposta) que não cabe na Nec. Ajustada dos MAPPs não editados — órgão sem MAPP com necessidade ou LOA além da necessidade. Só a grade de MAPPs sem necessidade pode recebê-la (valor manual).', 'num')}
             ${thDesc('A distribuir', 'Sobra que cabe nos MAPPs não editados até a Nec. Ajustada (+) menos o que a Proposta passa da LOA (−). Resolvido pelo botão Distribuir.', 'num')}
@@ -2063,7 +2072,7 @@ function renderizarAjustesFinais() {
     linhasAjustes.forEach(l => { if (noFiltroAjustes(f, l)) (mappsPorOrgao[N(l.orgao)] = mappsPorOrgao[N(l.orgao)] || []).push(l); });
     let ho = `<table><thead><tr>${thDesc('Órgão', 'Órgão (clique na linha para abrir os MAPPs dele aqui mesmo; novo clique recolhe).')}${thDesc('Fontes', 'Fontes do órgão com LOA ou MAPP, conforme o filtro.', 'num')}
         ${thDesc('MAPPs', 'MAPPs ativos do órgão.', 'num')}${thDesc('LOA 2027', 'Σ LOA 2027 do órgão nas fontes do filtro.', 'num')}
-        ${thDesc('Nec. 2027 Ajustada', 'Σ Nec. 2027 Ajustada dos MAPPs do órgão.', 'num')}${thDesc('Proposta 2027', 'Σ Proposta dos MAPPs do órgão. ' + DESC_PROPOSTA, 'num')}
+        ${thDesc('Nec. 2027 Ajustada (demanda)', 'Σ Nec. 2027 Ajustada dos MAPPs do órgão: o que eles precisam, sem olhar a LOA.', 'num')}${thDesc('Proposta 2027 (LOA alocada)', 'Σ Proposta dos MAPPs do órgão: quanto da LOA foi para eles. ' + DESC_PROPOSTA, 'num')}
         ${thDesc('Diferença', 'LOA − Proposta do órgão.', 'num')}</tr></thead><tbody>`;
     orgaos.forEach(o => {
         let st = Math.abs(o.dif) < TOLERANCIA_ALERTA ? 'ok' : (o.dif > 0 ? 'sobra' : 'estouro');
@@ -2092,6 +2101,15 @@ function renderizarAjustesFinais() {
     renderizarNaoAlocada();
 }
 
+// Atendimento = Proposta (LOA alocada) ÷ Necessidade Ajustada (demanda) × 100; sem necessidade, não há.
+function atendimentoPct(l) { return l.necAj > 0.005 ? propostaDe(l) / l.necAj * 100 : null; }
+
+function celulaAtendimento(prop, nec) {
+    let v = nec > 0.005 ? prop / nec * 100 : null;
+    return `<td class="num ${v !== null && v > 100.005 ? 'pct-alto' : ''}"${dica(v === null ? 'Sem necessidade: não há atendimento' :
+        `Atendimento = Proposta (LOA alocada) ÷ Nec. Ajustada (demanda) × 100\n= ${FT(prop)} ÷ ${FT(nec)} × 100 = ${fmtPct(v)}` + (v > 100.005 ? `\nA proposta passa da necessidade em ${fmtPct(v - 100)}.` : ''))}>${fmtRazao(v)}</td>`;
+}
+
 // Linha de MAPP com a Proposta editável (grades de MAPPs e MAPPs abertos na grade "Órgãos").
 function linhaMappAjuste(l) {
     let man = propostasManuais[l.chave];
@@ -2104,6 +2122,7 @@ function linhaMappAjuste(l) {
         ${tdNum(l.necAj, explicarNecAj(l))}
         <td class="num"${dica(explicarProposta(l))}><input class="input-proposta" data-chave="${escHtml(l.chave)}" value="${valorTxt}" onchange="editarProposta(this)" onkeydown="if(event.key==='Enter'){this.blur();}" title="${escHtml(explicarProposta(l))}">
             ${man ? `<button class="btn-link" onclick="restaurarProposta('${escHtml(l.chave.replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" title="${man.origem === 'redistribuicao' ? 'Valor da redistribuição' : 'Editado'} — voltar ao automático (${escHtml(F(l.auto))})">↺</button>` : ''}</td>
+        ${celulaAtendimento(propostaDe(l), l.necAj)}
     </tr>`;
 }
 
@@ -2124,7 +2143,7 @@ function subtabelaMappsOrgaoAjustes(linhas) {
     ordenadas.slice(0, LIMITE_SUB_MAPPS).forEach(l => { h += linhaMappAjuste(l); });
     let t = linhas.reduce((s, l) => { s.necAj += l.necAj; s.proposta += propostaDe(l); return s; }, { necAj: 0, proposta: 0 });
     h += `</tbody><tfoot><tr><td colspan="${colsTexto(5)}">Total deste órgão: ${linhas.length} MAPP(s)${linhas.length > LIMITE_SUB_MAPPS ? ` — exibindo ${LIMITE_SUB_MAPPS}; use o filtro de fonte para ver os demais` : ''}</td>
-        ${tdNum(t.necAj, `Σ Nec. 2027 Ajustada = ${FT(t.necAj)}`)}${tdNum(t.proposta, `Σ Proposta = ${FT(t.proposta)}`)}</tr></tfoot></table>`;
+        ${tdNum(t.necAj, `Σ Nec. 2027 Ajustada = ${FT(t.necAj)}`)}${tdNum(t.proposta, `Σ Proposta = ${FT(t.proposta)}`)}${celulaAtendimento(t.proposta, t.necAj)}</tr></tfoot></table>`;
     return h;
 }
 
@@ -2140,7 +2159,7 @@ function tabelaMappsAjustes(linhas, msgVazia) {
     let avisoLim = linhas.length > exibidas.length ? ` — exibindo ${exibidas.length}; filtre por fonte ou órgão para ver todas` : '';
     hm += `</tbody><tfoot><tr><td colspan="${colsTexto(4)}">TOTAL (${linhas.length.toLocaleString('pt-BR')} MAPPs${avisoLim})</td>
         ${tdNum(loaPares, `Σ LOA 2027 dos ${Object.keys(paresVistos).length} pares Órgão × Fonte destes MAPPs (cada par uma vez) = ${FT(loaPares)}`)}
-        ${tdNum(tm.necAj, `Σ Nec. 2027 Ajustada dos ${linhas.length} MAPPs = ${FT(tm.necAj)}`)}${tdNum(tm.proposta, `Σ Proposta dos ${linhas.length} MAPPs = ${FT(tm.proposta)}`)}</tr></tfoot></table>`;
+        ${tdNum(tm.necAj, `Σ Nec. 2027 Ajustada dos ${linhas.length} MAPPs = ${FT(tm.necAj)}`)}${tdNum(tm.proposta, `Σ Proposta dos ${linhas.length} MAPPs = ${FT(tm.proposta)}`)}${celulaAtendimento(tm.proposta, tm.necAj)}</tr></tfoot></table>`;
     return hm;
 }
 
@@ -2151,8 +2170,9 @@ const COLUNAS_AJUSTES = [
     { chave: 'fonte', titulo: 'Fonte do MAPP', valor: l => l.fonte },
     { chave: 'estagio', titulo: 'Estágio', valor: l => l.estagio },
     { chave: 'loaPar', titulo: 'LOA 2027 do par', num: true, valor: l => l.loaPar },
-    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj },
-    { chave: 'proposta', titulo: 'Proposta Programado 2027', num: true, valor: l => l.proposta }
+    { chave: 'necAj', titulo: 'Nec. 2027 Ajustada (demanda)', num: true, valor: l => l.necAj },
+    { chave: 'proposta', titulo: 'Proposta Programado 2027 (LOA alocada)', num: true, valor: l => l.proposta },
+    { chave: 'atend', titulo: 'Atendimento %', num: true, valor: l => atendimentoPct(l) }
 ];
 
 // ─── ABA 6: LOA NÃO ALOCADA (LOA 2027 não vinculada a MAPP) ─────────────────
@@ -2679,12 +2699,12 @@ async function exportarEstudoXLSX() {
             { titulo: 'MAPP', chave: 'mapp', largura: 60 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
             { titulo: 'PROGRAMA', chave: 'programa', largura: 40 },
             { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
-            { titulo: 'LOA 2027 DO PAR', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
-            { titulo: 'PROPOSTA AUTOMÁTICA', chave: 'auto', moeda: true, largura: 20 }, { titulo: 'PROPOSTA PROGRAMADO 2027', chave: 'proposta', moeda: true, largura: 22 },
+            { titulo: 'LOA 2027 DO PAR', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA (DEMANDA)', chave: 'necAj', moeda: true, largura: 20 },
+            { titulo: 'PROPOSTA AUTOMÁTICA', chave: 'auto', moeda: true, largura: 20 }, { titulo: 'PROPOSTA PROGRAMADO 2027 (LOA ALOCADA)', chave: 'proposta', moeda: true, largura: 22 }, { titulo: 'ATENDIMENTO %', chave: 'atend', pct: true, largura: 13 },
             { titulo: 'ORIGEM', chave: 'origem', largura: 16 }, { titulo: 'GRADE', chave: 'grade', largura: 18 },
             { titulo: 'ACIMA DA NEC. AJUSTADA', chave: 'excede', largura: 14 }
         ], linhasAjustes.map(l => ({ mapp: l.mapp, orgao: l.orgao, programa: rotuloPrograma(l.programa, l.nomePrograma), fonte: l.fonte, estagio: l.estagio, loa: l.loaPar, necAj: l.necAj, auto: l.auto,
-            proposta: propostaDe(l), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática',
+            proposta: propostaDe(l), atend: atendimentoPct(l) === null ? null : Number(atendimentoPct(l).toFixed(4)), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática',
             grade: l.grade === 1 ? 'com necessidade' : 'sem necessidade', excede: propostaExcede(l) ? 'SIM' : '' })));
         adicionarAbaEstudo(wb, 'ALERTAS_FONTES', [
             { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }, { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 },

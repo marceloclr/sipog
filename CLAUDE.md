@@ -175,6 +175,10 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   ("500-501", "759.070") ou descrição. Usado pelo "Carregar de-para", pelo pacote e pelo **importador de formato livre**
   (aba 3, CSV ;/,/tab em UTF-8 ou Windows-1252, ou xlsx; o usuário escolhe as colunas — salvas por cabeçalho em
   `CHAVE_MAPA_IMPORT_DEPARA` —, vê a pré-visualização com status e só então aplica; relatório em xlsx).
+- Termos de demanda × alocação: "Nec. 2027 Ajustada (demanda)" é o que o MAPP precisa (não depende da LOA);
+  "Proposta (LOA alocada)" é quanto da LOA vai para ele (≤ necessidade, salvo edição). "Atendimento %" = Proposta ÷
+  Necessidade (`atendimentoPct`/`celulaAtendimento`). Razões acima de 100% aparecem só pelo excedente (`fmtRazao`:
+  128% → "+28%"), em Necessidade ÷ LOA e Atendimento; o tooltip mostra o valor completo.
 - Termos: na tela e no XLSX é "Fonte do MAPP" (não "Fonte do SIPOG"); o percentual Nec. Ajustada ÷ LOA chama-se
   "Necessidade ÷ LOA" (só pares com LOA; card mostra quantas vezes e quanto falta/sobra).
 - Consolidado com programa: `gruposConsolidado` mostra uma linha por Órgão × Fonte (total) e, ao clicar
