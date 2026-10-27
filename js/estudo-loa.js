@@ -828,7 +828,7 @@ function restaurarParametrosEstudo() {
     recalcularEstudo();
 }
 
-// ─── DE-PARA: SUB FONTE DA LOA → FONTE DO SIPOG ─────────────────────────────
+// ─── DE-PARA: SUB FONTE DA LOA → FONTE DO MAPP ──────────────────────────────
 function carregarDeParaManual() {
     try { deParaManual = JSON.parse(localStorage.getItem(CHAVE_DEPARA_LOCAL) || '{}') || {}; }
     catch (e) { deParaManual = {}; }
@@ -845,7 +845,7 @@ function fontesSIPOGDisponiveis() {
 // Regras, em ordem: exata → tesouro → prefixo → sem par.
 // A sub fonte do PLOA por ação vem como "FT.DT" (ex.: "754.59"), sem a modalidade que a 754
 // usa no código do SIPOG ((754)-(259)): com uma só sub fonte conhecida para o FT.DT, usa o
-// código completo dela; senão, procura a fonte do SIPOG com o mesmo FT terminada no DT.
+// código completo dela; senão, procura a fonte do MAPP com o mesmo FT terminada no DT.
 function sugerirFonteSIPOG(linhaLOA, fontesSIPOG) {
     let seg = linhaLOA.subfonte.split('.');
     if (seg.length === 2 && (linhaLOA.codigosSubfonte || []).length === 1) seg = linhaLOA.codigosSubfonte[0].split('.');
@@ -939,8 +939,8 @@ function renderizarDePara() {
         ${thDesc('Grupo', 'Grupo da sub fonte na LOA: Tesouro ou Outras Fontes (coluna do valor no relatório).')}${thDesc('Sub fonte', 'Código da sub fonte na LOA (fonte.detalhamento).')}
         ${thDesc('Descrição', 'Descrição da sub fonte na LOA.')}
         ${thDesc('Órgãos', 'Órgãos do Executivo com LOA nesta sub fonte.', 'num')}${thDesc('LOA 2027', 'Σ LOA 2027 da sub fonte em todos os órgãos do Executivo.', 'num')}
-        ${thDesc('Regra', 'Como a Fonte do SIPOG foi achada: exata (código igual), tesouro (500/501 do grupo Tesouro), prefixo (fonte única com o mesmo código) ou manual.')}
-        ${thDesc('Fonte do SIPOG', 'Fonte do SIPOG que recebe a LOA desta sub fonte. "Sem fonte" deixa a LOA fora do cruzamento.')}</tr></thead><tbody>`;
+        ${thDesc('Regra', 'Como a Fonte do MAPP foi achada: exata (código igual), tesouro (500/501 do grupo Tesouro), prefixo (fonte única com o mesmo código) ou manual.')}
+        ${thDesc('Fonte do MAPP', 'Fonte do MAPP que recebe a LOA desta sub fonte. "Sem fonte" deixa a LOA fora do cruzamento.')}</tr></thead><tbody>`;
     lista.forEach(s => {
         let ef = fonteEfetiva(s.subfonte);
         let sug = deParaSugerido[s.subfonte] || { fonte: '', regra: 'sem' };
@@ -960,7 +960,7 @@ function renderizarDePara() {
     });
     h += `</tbody><tfoot><tr><td colspan="3">TOTAL${fGrupo ? ' ' + escHtml(fGrupo).toUpperCase() : ''} (${lista.length} sub fontes)</td>
         <td class="num"${dica('Σ pares Órgão × Sub fonte')}>${tot.orgaos}</td>
-        ${tdNum(tot.valor, `Σ LOA das ${lista.length} sub fontes = com fonte do SIPOG ${FT(tot.valorCom)} + sem fonte ${FT(tot.valorSem)} = ${FT(tot.valor)}`)}
+        ${tdNum(tot.valor, `Σ LOA das ${lista.length} sub fontes = com fonte do MAPP ${FT(tot.valorCom)} + sem fonte ${FT(tot.valorSem)} = ${FT(tot.valor)}`)}
         <td colspan="2" style="font-weight:600; font-size:11px; white-space:normal;">Com fonte: ${tot.qtdCom} · ${F(tot.valorCom)} &nbsp;|&nbsp; Sem fonte: ${tot.qtdSem} · ${F(tot.valorSem)}</td>
         </tr></tfoot></table>`;
     cont.innerHTML = h;
@@ -1071,7 +1071,7 @@ function ordenarLinhas(linhas, colunas, ordem) {
 const DESC_PROPOSTA = 'Grade com necessidade: automática = Nec. Ajustada × mín(1, LOA do par Órgão × Fonte ÷ Σ Nec. Ajustada dos MAPPs do par) — proporcional à necessidade e nunca acima dela. Grade sem necessidade: R$ 0 (só manual). Valor editado ou redistribuído ("Distribuir") substitui o automático.';
 const DESC_COLUNAS = {
     cons: {
-        fonte: 'Fonte do SIPOG (a sub fonte da LOA vem pelo De-para da aba 3).',
+        fonte: 'Fonte do MAPP (a sub fonte da LOA vem pelo De-para da aba 3).',
         orgao: 'Órgão (sigla). Na LOA, a sigla entre parênteses do nome do órgão.',
         programa: 'Programa de governo (PLOA 2027 por ação × coluna PROGRAMA dos MAPPs). O par passa a ser Órgão × Programa × Fonte.',
         situacao: 'LOA e MAPPs: o par tem LOA e MAPPs ativos. MAPPs sem LOA: há MAPPs, mas o órgão não tem LOA nesta fonte. LOA sem MAPPs: há LOA, mas nenhum MAPP ativo.',
@@ -1082,13 +1082,13 @@ const DESC_COLUNAS = {
         prevEmpAj: 'Σ Prev. Empenho × (1 − % do Valor Deliberado do grupo).',
         nec: 'Nec. 2027 Calculada = Σ Programado 2027 + Σ TRF 2026, com TRF = Programado 2026 − Prev. Empenho.',
         necAj: 'Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada).',
-        pctLOA: '% da LOA = Nec. 2027 Ajustada ÷ LOA 2027 × 100. Acima de 100%: a necessidade passa da LOA.',
+        pctLOA: 'Necessidade ÷ LOA = Nec. 2027 Ajustada ÷ LOA 2027 × 100: quanto da LOA a necessidade dos MAPPs representa. 100% = a LOA cobre exatamente; acima de 100% (vermelho) = a necessidade passa da LOA; abaixo = sobra LOA.',
         saldo: 'Saldo = LOA 2027 − Nec. 2027 Ajustada. Negativo: a necessidade passa da LOA.',
         subfontes: 'Sub fontes da LOA somadas nesta linha.'
     },
     det: {
         mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', programa: 'Programa do MAPP (coluna PROGRAMA da base ou do arquivo "Programas dos MAPPs").',
-        fonte: 'Fonte do MAPP no SIPOG.', estagio: 'Estágio de execução (normalizado como no SIPOG).',
+        fonte: 'Fonte do MAPP.', estagio: 'Estágio de execução (normalizado como no SIPOG).',
         grupo: 'Grupo do MAPP (Contrato Gestão, Continuidade, PCF Convênio, Operação de Crédito ou Demais Projetos).',
         p26: 'Programado 2026 (valor da base).', l26: 'Limite 2026 (valor da base).', e26: 'Empenhado 2026 (valor da base).',
         regra: 'Regra da Previsão de Empenho aplicada ao MAPP (cópia do SIPOG).',
@@ -1102,7 +1102,7 @@ const DESC_COLUNAS = {
     },
     aj: {
         mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', programa: 'Programa do MAPP (o par é Órgão × Programa × Fonte).',
-        fonte: 'Fonte do MAPP no SIPOG.', estagio: 'Estágio de execução.',
+        fonte: 'Fonte do MAPP.', estagio: 'Estágio de execução.',
         loaPar: 'LOA 2027 do par do MAPP (órgão [× programa] × fonte), repartida entre os MAPPs do par.',
         necAj: 'Nec. 2027 Ajustada do MAPP = Programado 2027 + (Programado 2026 − Prev. Empenho Ajustada). É o teto da proposta automática.',
         proposta: DESC_PROPOSTA
@@ -1131,7 +1131,7 @@ function colsTexto(n) { return n + (cruzaPrograma ? 1 : 0); }
 
 // ─── CONSOLIDADO ÓRGÃO × FONTE (grade) ──────────────────────────────────────
 const COLUNAS_CONSOLIDADO = [
-    { chave: 'fonte', titulo: 'Fonte do SIPOG', valor: l => l.fonte, celula: l => `<td class="col-fonte">${escHtml(l.fonte)}</td>` },
+    { chave: 'fonte', titulo: 'Fonte do MAPP', valor: l => l.fonte, celula: l => `<td class="col-fonte">${escHtml(l.fonte)}</td>` },
     { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao, celula: l => `<td><strong>${escHtml(l.orgao)}</strong></td>` },
     COLUNA_PROGRAMA,
     { chave: 'situacao', titulo: 'Situação', valor: l => ROTULO_SITUACAO[l.situacao], ordem: l => ORDEM_SITUACAO[l.situacao],
@@ -1147,10 +1147,10 @@ const COLUNAS_CONSOLIDADO = [
       dica: l => `Nec. 2027 Calculada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho)\n= ${FT(l.p27)} + (${FT(l.p26)} − ${FT(l.prevEmp)}) = ${FT(l.nec)}` },
     { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj,
       celula: l => `<td class="num"${dica(`Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(l.p27)} + (${FT(l.p26)} − ${FT(l.prevEmpAj)}) = ${FT(l.necAj)}`)}><strong>${F(l.necAj)}</strong></td>` },
-    { chave: 'pctLOA', titulo: '% da LOA', num: true, valor: l => l.pctLOA,
-      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}"${dica(l.pctLOA === null ? 'Sem LOA 2027: não há percentual' : `% da LOA = Nec. 2027 Ajustada ÷ LOA 2027 × 100\n= ${FT(l.necAj)} ÷ ${FT(l.loa)} × 100 = ${fmtPct(l.pctLOA)}`)}>${fmtPct(l.pctLOA)}</td>` },
+    { chave: 'pctLOA', titulo: 'Necessidade ÷ LOA', num: true, valor: l => l.pctLOA,
+      celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}"${dica(l.pctLOA === null ? 'Sem LOA 2027: não há percentual' : `Necessidade ÷ LOA = Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''} ÷ LOA 2027 × 100\n= ${FT(l.filhos ? l.necAjComLOA : l.necAj)} ÷ ${FT(l.loa)} × 100 = ${fmtPct(l.pctLOA)}`)}>${fmtPct(l.pctLOA)}</td>` },
     { chave: 'saldo', titulo: 'Saldo (LOA − Nec. Aj.)', num: true, valor: l => l.saldo,
-      celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}"${dica(l.saldo === null ? 'Sem LOA 2027: não há saldo' : `Saldo = LOA 2027 − Nec. 2027 Ajustada\n= ${FT(l.loa)} − ${FT(l.necAj)} = ${FT(l.saldo)}`)}>${l.saldo === null ? '—' : F(l.saldo)}</td>` },
+      celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}"${dica(l.saldo === null ? 'Sem LOA 2027: não há saldo' : `Saldo = LOA 2027 − Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''}\n= ${FT(l.loa)} − ${FT(l.filhos ? l.necAjComLOA : l.necAj)} = ${FT(l.saldo)}`)}>${l.saldo === null ? '—' : F(l.saldo)}</td>` },
     { chave: 'subfontes', titulo: 'Sub fontes da LOA', valor: l => l.subfontesTxt, celula: l => `<td style="font-size:11px; color:var(--muted);">${escHtml(l.subfontesTxt)}</td>` }
 ];
 
@@ -1185,26 +1185,87 @@ function renderizarConsolidado() {
     let pctTot = tot.loa > 0 ? tot.necAjComLOA / tot.loa * 100 : null;
     let dNec = `Nec. 2027 Calculada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho)\n= ${FT(tot.p27)} + (${FT(tot.p26)} − ${FT(tot.prevEmp)}) = ${FT(tot.nec)}`;
     let dNecAj = `Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada)\n= ${FT(tot.p27)} + (${FT(tot.p26)} − ${FT(tot.prevEmpAj)}) = ${FT(tot.necAj)}`;
-    let dPct = pctTot === null ? 'Sem LOA no filtro' : `% da LOA = Nec. Ajustada dos pares com LOA ÷ LOA × 100\n= ${FT(tot.necAjComLOA)} ÷ ${FT(tot.loa)} × 100 = ${fmtPct(pctTot)}`;
+    // Cobertura: quanto a necessidade dos MAPPs representa da LOA, só onde há LOA (os MAPPs sem LOA
+    // ficam de fora para não inflar a conta). Acima de 100% = a LOA não cobre a necessidade.
+    let dPct = pctTot === null ? 'Sem LOA no filtro' : `Necessidade ÷ LOA = Σ Nec. 2027 Ajustada dos MAPPs que têm LOA no par ÷ Σ LOA 2027 × 100\n` +
+        `= ${FT(tot.necAjComLOA)} ÷ ${FT(tot.loa)} × 100 = ${fmtPct(pctTot)}\n` +
+        (pctTot > 100 ? `A necessidade é ${(pctTot / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} vezes a LOA: faltam ${FT(tot.necAjComLOA - tot.loa)} para cobri-la.`
+            : `A LOA cobre a necessidade e sobram ${FT(tot.loa - tot.necAjComLOA)}.`) +
+        `\nMAPPs de pares sem LOA não entram (estão no card "Nec. Ajustada em MAPPs sem LOA").`;
     resumoEl.innerHTML = `
         <div${dica(`Σ LOA 2027 dos ${tot.paresLOA} pares Órgão × Fonte do filtro = ${FT(tot.loa)}`)}><span>LOA 2027 (filtro)</span><b>${F(tot.loa)}</b></div>
         <div${dica(dNec)}><span>Necessidade 2027 Calculada</span><b>${F(tot.nec)}</b></div>
         <div${dica(dNecAj)}><span>Necessidade 2027 Ajustada</span><b>${F(tot.necAj)}</b></div>
-        <div${dica(dPct)}><span>% da LOA (Ajustada, só pares com LOA)</span><b>${fmtPct(pctTot)}</b></div>
+        <div${dica(dPct)}><span>Necessidade ÷ LOA (onde há LOA)</span><b class="${pctTot > 100 ? 'valor-estouro' : ''}">${fmtPct(pctTot)}</b><small style="color:var(--muted);">${pctTot === null ? '' : pctTot > 100
+            ? `necessidade ${(pctTot / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}× a LOA — faltam ${abreviarValor(tot.necAjComLOA - tot.loa)}`
+            : `a LOA cobre a necessidade — sobram ${abreviarValor(tot.loa - tot.necAjComLOA)}`}</small></div>
         <div${dica(`Σ Nec. 2027 Ajustada dos ${semLOA.length} pares Órgão × Fonte sem LOA 2027 = ${FT(necSemLOA)}`)}><span>Nec. Ajustada em MAPPs sem LOA</span><b>${F(necSemLOA)}</b></div>
-        <div${dica(`Σ LOA das sub fontes sem Fonte do SIPOG no De-para (aba 3): ${resumoForaCruzamento.paresForaCruzamento} pares = ${FT(resumoForaCruzamento.loaForaCruzamento)}`)}><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
+        <div${dica(`Σ LOA das sub fontes sem Fonte do MAPP no De-para (aba 3): ${resumoForaCruzamento.paresForaCruzamento} pares = ${FT(resumoForaCruzamento.loaForaCruzamento)}`)}><span>LOA fora do cruzamento (sub fonte sem fonte)</span><b>${F(resumoForaCruzamento.loaForaCruzamento)}</b><small style="color:var(--muted);">${resumoForaCruzamento.paresForaCruzamento} pares — ver De-para</small></div>`;
 
     if (linhas.length === 0) { cont.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhuma linha para os filtros.</p>'; return; }
+    let celulas = l => COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : '')).join('');
+    let attrsPar = l => `data-orgao="${escHtml(l.orgao)}" data-programa="${escHtml(l.programa || '')}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)"`;
     let h = `<table><thead>${cabecalhoOrdenavel('cons', COLUNAS_CONSOLIDADO)}</thead><tbody>`;
-    linhas.forEach(l => {
-        h += `<tr class="linha-clicavel" data-orgao="${escHtml(l.orgao)}" data-programa="${escHtml(l.programa || '')}" data-fonte="${escHtml(l.fonte)}" onclick="abrirMAPPsDoPar(this)" title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte no card 5">` +
-            COLUNAS_CONSOLIDADO.map(c => c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : '')).join('') + '</tr>';
-    });
-    h += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}">TOTAL (${linhas.length} linhas)</td>
+    let rotuloTotal;
+    if (!cruzaPrograma) {
+        linhas.forEach(l => {
+            h += `<tr class="linha-clicavel" ${attrsPar(l)} title="Ver os MAPPs de ${escHtml(l.orgao)} nesta fonte">${celulas(l)}</tr>`;
+        });
+        rotuloTotal = `${linhas.length} linhas`;
+    } else {
+        // Com programa: uma linha por Órgão × Fonte (total da fonte no órgão); o clique abre os programas.
+        let grupos = gruposConsolidado(linhas);
+        grupos.forEach(g => {
+            let aberto = expandidosCons.has(g.chave);
+            let celProg = `<td class="so-programa" style="white-space:nowrap;"><span class="seta-grupo">${aberto ? '▾' : '▸'}</span> ${g.filhos.length} programa(s)
+                <button class="btn-link" onclick="event.stopPropagation(); abrirMAPPsDoPar(this.closest('tr'))" title="Ver todos os MAPPs de ${escHtml(g.orgao)} nesta fonte">ver MAPPs</button></td>`;
+            h += `<tr class="linha-clicavel linha-grupo" data-chave="${escHtml(g.chave)}" data-orgao="${escHtml(g.orgao)}" data-programa="" data-fonte="${escHtml(g.fonte)}"
+                onclick="alternarGrupoConsolidado(this.dataset.chave)" title="${aberto ? 'Recolher' : 'Ver a distribuição nos programas'}">` +
+                COLUNAS_CONSOLIDADO.map(c => c.chave === 'programa' ? celProg : (c.celula ? c.celula(g) : tdNum(c.valor(g), c.dica ? c.dica(g) : ''))).join('') + '</tr>';
+            if (aberto) g.filhos.forEach(l => {
+                h += `<tr class="linha-clicavel linha-filha" ${attrsPar(l)} title="Ver os MAPPs deste programa">` +
+                    COLUNAS_CONSOLIDADO.map(c => (c.chave === 'fonte' || c.chave === 'orgao') ? '<td></td>'
+                        : (c.celula ? c.celula(l) : tdNum(c.valor(l), c.dica ? c.dica(l) : ''))).join('') + '</tr>';
+            });
+        });
+        rotuloTotal = `${grupos.length} órgão × fonte · ${linhas.length} pares com programa`;
+    }
+    h += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}">TOTAL (${rotuloTotal})</td>
         ${tdNum(tot.loa, `Σ LOA 2027 das ${linhas.length} linhas = ${FT(tot.loa)}`)}<td class="num"${dica('Σ MAPPs ativos das linhas')}>${tot.qtd}</td>${tdNum(tot.p26, `Σ Programado 2026 = ${FT(tot.p26)}`)}
         ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada = ${FT(tot.prevEmpAj)}`)}${tdNum(tot.nec, dNec)}${tdNum(tot.necAj, dNecAj)}
         <td class="num"${dica(dPct)}>${fmtPct(pctTot)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
     cont.innerHTML = h;
+}
+
+// Agrupa os pares Órgão × Programa × Fonte em Órgão × Fonte. A ordenação da grade vale para os
+// grupos (pelo total) e para os programas dentro de cada grupo; sem ordenação, situação → fonte → LOA.
+let expandidosCons = new Set();
+
+function gruposConsolidado(linhas) {
+    let mapa = {};
+    linhas.forEach(l => {
+        let k = N(l.orgao) + '||' + l.fonte;
+        let g = mapa[k] || (mapa[k] = { chave: k, orgao: l.orgao, fonte: l.fonte, programa: '', nomePrograma: '', filhos: [], loa: 0, temLOA: false, qtd: 0,
+            p26: 0, p27: 0, prevEmp: 0, prevEmpAj: 0, nec: 0, necAj: 0, necAjComLOA: 0, subfontes: new Set(), loaSubfonte: {} });
+        g.filhos.push(l);
+        ['loa', 'qtd', 'p26', 'p27', 'prevEmp', 'prevEmpAj', 'nec', 'necAj'].forEach(c => { g[c] += l[c]; });
+        if (l.temLOA) { g.temLOA = true; g.necAjComLOA += l.necAj; }
+        l.subfontes.forEach(s => g.subfontes.add(s));
+        for (let s in l.loaSubfonte) g.loaSubfonte[s] = (g.loaSubfonte[s] || 0) + l.loaSubfonte[s];
+    });
+    let grupos = Object.values(mapa).map(g => Object.assign(g, {
+        situacao: g.temLOA && g.qtd > 0 ? 'OK' : (g.temLOA ? 'SEM_MAPP' : 'SEM_LOA'),
+        subfontesTxt: Array.from(g.subfontes).sort().join(', '),
+        pctLOA: g.loa > 0 ? g.necAjComLOA / g.loa * 100 : null,
+        saldo: g.temLOA ? g.loa - g.necAjComLOA : null
+    }));
+    if (ordemTabelas.cons.chave) return ordenarLinhas(grupos, COLUNAS_CONSOLIDADO, ordemTabelas.cons);
+    return grupos.sort((a, b) => (ORDEM_SITUACAO[a.situacao] - ORDEM_SITUACAO[b.situacao]) || a.fonte.localeCompare(b.fonte) || (b.loa - a.loa) || a.orgao.localeCompare(b.orgao));
+}
+
+function alternarGrupoConsolidado(chave) {
+    if (expandidosCons.has(chave)) expandidosCons.delete(chave); else expandidosCons.add(chave);
+    renderizarConsolidado();
 }
 
 // ─── DETALHE POR MAPP ───────────────────────────────────────────────────────
@@ -1732,7 +1793,7 @@ function renderizarAjustesFinais() {
     if (!divergentes.length) {
         contA.innerHTML = `<p class="estudo-nota" style="padding:12px; color:var(--success); font-weight:700;">✔ Todas as ${alertas.length} fonte(s) do filtro conferem: Proposta = LOA 2027.</p>`;
     } else {
-        let h = `<table><thead><tr><th class="sem-ordem" style="width:86px;"></th>${thDesc('Fonte do SIPOG', 'Fonte com diferença entre LOA e Proposta (só as divergentes aparecem).')}
+        let h = `<table><thead><tr><th class="sem-ordem" style="width:86px;"></th>${thDesc('Fonte do MAPP', 'Fonte com diferença entre LOA e Proposta (só as divergentes aparecem).')}
             ${thDesc('Situação', 'Acima da LOA: a Proposta passa da LOA em algum órgão. LOA sobrando: há sobra que cabe nos MAPPs não editados (use Distribuir). LOA sem destino: só sobra que não cabe na necessidade dos MAPPs.')}
             ${thDesc('LOA 2027', 'Σ LOA 2027 dos órgãos do filtro nesta fonte.', 'num')}${thDesc('Proposta 2027', 'Σ Proposta de Programado 2027 dos MAPPs da fonte. ' + DESC_PROPOSTA, 'num')}
             ${thDesc('Diferença', 'LOA − Proposta. Positivo (laranja): sobra; negativo (vermelho): estouro.', 'num')}
@@ -1838,7 +1899,7 @@ const COLUNAS_AJUSTES = [
     { chave: 'mapp', titulo: 'MAPP', valor: l => l.mapp },
     { chave: 'orgao', titulo: 'Órgão', valor: l => l.orgao },
     COLUNA_PROGRAMA,
-    { chave: 'fonte', titulo: 'Fonte SIPOG', valor: l => l.fonte },
+    { chave: 'fonte', titulo: 'Fonte do MAPP', valor: l => l.fonte },
     { chave: 'estagio', titulo: 'Estágio', valor: l => l.estagio },
     { chave: 'loaPar', titulo: 'LOA 2027 do par', num: true, valor: l => l.loaPar },
     { chave: 'necAj', titulo: 'Nec. 2027 Ajustada', num: true, valor: l => l.necAj },
@@ -1847,11 +1908,11 @@ const COLUNAS_AJUSTES = [
 
 // ─── ABA 6: LOA NÃO ALOCADA (LOA 2027 não vinculada a MAPP) ─────────────────
 // Três categorias, sempre nesta ordem e com a mesma cor (CSS --na-*):
-//   fora    = sub fonte sem Fonte do SIPOG no De-para (fora do cruzamento);
+//   fora    = sub fonte sem Fonte do MAPP no De-para (fora do cruzamento);
 //   semmapp = par com LOA e nenhum MAPP ativo;
 //   sobra   = par com MAPPs cuja Proposta não usa toda a LOA (LOA − Proposta > 0).
 const CATEGORIAS_NA = [
-    { id: 'fora', rotulo: 'Fora do cruzamento', cor: '--na-fora', desc: 'LOA de sub fonte sem Fonte do SIPOG no De-para (aba 3): não há MAPP que possa recebê-la.' },
+    { id: 'fora', rotulo: 'Fora do cruzamento', cor: '--na-fora', desc: 'LOA de sub fonte sem Fonte do MAPP no De-para (aba 3): não há MAPP que possa recebê-la.' },
     { id: 'semmapp', rotulo: 'Par sem MAPP', cor: '--na-semmapp', desc: 'LOA de órgão × programa × fonte sem nenhum MAPP ativo.' },
     { id: 'sobra', rotulo: 'Sobra no par', cor: '--na-sobra', desc: 'LOA do par − Proposta dos MAPPs do par, quando positiva (necessidade menor que a LOA ou proposta não distribuída).' }
 ];
@@ -2066,14 +2127,14 @@ function renderizarNaoAlocada() {
     desenharGraficosNaoAlocada(itens);
 
     document.getElementById('tabela-na-fonte').innerHTML = tabelaAgrupadaNA(agruparNaoAlocada(itens, i => i.fonte, i => i.fonte),
-        'Fonte', 'Fonte do SIPOG; "(sem fonte)" + código = sub fonte da LOA sem par no De-para.', 'Nada para o filtro.');
+        'Fonte', 'Fonte do MAPP; "(sem fonte)" + código = sub fonte da LOA sem par no De-para.', 'Nada para o filtro.');
     document.getElementById('tabela-na-orgao').innerHTML = tabelaAgrupadaNA(agruparNaoAlocada(itens, i => N(i.orgao), i => i.orgao),
         'Órgão', 'Órgão (sigla).', 'Nada para o filtro.');
 
     // Pares
     let pares = itens.slice().sort((a, b) => b.valor - a.valor);
     let hp = `<table><thead><tr>${thDesc('Categoria', 'Fora do cruzamento, Par sem MAPP ou Sobra no par.')}${thDesc('Órgão', 'Órgão (sigla).')}
-        <th class="sem-ordem so-programa" data-desc="1"${dica('Programa', 'Programa do PLOA.')}>Programa</th>${thDesc('Fonte', 'Fonte do SIPOG (ou sub fonte sem par).')}
+        <th class="sem-ordem so-programa" data-desc="1"${dica('Programa', 'Programa do PLOA.')}>Programa</th>${thDesc('Fonte', 'Fonte do MAPP (ou sub fonte sem par).')}
         ${thDesc('LOA 2027', 'LOA do par (ou da linha fora do cruzamento).', 'num')}${thDesc('Proposta', 'Σ Proposta dos MAPPs do par (aba 5).', 'num')}
         ${thDesc('MAPPs', 'MAPPs ativos do par.', 'num')}${thDesc('Nec. 2027 Ajustada', 'Σ Nec. Ajustada dos MAPPs do par.', 'num')}
         ${thDesc('Não alocado', 'LOA − Proposta (fora do cruzamento e par sem MAPP: a LOA inteira).', 'num')}</tr></thead><tbody>`;
@@ -2100,7 +2161,7 @@ function renderizarNaoAlocada() {
         contA.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nada para o filtro.</p>';
     } else {
         let ha = `<table><thead><tr>${thDesc('Órgão', 'Órgão (sigla).')}${thDesc('Programa', 'Programa do PLOA.')}${thDesc('Ação', 'Código e nome da ação no PLOA 2027.')}
-            ${thDesc('Tipo', 'Projeto, Atividade ou Operação Especial.')}${thDesc('Fonte(s)', 'Fontes (do SIPOG ou sem par) dos créditos da ação.')}
+            ${thDesc('Tipo', 'Projeto, Atividade ou Operação Especial.')}${thDesc('Fonte(s)', 'Fontes do MAPP (ou sub fonte sem par) dos créditos da ação.')}
             ${thDesc('Região(ões)', 'Códigos de região dos créditos (15 = Estado do Ceará).')}${thDesc('Categoria(s)', 'Categorias de não alocação dos créditos.')}
             ${thDesc('LOA da ação', 'Σ dos créditos da ação no recorte (nos itens não alocados).', 'num')}
             ${thDesc('Não alocado', 'Σ crédito × (não alocado do item ÷ LOA do item). Fora do cruzamento e par sem MAPP: o crédito inteiro.', 'num')}</tr></thead><tbody>`;
@@ -2279,13 +2340,13 @@ async function exportarEstudoXLSX() {
     wb.created = new Date();
 
     adicionarAbaEstudo(wb, 'ORGAO_X_FONTE', [
-        { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 16 },
+        { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 16 },
         { titulo: 'PROGRAMA', chave: 'programa', largura: 40 },
         { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 }, { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 },
         { titulo: 'QTD MAPPS', chave: 'qtd', largura: 11 }, { titulo: 'PROGRAMADO 2026', chave: 'p26', moeda: true, largura: 20 },
         { titulo: 'PREV. EMPENHO 2026', chave: 'prevEmp', moeda: true, largura: 20 }, { titulo: 'PREV. EMPENHO AJUSTADA', chave: 'prevEmpAj', moeda: true, largura: 20 },
         { titulo: 'NEC. 2027 CALCULADA', chave: 'nec', moeda: true, largura: 20 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
-        { titulo: '% DA LOA (NEC. AJ.)', chave: 'pct', pct: true, largura: 13 }, { titulo: 'SALDO (LOA − NEC. AJ.)', chave: 'saldo', moeda: true, largura: 20 },
+        { titulo: 'NECESSIDADE ÷ LOA', chave: 'pct', pct: true, largura: 13 }, { titulo: 'SALDO (LOA − NEC. AJ.)', chave: 'saldo', moeda: true, largura: 20 },
         { titulo: 'SUB FONTES DA LOA', chave: 'sfs', largura: 40 }
     ], linhasConsolidadoOrdenadas().map(l => ({
         fonte: l.fonte, orgao: l.orgao, programa: rotuloPrograma(l.programa, l.nomePrograma), sit: ROTULO_SITUACAO[l.situacao], loa: l.temLOA ? l.loa : null, qtd: l.qtd,
@@ -2318,7 +2379,7 @@ async function exportarEstudoXLSX() {
     adicionarAbaEstudo(wb, 'DE_PARA_FONTES', [
         { titulo: 'GRUPO', chave: 'grupo', largura: 14 }, { titulo: 'SUB FONTE', chave: 'subfonte', largura: 18 },
         { titulo: 'DESCRIÇÃO', chave: 'desc', largura: 60 }, { titulo: 'LOA 2027', chave: 'valor', moeda: true, largura: 20 },
-        { titulo: 'REGRA', chave: 'regra', largura: 10 }, { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }
+        { titulo: 'REGRA', chave: 'regra', largura: 10 }, { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }
     ], Object.values(porSubfonte).sort((a, b) => a.subfonte.localeCompare(b.subfonte)).map(s => {
         let ef = fonteEfetiva(s.subfonte);
         return Object.assign({}, s, { regra: ROTULO_REGRA_DEPARA[ef.fonte || ef.regra === 'manual' ? ef.regra : 'sem'], fonte: ef.fonte || '(sem fonte)' });
@@ -2365,7 +2426,7 @@ async function exportarEstudoXLSX() {
         adicionarAbaEstudo(wb, 'AJUSTES_FINAIS', [
             { titulo: 'MAPP', chave: 'mapp', largura: 60 }, { titulo: 'ÓRGÃO', chave: 'orgao', largura: 14 },
             { titulo: 'PROGRAMA', chave: 'programa', largura: 40 },
-            { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
+            { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 40 }, { titulo: 'ESTÁGIO', chave: 'estagio', largura: 26 },
             { titulo: 'LOA 2027 DO PAR', chave: 'loa', moeda: true, largura: 22 }, { titulo: 'NEC. 2027 AJUSTADA', chave: 'necAj', moeda: true, largura: 20 },
             { titulo: 'PROPOSTA AUTOMÁTICA', chave: 'auto', moeda: true, largura: 20 }, { titulo: 'PROPOSTA PROGRAMADO 2027', chave: 'proposta', moeda: true, largura: 22 },
             { titulo: 'ORIGEM', chave: 'origem', largura: 16 }, { titulo: 'GRADE', chave: 'grade', largura: 18 },
@@ -2374,7 +2435,7 @@ async function exportarEstudoXLSX() {
             proposta: propostaDe(l), origem: propostasManuais[l.chave] ? (propostasManuais[l.chave].origem === 'manual' ? 'editada' : 'redistribuída') : 'automática',
             grade: l.grade === 1 ? 'com necessidade' : 'sem necessidade', excede: propostaExcede(l) ? 'SIM' : '' })));
         adicionarAbaEstudo(wb, 'ALERTAS_FONTES', [
-            { titulo: 'FONTE SIPOG', chave: 'fonte', largura: 42 }, { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 },
+            { titulo: 'FONTE DO MAPP', chave: 'fonte', largura: 42 }, { titulo: 'SITUAÇÃO', chave: 'sit', largura: 16 },
             { titulo: 'LOA 2027', chave: 'loa', moeda: true, largura: 20 }, { titulo: 'PROPOSTA 2027', chave: 'proposta', moeda: true, largura: 20 },
             { titulo: 'DIFERENÇA (LOA − PROPOSTA)', chave: 'dif', moeda: true, largura: 24 }, { titulo: 'LOA SEM DESTINO', chave: 'semDestino', moeda: true, largura: 22 },
             { titulo: 'A DISTRIBUIR', chave: 'difDistribuivel', moeda: true, largura: 20 },
@@ -2422,7 +2483,7 @@ async function exportarEstudoXLSX() {
         ['', ''],
         ['Regra', 'Cópia da Previsão de Empenho por Estágio do SIPOG (cenário PADRÃO) e do Valor Deliberado por grupo; sem subtetos, PLOA ou edições/travas manuais.'],
         ['Necessidade Ajustada', 'Programado 2027 + (Programado 2026 − Prev. Empenho × (1 − % deliberado do grupo)).'],
-        ['% da LOA', 'Necessidade 2027 Ajustada dos MAPPs ÷ LOA 2027 do órgão na fonte (' + (loaConferencia.origem === 'pdf' ? 'LOA de Investimento, do PDF por Órgão e Fonte' : 'planilha Fonte x Órgão: inclui pessoal, custeio e dívida') + ').']
+        ['Necessidade ÷ LOA', 'Necessidade 2027 Ajustada dos MAPPs ÷ LOA 2027 do órgão na fonte (' + (loaConferencia.origem === 'pdf' ? 'LOA de Investimento, do PDF por Órgão e Fonte' : 'planilha Fonte x Órgão: inclui pessoal, custeio e dívida') + ').']
     ].forEach((r, i) => { wsP.addRow(r); if (i === 0) wsP.getRow(1).font = { bold: true, size: 13 }; });
 
     let buffer = await wb.xlsx.writeBuffer();

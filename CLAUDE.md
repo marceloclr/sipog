@@ -137,6 +137,10 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   fora do cruzamento + Σ alertas (sem destino + distribuível); Σ ações = Σ itens.
 - Layout: `input[type=checkbox]` volta ao tamanho natural (o css do SIPOG dá width:100% a todo input); a faixa de
   filtros (`.estudo-filtros-pagina`) rola com a página (sem sticky) e usa selects/buscas compactos.
+- Termos: na tela e no XLSX é "Fonte do MAPP" (não "Fonte do SIPOG"); o percentual Nec. Ajustada ÷ LOA chama-se
+  "Necessidade ÷ LOA" (só pares com LOA; card mostra quantas vezes e quanto falta/sobra).
+- Consolidado com programa: `gruposConsolidado` mostra uma linha por Órgão × Fonte (total) e, ao clicar
+  (`alternarGrupoConsolidado`, `expandidosCons`), uma linha por programa; "ver MAPPs" filtra o par órgão × fonte.
 - Tooltips de cálculo: todo valor de grade (`tdNum`/`dica`) e todo card mostra a fórmula com os
   números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
   Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de
