@@ -62,6 +62,15 @@ async function gravarPacoteFragmentado(fb, colecaoOuDocRef, pacote, idDocumento)
         fb.setDoc(fb.doc(fb.db, docRef.path + '/chunks', String(idx)), { index: idx, data: c })
     ));
 
+    // Doc fixo regravado com pacote menor (ex.: estado_atual): apaga os chunks que sobraram da
+    // gravação anterior — senão a leitura antiga os colava no fim do JSON e ele não abria.
+    if (idDocumento) {
+        let existentes = await fb.getDocs(chunksCollRef);
+        let sobras = [];
+        existentes.forEach(c => { if (Number(c.data().index) >= chunks.length) sobras.push(fb.deleteDoc(fb.doc(fb.db, docRef.path + '/chunks', c.id))); });
+        await Promise.all(sobras);
+    }
+
     return docRef;
 }
 
@@ -77,6 +86,8 @@ async function lerPacoteFragmentado(fb, colecao, idDocumento) {
     let partes = [];
     chunksSnap.forEach(c => partes.push(c.data()));
     partes.sort((a, b) => a.index - b.index);
+    // Só os chunks da última gravação (meta.totalChunks): ignora sobras de uma gravação maior anterior.
+    if (typeof meta.totalChunks === 'number') partes = partes.filter(p => p.index < meta.totalChunks);
 
     let textoCompleto = partes.map(p => p.data).join('');
     if (!textoCompleto) return null;

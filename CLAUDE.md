@@ -49,6 +49,12 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
 | js/14-graficos-dashboard.js | 5958–6370 | Cenário estresse, gráficos, gauge, hover, **inicialização** |
 | js/15-relatorio-pdf.js | 6371–6861 | Relatório PDF por Fonte |
 
+## Nuvem: pacotes em chunks (js/05)
+
+- `gravarPacoteFragmentado` regrava doc fixo (`estado_atual/sessao`) e, desde 27/10/2026, **apaga os chunks que
+  sobram** (índice ≥ total novo); `lerPacoteFragmentado` lê só até `meta.totalChunks`. Antes, regravar um pacote
+  menor deixava chunks velhos que corrompiam o JSON (aconteceu com o estado atual: 21 válidos + 64 sobras).
+
 ## Estágio de Execução: texto e regras (revisão de 2026-10-26)
 
 - **Sempre** comparar estágio com `normalizarEstagio()` (js/06), nunca só com `N()`: ela corrige
