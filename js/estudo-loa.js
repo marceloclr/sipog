@@ -916,12 +916,13 @@ function renderizarConsolidado() {
         resumoEl.innerHTML = '';
         return;
     }
+    atualizarFiltrosConsolidado();
     let fFonte = document.getElementById('filtro-cons-fonte').value;
     let fOrg = document.getElementById('filtro-cons-orgao').value;
     let fSit = document.getElementById('filtro-cons-situacao').value;
     let fTxt = N(document.getElementById('filtro-cons-texto').value);
     let linhas = linhasConsolidadoOrdenadas().filter(l =>
-        (!fFonte || l.fonte === fFonte) && (!fOrg || l.orgao === fOrg) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
+        (!fFonte || l.fonte === fFonte) && (!fOrg || N(l.orgao) === N(fOrg)) && (!fSit || l.situacao === fSit) && (!fTxt || N(l.orgao).includes(fTxt)));
 
     let tot = linhas.reduce((t, l) => {
         t.loa += l.loa; t.qtd += l.qtd; t.p26 += l.p26; t.p27 += l.p27; t.prevEmp += l.prevEmp; t.prevEmpAj += l.prevEmpAj; t.nec += l.nec; t.necAj += l.necAj;
@@ -967,16 +968,76 @@ function preencherSelect(id, valores, rotuloTodos) {
     if (valores.includes(atual)) sel.value = atual;
 }
 
+// ─── FILTROS LIGADOS (facetados) ────────────────────────────────────────────
+// Cada lista mostra só os valores que existem nas linhas que atendem a TODOS os
+// outros filtros da aba (Fonte → só os órgãos com aquela fonte no MAPP ou na LOA,
+// e vice-versa; idem Situação e Estágio). O valor escolhido nunca some da lista.
 function atualizarFiltros() {
-    let estagios = Array.from(new Set(mappsCalculados.map(m => m.estagio))).sort();
-    let fontesCons = Array.from(new Set(consolidadoAtual.map(l => l.fonte))).sort();
-    let orgaosCons = Array.from(new Set(consolidadoAtual.map(l => l.orgao))).sort();
-    preencherSelect('filtro-det-estagio', estagios, '(todos)');
-    preencherSelect('filtro-cons-fonte', fontesCons, '(todas)');
-    preencherSelect('filtro-cons-orgao', orgaosCons, '(todos)');
-    // Ajustes Finais: só pares com LOA e MAPPs (onde há o que distribuir) e as fontes com LOA.
-    preencherSelect('filtro-aj-fonte', Array.from(new Set(consolidadoAtual.filter(l => l.temLOA).map(l => l.fonte))).sort(), '(todas)');
-    preencherSelect('filtro-aj-orgao', Array.from(new Set(consolidadoAtual.filter(l => l.temLOA || l.qtd).map(l => l.orgao))).sort(), '(todos)');
+    atualizarFiltrosConsolidado();
+    atualizarFiltrosAjustes();
+}
+
+// filtros: { campo: casa(u) | null }; null = filtro vazio (não restringe).
+function valoresLigados(universo, filtros, campo, extras) {
+    let outros = Object.keys(filtros).filter(k => k !== campo && filtros[k]);
+    let valores = new Map();
+    universo.forEach(u => {
+        if (!outros.every(k => filtros[k](u)) || (extras && !extras(u))) return;
+        let v = u[campo];
+        if (v === null || v === undefined || v === '') return;
+        let k = campo === 'orgao' ? N(v) : v;
+        if (!valores.has(k)) valores.set(k, v);
+    });
+    return valores;
+}
+
+function preencherSelectLigado(id, valores, rotuloTodos, rotulo) {
+    let sel = document.getElementById(id);
+    if (!sel) return;
+    let atual = sel.value;
+    let lista = Array.from(valores.values());
+    if (atual && !lista.includes(atual)) lista.push(atual);
+    lista.sort((a, b) => String(rotulo ? rotulo(a) : a).localeCompare(String(rotulo ? rotulo(b) : b), 'pt-BR', { numeric: true }));
+    sel.innerHTML = `<option value="">${rotuloTodos}</option>` +
+        lista.map(v => `<option value="${escHtml(v)}">${escHtml(rotulo ? rotulo(v) : v)}</option>`).join('');
+    sel.value = atual;
+}
+
+// Aba 4: MAPPs (com estágio) + pares só com LOA (sem estágio).
+function atualizarFiltrosConsolidado() {
+    let val = id => (document.getElementById(id) || {}).value || '';
+    let fFonte = val('filtro-cons-fonte'), fOrg = val('filtro-cons-orgao'), fSit = val('filtro-cons-situacao'), fEst = val('filtro-det-estagio');
+    let fBuscaOrg = N(val('filtro-cons-texto')), fTxt = N(val('filtro-det-texto'));
+    let fExp = !!(document.getElementById('filtro-det-expurgo') || {}).checked;
+    let universo = [];
+    mappsCalculados.forEach(m => {
+        if (m.expurgado && !fExp) return;
+        universo.push({ fonte: m.fonte, orgao: m.orgao, situacao: situacaoPorPar[N(m.orgao) + '||' + m.fonte], estagio: m.estagio, texto: N(m.mapp) + ' ' + N(m.regra) });
+    });
+    consolidadoAtual.forEach(c => { if (c.situacao === 'SEM_MAPP') universo.push({ fonte: c.fonte, orgao: c.orgao, situacao: c.situacao, estagio: null, texto: null }); });
+    let filtros = {
+        fonte: fFonte ? u => u.fonte === fFonte : null,
+        orgao: fOrg ? u => N(u.orgao) === N(fOrg) : null,
+        situacao: fSit ? u => u.situacao === fSit : null,
+        estagio: fEst ? u => u.estagio === fEst : null
+    };
+    let extras = (fBuscaOrg || fTxt) ? u => (!fBuscaOrg || N(u.orgao).includes(fBuscaOrg)) && (!fTxt || (u.texto !== null && u.texto.includes(fTxt))) : null;
+    preencherSelectLigado('filtro-cons-fonte', valoresLigados(universo, filtros, 'fonte', extras), '(todas)');
+    preencherSelectLigado('filtro-cons-orgao', valoresLigados(universo, filtros, 'orgao', extras), '(todos)');
+    preencherSelectLigado('filtro-cons-situacao', valoresLigados(universo, filtros, 'situacao', extras), '(todas)', v => ROTULO_SITUACAO[v] || v);
+    preencherSelectLigado('filtro-det-estagio', valoresLigados(universo, filtros, 'estagio', extras), '(todos)');
+}
+
+// Aba 5: MAPPs ativos + pares com LOA.
+function atualizarFiltrosAjustes() {
+    let val = id => (document.getElementById(id) || {}).value || '';
+    let fFonte = val('filtro-aj-fonte'), fOrg = val('filtro-aj-orgao'), fTxt = N(val('filtro-aj-texto'));
+    let universo = linhasAjustes.map(l => ({ fonte: l.fonte, orgao: l.orgao, texto: N(l.mapp) }));
+    consolidadoAtual.forEach(c => { if (c.temLOA) universo.push({ fonte: c.fonte, orgao: c.orgao, texto: null }); });
+    let filtros = { fonte: fFonte ? u => u.fonte === fFonte : null, orgao: fOrg ? u => N(u.orgao) === N(fOrg) : null };
+    let extras = fTxt ? u => u.texto !== null && u.texto.includes(fTxt) : null;
+    preencherSelectLigado('filtro-aj-fonte', valoresLigados(universo, filtros, 'fonte', extras), '(todas)');
+    preencherSelectLigado('filtro-aj-orgao', valoresLigados(universo, filtros, 'orgao', extras), '(todos)');
 }
 
 // Resumo por grupo do Valor Deliberado (mesmas colunas-base da tabela do Redutor no SIPOG).
@@ -1358,6 +1419,7 @@ function renderizarAjustesFinais() {
         if (bloco) bloco.style.display = '';
         return;
     }
+    atualizarFiltrosAjustes();
     let f = filtrosAjustes();
     let alertas = montarAlertasFontes(f);
     let divergentes = alertas.filter(a => a.status !== 'ok');

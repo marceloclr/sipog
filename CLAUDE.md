@@ -108,6 +108,10 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   Alerta por fonte apurado par a par: estouro (Proposta > LOA), sobra distribuível (cabe nos não
   editados até a necessidade) e "LOA sem destino" (par sem MAPP com necessidade ou LOA além da
   necessidade — só a grade 2 recebe, à mão).
+- Filtros ligados (facetados): `atualizarFiltrosConsolidado` (aba 4: Fonte, Órgão, Situação, Estágio +
+  buscas) e `atualizarFiltrosAjustes` (aba 5: Fonte, Órgão + busca) montam cada lista só com os
+  valores das linhas que atendem aos OUTROS filtros (`valoresLigados`/`preencherSelectLigado`);
+  são chamadas no início de `renderizarConsolidado`/`renderizarAjustesFinais`.
 - Tooltips de cálculo: todo valor de grade (`tdNum`/`dica`) e todo card mostra a fórmula com os
   números (`FT` = F sem o "-" no zero; `explicarPrevEmp`, `explicarNecAj`, `explicarProposta`).
   Na aba 5 a grade "Órgãos" (`#bloco-ajustes-orgaos`) só aparece com mais de um órgão no filtro. O aviso de

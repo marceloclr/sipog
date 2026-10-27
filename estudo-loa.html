@@ -216,16 +216,11 @@
             <div class="estudo-filtros estudo-filtros-pagina">
                 <label>Fonte <select id="filtro-cons-fonte" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
                 <label>Órgão <select id="filtro-cons-orgao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
-                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado(); renderizarDetalhe()">
-                    <option value="">(todas)</option>
-                    <option value="OK">LOA e MAPPs</option>
-                    <option value="SEM_LOA">MAPPs sem LOA</option>
-                    <option value="SEM_MAPP">LOA sem MAPPs</option>
-                </select></label>
-                <label>Estágio <select id="filtro-det-estagio" onchange="renderizarDetalhe()"><option value="">(todos)</option></select></label>
+                <label>Situação <select id="filtro-cons-situacao" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todas)</option></select></label>
+                <label>Estágio <select id="filtro-det-estagio" onchange="renderizarConsolidado(); renderizarDetalhe()"><option value="">(todos)</option></select></label>
                 <input type="search" id="filtro-cons-texto" placeholder="Buscar órgão…" oninput="renderizarConsolidado(); renderizarDetalhe()">
-                <input type="search" id="filtro-det-texto" placeholder="Buscar MAPP ou regra…" oninput="renderizarDetalhe()">
-                <label><input type="checkbox" id="filtro-det-expurgo" onchange="renderizarDetalhe()"> mostrar expurgados</label>
+                <input type="search" id="filtro-det-texto" placeholder="Buscar MAPP ou regra…" oninput="renderizarConsolidado(); renderizarDetalhe()">
+                <label><input type="checkbox" id="filtro-det-expurgo" onchange="renderizarConsolidado(); renderizarDetalhe()"> mostrar expurgados</label>
                 <button class="btn-mini-header" onclick="limparFiltrosConsolidado()">✕ Limpar filtros</button>
             </div>
             <div class="estudo-resumo" id="resumo-consolidado"></div>
