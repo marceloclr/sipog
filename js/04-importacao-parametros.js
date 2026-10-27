@@ -121,7 +121,11 @@ function coletarParametros() {
             'plo-investimento': document.getElementById('plo-investimento').value
         },
         regras: {
-            'r-expurgar-fisfin': document.getElementById('r-expurgar-fisfin').checked
+            'r-expurgar-fisfin': document.getElementById('r-expurgar-fisfin').checked,
+            'r-expurgar-sec-antiga': document.getElementById('r-expurgar-sec-antiga').checked
+        },
+        textos: {
+            'r-sec-antiga-lista': document.getElementById('r-sec-antiga-lista').value
         },
         cenario: {
             'r-exec-limiar': document.getElementById('r-exec-limiar').value,
@@ -151,8 +155,10 @@ const DEFAULTS_PARAMETROS = {
         'plo-contrato-gestao': 0, 'plo-continuidade': 0, 'plo-pcf-convenio': 0,
         'plo-operacao-credito': 0, 'plo-investimento': 0
     },
-    // Regras liga/desliga: Execução Físic/Finan Concluída sai do cálculo (expurgo).
-    regras: { 'r-expurgar-fisfin': true },
+    // Regras liga/desliga: Execução Físic/Finan Concluída sai do cálculo (expurgo); cópia do
+    // MAPP na secretaria antiga sai quando há a linha na atual (lista em textos, js/06).
+    regras: { 'r-expurgar-fisfin': true, 'r-expurgar-sec-antiga': true },
+    textos: { 'r-sec-antiga-lista': 'SOP:SEINFRA>SCIDADES; DETRAN:SEINFRA>SCIDADES' },   // = PADRAO_SEC_ANTIGA (js/06, carregado depois)
     // r-exec-meses: meses de execução decorridos na anualização (Empenhado ÷ meses) × 12.
     cenario: { 'r-exec-limiar': 40, 'r-exec-meses': 5, 'r-cenario-moderado-pct': 10, 'r-exec-critico': 15 }
 };
@@ -166,6 +172,7 @@ function aplicarDefaultsParametros() {
     for (let k in DEFAULTS_PARAMETROS.plo) { let el = document.getElementById(k); if (el) el.value = DEFAULTS_PARAMETROS.plo[k]; }
     for (let k in DEFAULTS_PARAMETROS.cenario) { let el = document.getElementById(k); if (el) el.value = DEFAULTS_PARAMETROS.cenario[k]; }
     for (let k in DEFAULTS_PARAMETROS.regras) { let el = document.getElementById(k); if (el) el.checked = DEFAULTS_PARAMETROS.regras[k]; }
+    for (let k in DEFAULTS_PARAMETROS.textos) { let el = document.getElementById(k); if (el) el.value = DEFAULTS_PARAMETROS.textos[k]; }
     prevEmpAjustesPreservados = {};
     if (typeof resetarQuebradosSlider === 'function') resetarQuebradosSlider();
     if (typeof sincronizarCenario === 'function') sincronizarCenario();
@@ -208,6 +215,7 @@ function aplicarParametros(p) {
     if (p.plo) for (let k in p.plo) { let el = document.getElementById(k); if (el) el.value = p.plo[k]; }
     // Pacotes salvos antes das regras liga/desliga não têm "regras": ficam no padrão.
     if (p.regras) for (let k in p.regras) { let el = document.getElementById(k); if (el) el.checked = !!p.regras[k]; }
+    if (p.textos) for (let k in p.textos) { let el = document.getElementById(k); if (el) el.value = p.textos[k]; }
     if (p.cenario) {
         let c = p.cenario;
         if ('r-exec-limiar' in c) document.getElementById('r-exec-limiar').value = c['r-exec-limiar'];

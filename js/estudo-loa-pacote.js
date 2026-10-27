@@ -18,6 +18,8 @@ const PARAMETROS_PACOTE = [
     { chave: 'EM_EXECUCAO_LIMIAR_PCT', id: 'ep-limiar', desc: 'Em Execução: limiar (% do Programado)' },
     { chave: 'EM_EXECUCAO_MESES', id: 'ep-meses', desc: 'Em Execução: meses decorridos em (EMP/meses)×12' },
     { chave: 'EXPURGAR_FISFIN', id: 'ep-expurgar-fisfin', caixa: true, desc: 'Expurgar MAPPs em Execução Físic/Finan. Concluída (S/N)' },
+    { chave: 'EXPURGAR_SEC_ANTIGA', id: 'ep-expurgar-sec-antiga', caixa: true, desc: 'Expurgar a cópia do MAPP em secretaria antiga quando há a linha na atual (S/N)' },
+    { chave: 'SEC_ANTIGA_LISTA', id: 'ep-sec-antiga-lista', texto: true, desc: 'Órgãos que mudaram de secretaria: ÓRGÃO:ANTIGA>ATUAL, separados por ";"' },
     { chave: 'VD_CONTRATO_GESTAO_PCT', id: 'vd-contrato-gestao', desc: 'Valor Deliberado: Contrato Gestão (%)' },
     { chave: 'VD_CONTINUIDADE_PCT', id: 'vd-continuidade', desc: 'Valor Deliberado: Continuidade (%)' },
     { chave: 'VD_PCF_CONVENIO_PCT', id: 'vd-pcf-convenio', desc: 'Valor Deliberado: PCF Convênio (%)' },

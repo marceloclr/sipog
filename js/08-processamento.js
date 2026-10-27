@@ -61,6 +61,13 @@ function montarDadosAjustesRealizados() {
     if (elExpFisFin && elExpFisFin.checked !== DEFAULTS_PARAMETROS.regras['r-expurgar-fisfin']) {
         diferentesEstagio.push(`Execução Físic/Finan. Concluída: ${elExpFisFin.checked ? 'expurgada' : 'NÃO expurgada'} (padrão: ${DEFAULTS_PARAMETROS.regras['r-expurgar-fisfin'] ? 'expurgar' : 'manter'})`);
     }
+    let elExpSecAnt = document.getElementById('r-expurgar-sec-antiga'), elSecAntLista = document.getElementById('r-sec-antiga-lista');
+    if (elExpSecAnt && elExpSecAnt.checked !== DEFAULTS_PARAMETROS.regras['r-expurgar-sec-antiga']) {
+        diferentesEstagio.push(`Cópia do MAPP em secretaria antiga: ${elExpSecAnt.checked ? 'expurgada' : 'NÃO expurgada'} (padrão: expurgar)`);
+    }
+    if (elSecAntLista && elSecAntLista.value.trim() !== DEFAULTS_PARAMETROS.textos['r-sec-antiga-lista']) {
+        diferentesEstagio.push(`Secretarias antigas: ${elSecAntLista.value} (padrão ${DEFAULTS_PARAMETROS.textos['r-sec-antiga-lista']})`);
+    }
     let elMesesExec = document.getElementById('r-exec-meses');
     if (elMesesExec && V(elMesesExec.value) !== DEFAULTS_PARAMETROS.cenario['r-exec-meses']) {
         diferentesEstagio.push(`Em Execução — meses decorridos: ${elMesesExec.value} (padrão ${DEFAULTS_PARAMETROS.cenario['r-exec-meses']})`);
@@ -270,11 +277,23 @@ function processarDados() {
     // Meses decorridos na anualização de Em Execução: tela (Ajustada) e padrão (Calculada).
     let _meses = (typeof window.r_exec_meses === 'number' && window.r_exec_meses > 0) ? window.r_exec_meses : DEFAULTS_PARAMETROS.cenario['r-exec-meses'];
     let _mesesPadrao = DEFAULTS_PARAMETROS.cenario['r-exec-meses'];
+    // Cópias do MAPP na secretaria antiga (js/06): saem do cenário antes de qualquer regra.
+    let copiasSecAntiga = copiasSecretariaAntigaTela('r-expurgar-sec-antiga', 'r-sec-antiga-lista', dadosBrutos);
 
     dadosBrutos.forEach((r, idx) => {
         let estagio = normalizarEstagio(r.ESTAGIO_EXECUCAO);
         let classe = classificarRegistro(r);
         let p26 = V(r.VLR_PROGRAMADO_2026), l26 = V(r.VLR_LIMITE_2026), e26 = V(r.VLR_EMPENHADO_2026), pg26 = V(r.VLR_PAGO_2026), p27 = V(r.VLR_PROGRAMADO_2027);
+
+        if (copiasSecAntiga[idx]) {
+            totalRegistrosExpurgados++;
+            dadosExcluidos.push({
+                idOriginal: idx, mapp: r.MAPP || 'SEM MAPP', secretaria: r.SECRETARIA || 'NÃO INFORMADO', orgao: r.ORGAO || 'NÃO INFORMADO',
+                fonte: r.FONTE || 'NÃO INFORMADA', estagio: labelEstagio(estagio), p26: p26, p27: p27, classe: classe,
+                isExpurgado: true, regra: copiasSecAntiga[idx]
+            });
+            return;
+        }
 
         if (estagio.includes('CONCLUIDO') || estagio.includes('CANCELADO') || estagio.includes('TRANSFERIDO')) {
             totalRegistrosExpurgados++;

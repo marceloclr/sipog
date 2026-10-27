@@ -82,6 +82,16 @@ Sistema de projeção orçamentária (PLOA 2027 / MAPP) da SEPLAG-CE. Vanilla HT
   (órgão/fonte/programa novo, secretaria diferente, estágio desconhecido, MAPP repetido no mesmo órgão + fonte, negativo,
   Empenhado > Limite, Pago > Empenhado, Limite > Programado, mais de um grupo "S", fora do Executivo). Não muda valores.
   Sugestão de alias por chave tolerante (`chaveTolerante`: "(312,82)" = "(312.82)") ou mesmo código numérico da fonte.
+- **Cópia do MAPP em secretaria antiga** (28/10, pedido do usuário): a extração repete MAPPs de órgãos que mudaram de
+  secretaria (SOP e DETRAN: SEINFRA → SCIDADES; 722 pares na extração de 18/09, 1 na Consulta Primária). Regra comum no js/06
+  (`PADRAO_SEC_ANTIGA`, `lerRegrasSecretariaAntiga`, `copiasSecretariaAntiga`, `copiasSecretariaAntigaTela`, chave
+  `chaveMappOrgaoFonte`), parametrizável e ligada por padrão: SIPOG `r-expurgar-sec-antiga` + `r-sec-antiga-lista`
+  (`DEFAULTS_PARAMETROS.regras`/`textos`, expurgo no início do laço de `processarDados`); estudo `ep-expurgar-sec-antiga` +
+  `ep-sec-antiga-lista` (aba 2, pacote EXPURGAR_SEC_ANTIGA/SEC_ANTIGA_LISTA, `expurgarCopiaSecretaria`). Sai só a linha antiga
+  **com gêmeo** na atual e **sem levar valor** (sai se a antiga não tem valor do ano base/LOA ou se a atual também tem); com
+  valor só na antiga (ex.: MAPP 5 do DETRAN, Em Execução em SEINFRA × concluído zerado em SCIDADES) fica e a crítica aponta o
+  repetido. Na crítica as cópias viram `copiaSec` (info), fora de "MAPP repetido". Conferido: totais iguais com a regra ligada
+  e desligada nas duas bases; na extração, 714 cópias e 8 repetidos restantes.
 - SIPOG: `importar()` (js/04) critica antes de trocar `dadosBrutos` — com erro, a base anterior continua; estado/JSON carregado
   (js/05) só mostra a crítica (`semAliases`, sem registrar). Painel em `#critica-base`.
 - Estudo: `carregarMAPPs(..., bloquearComErro)` (só o upload bloqueia); `criticarCargaLOA` no PLOA; `atualizarCriticaEstudo`

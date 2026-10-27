@@ -90,6 +90,61 @@ const ESTAGIOS_COM_REGRA = new Set([EST_EM_EXECUCAO, EST_EXEC_FIS_CONCL, EST_PAR
 // Demais Projetos (nos grupos o estágio não altera o cálculo).
 let estagiosSemRegra = {};
 
+// Cópia do MAPP numa secretaria antiga: a extração repete o MAPP de um órgão que mudou de
+// secretaria (SOP e DETRAN: SEINFRA → SCIDADES), uma linha em cada. Regra parametrizável no
+// formato "ÓRGÃO:ANTIGA>ATUAL; ..."; só sai a linha da secretaria antiga que tem a MESMA
+// MAPP + fonte do órgão na atual — sem gêmeo, a linha fica (ex.: DETRAN ativo em SEINFRA) — e
+// desde que não leve valor embora: sai se a linha antiga não tem valor do ano base/LOA ou se a
+// atual também tem (contagem em dobro). Com valor só na antiga (ex.: MAPP 5 do DETRAN, Em
+// Execução em SEINFRA × concluído e zerado em SCIDADES), fica e a crítica aponta o repetido.
+// Usada pelo SIPOG (processarDados), pelo estudo LOA e pela crítica da base.
+const PADRAO_SEC_ANTIGA = 'SOP:SEINFRA>SCIDADES; DETRAN:SEINFRA>SCIDADES';
+
+function lerRegrasSecretariaAntiga(txt) {
+    return String(txt || '').split(/[;\n]+/)
+        .map(p => p.match(/^\s*([^:]+?)\s*:\s*([^>]+?)\s*>\s*(.+?)\s*$/)).filter(Boolean)
+        .map(m => ({ orgao: N(m[1]), antiga: N(m[2]), atual: N(m[3]), rotuloAntiga: m[2].trim(), rotuloAtual: m[3].trim() }));
+}
+
+function chaveMappOrgaoFonte(r) {
+    return N(r.ORGAO) + '|' + N(r.FONTE) + '|' + N(String(r.MAPP || '').replace(/\./g, ',')).replace(/\s+/g, ' ');
+}
+
+// Valor do ano base/LOA no layout do SIPOG (o estudo passa o seu, por papel).
+function temValorAtualSIPOG(r) {
+    return ['VLR_PROGRAMADO_2026', 'VLR_LIMITE_2026', 'VLR_EMPENHADO_2026', 'VLR_PROGRAMADO_2027'].some(c => V(r[c]) !== 0);
+}
+
+// { índice da linha: motivo do expurgo } das cópias na secretaria antiga.
+function copiasSecretariaAntiga(linhas, regras, temValor) {
+    let res = {};
+    if (!regras || !regras.length) return res;
+    temValor = temValor || temValorAtualSIPOG;
+    let atuais = {};   // chave → a linha da secretaria atual tem valor?
+    linhas.forEach(r => {
+        let o = N(r.ORGAO), s = N(r.SECRETARIA);
+        if (!regras.some(g => g.orgao === o && g.atual === s)) return;
+        let k = chaveMappOrgaoFonte(r);
+        atuais[k] = !!atuais[k] || temValor(r);
+    });
+    linhas.forEach((r, i) => {
+        let o = N(r.ORGAO), s = N(r.SECRETARIA);
+        let g = regras.find(x => x.orgao === o && x.antiga === s);
+        let k = g ? chaveMappOrgaoFonte(r) : null;
+        if (!g || !(k in atuais)) return;
+        if (temValor(r) && !atuais[k]) return;
+        res[i] = `EXPURGO: CÓPIA DO MAPP EM ${g.rotuloAntiga} (vale a linha de ${g.rotuloAtual})`;
+    });
+    return res;
+}
+
+// Lê a regra da tela (caixa liga/desliga + lista); sem os campos, vale o padrão (ligado).
+function copiasSecretariaAntigaTela(idCaixa, idLista, linhas, temValor) {
+    let caixa = document.getElementById(idCaixa), lista = document.getElementById(idLista);
+    if (caixa && !caixa.checked) return {};
+    return copiasSecretariaAntiga(linhas, lerRegrasSecretariaAntiga(lista ? lista.value : PADRAO_SEC_ANTIGA), temValor);
+}
+
 function normalizarEstagio(v) {
     return N(corrigirMojibake(String(v || '')))
         .replace(/\s+/g, ' ')

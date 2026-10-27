@@ -29,7 +29,9 @@ const PADROES_ESTUDO = {
     'ep-limiar': 40, 'ep-meses': 5,
     // Valor Deliberado por grupo (DEFAULTS_PARAMETROS.classes, pc-*): redução da Prev. Empenho.
     'vd-contrato-gestao': 0, 'vd-continuidade': 0, 'vd-pcf-convenio': 0,
-    'vd-operacao-credito': 0, 'vd-investimento': 0
+    'vd-operacao-credito': 0, 'vd-investimento': 0,
+    // Cópia do MAPP em secretaria antiga (js/06, PADRAO_SEC_ANTIGA): ÓRGÃO:ANTIGA>ATUAL; ...
+    'ep-sec-antiga-lista': PADRAO_SEC_ANTIGA
 };
 
 // Regra do estudo: a LOA só vale para o Executivo estadual. Os órgãos dos outros Poderes saem
@@ -70,6 +72,16 @@ function siglasForaDoExecutivo() {
 function expurgarMAPPForaDoExecutivo(m, siglas) {
     if (m.expurgado || !siglas.has(N(m.orgao))) return m;
     return Object.assign(m, { expurgado: true, regra: 'EXPURGO: ÓRGÃO FORA DO EXECUTIVO (AL, TCE, TJ, MP)',
+        prevEmp: 0, trf: 0, nec: 0, pctDeliberado: 0, prevEmpAj: 0, trfAj: 0, necAj: 0 });
+}
+
+// Cópia do MAPP na secretaria antiga (js/06): mesmo formato de expurgo, como no SIPOG.
+// Valor do ano base/LOA lido por papel (vale para o layout do SIPOG e para a extração bruta).
+function temValorAtualEstudo(r) { return ['pBase', 'lBase', 'eBase', 'pLOA'].some(p => valorPapel(r, COLS_PAPEL[p]) !== 0); }
+
+function expurgarCopiaSecretaria(m, motivo) {
+    if (m.expurgado || !motivo) return m;
+    return Object.assign(m, { expurgado: true, regra: motivo,
         prevEmp: 0, trf: 0, nec: 0, pctDeliberado: 0, prevEmpAj: 0, trfAj: 0, necAj: 0 });
 }
 
@@ -720,7 +732,8 @@ function carregarMAPPs(linhas, nomeArquivo, headers, bloquearComErro) {
     let n = normalizarLayoutMAPPs(brutos, cab);
     // Crítica (js/referencias.js): aliases salvos, avisos e novidades desde a última carga.
     let critica = criticarBaseMAPPs(brutos, { ano: exercicioLOA, colunas: colunasCriticaEstudo(),
-        obrigatorias: COLUNAS_OBRIGATORIAS_MAPPS.concat(Object.values(COLS_PAPEL)), siglasFora: siglasForaDoExecutivo() });
+        obrigatorias: COLUNAS_OBRIGATORIAS_MAPPS.concat(Object.values(COLS_PAPEL)), siglasFora: siglasForaDoExecutivo(),
+        copias: copiasSecretariaAntigaTela('ep-expurgar-sec-antiga', 'ep-sec-antiga-lista', brutos, temValorAtualEstudo) });
     if (bloquearComErro && critica.bloqueia) {
         renderizarPainelCritica(critica, { contId: 'critica-estudo', ano: exercicioLOA, titulo: `Crítica da base de MAPPs — ${nomeArquivo || ''}` });
         document.getElementById('status-mapps').innerHTML = `<span class="erro">✖ ${escHtml(nomeArquivo || '')} não foi carregado: ${critica.erros} erro(s) na planilha (coluna obrigatória ausente ou valor que não é número) — veja a crítica abaixo.</span>` +
@@ -939,6 +952,8 @@ function restaurarParametrosEstudo() {
     // Físic/Finan Concluída expurgada por padrão, como no SIPOG (regras.r-expurgar-fisfin).
     let elExp = document.getElementById('ep-expurgar-fisfin');
     if (elExp) elExp.checked = true;
+    let elSec = document.getElementById('ep-expurgar-sec-antiga');
+    if (elSec) elSec.checked = true;
     for (let id in RECORTE_LOA_PADRAO) { let el = document.getElementById(id); if (el) el.checked = RECORTE_LOA_PADRAO[id]; }
     recalcularEstudo();
 }
@@ -1762,9 +1777,10 @@ function recalcularEstudo() {
     aplicarRecorteLOA();
     let prm = lerParametrosEstudo();
     let siglasFora = siglasForaDoExecutivo();
-    mappsCalculados = mappsBrutos.map(r => {
-        let m = expurgarMAPPForaDoExecutivo(
-            aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte), siglasFora);
+    let copiasSec = copiasSecretariaAntigaTela('ep-expurgar-sec-antiga', 'ep-sec-antiga-lista', mappsBrutos, temValorAtualEstudo);
+    mappsCalculados = mappsBrutos.map((r, i) => {
+        let m = expurgarCopiaSecretaria(expurgarMAPPForaDoExecutivo(
+            aplicarValorDeliberadoEstudo(calcularPrevisaoEmpenhoEstudo(r, prm.pcts, prm.limiar, prm.opcoes), prm.vd, prm.vdFonte), siglasFora), copiasSec[i]);
         let p = programaDoTexto(r.PROGRAMA);
         m.programa = p.cod;
         m.nomePrograma = p.nome;
@@ -2493,7 +2509,8 @@ function coletarParametrosEstudoTela() {
     let elExp = document.getElementById('ep-expurgar-fisfin');
     let recorte = {};
     for (let id in RECORTE_LOA_PADRAO) recorte[id] = marcadoRecorte(id);
-    return { campos, expurgarFisFin: elExp ? elExp.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '', recorteLOA: recorte, exercicioLOA };
+    let elSec = document.getElementById('ep-expurgar-sec-antiga');
+    return { campos, expurgarFisFin: elExp ? elExp.checked : true, expurgarSecAntiga: elSec ? elSec.checked : true, vdFonte: (document.getElementById('vd-fonte') || {}).value || '', recorteLOA: recorte, exercicioLOA };
 }
 
 function aplicarParametrosEstudoTela(p) {
@@ -2501,6 +2518,8 @@ function aplicarParametrosEstudoTela(p) {
     for (let id in (p.campos || {})) { let el = document.getElementById(id); if (el) el.value = p.campos[id]; }
     let elExp = document.getElementById('ep-expurgar-fisfin');
     if (elExp && typeof p.expurgarFisFin === 'boolean') elExp.checked = p.expurgarFisFin;
+    let elSec = document.getElementById('ep-expurgar-sec-antiga');
+    if (elSec) elSec.checked = typeof p.expurgarSecAntiga === 'boolean' ? p.expurgarSecAntiga : true;
     definirExercicio(p.exercicioLOA || 2027);
     let recorte = Object.assign({}, RECORTE_LOA_PADRAO, p.recorteLOA || {});
     for (let id in recorte) { let el = document.getElementById(id); if (el) el.checked = !!recorte[id]; }
@@ -2777,6 +2796,7 @@ async function exportarEstudoXLSX() {
         ['Em Execução — limiar (% do Programado 2026)', prm.limiar],
         ['Em Execução — meses decorridos na anualização (EMP/meses×12)', prm.opcoes.meses],
         ['Expurgar Execução Físic/Finan. Concluída', prm.opcoes.expurgarFisFin ? 'SIM' : 'NÃO'],
+        ['Expurgar cópia do MAPP em secretaria antiga', (document.getElementById('ep-expurgar-sec-antiga') || {}).checked === false ? 'NÃO' : 'SIM: ' + ((document.getElementById('ep-sec-antiga-lista') || {}).value || '')],
         ...GRUPOS_VD_ESTUDO.map(g => [`Valor Deliberado — ${g.label} (%)`, prm.vd[g.classe] * 100]),
         ['Valor Deliberado — fonte de aplicação', prm.vdFonte || '(todas as fontes)'],
         ['', ''],

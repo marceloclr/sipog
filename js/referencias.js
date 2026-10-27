@@ -21,6 +21,7 @@ const TIPOS_CRITICA = {
     coluna:        { nivel: 'erro',  rotulo: 'Coluna obrigatória ausente' },
     numero:        { nivel: 'erro',  rotulo: 'Valor que não é número' },
     alias:         { nivel: 'info',  rotulo: 'Texto trocado pelo alias salvo' },
+    copiaSec:      { nivel: 'info',  rotulo: 'Cópia do MAPP em secretaria antiga (expurgada; vale a linha da atual)' },
     orgaoNovo:     { nivel: 'aviso', rotulo: 'Órgão novo (não estava na última carga)' },
     secretaria:    { nivel: 'aviso', rotulo: 'Órgão em secretaria diferente da última carga' },
     fonteNova:     { nivel: 'aviso', rotulo: 'Fonte nova (não estava na última carga)' },
@@ -187,7 +188,7 @@ function sugerirConhecido(valor, conhecidos, campo) {
 
 // ─── CRÍTICA DA BASE DE MAPPs ───────────────────────────────────────────────
 // opcoes: { ano, colunas: { pBase, lBase, eBase, pago, pLOA } (listas de nomes possíveis),
-//           obrigatorias, siglasFora: Set(N(sigla)), semAliases }
+//           obrigatorias, siglasFora: Set(N(sigla)), semAliases, copias: { índice: motivo } (js/06) }
 // Não muda valores: só aplica aliases e aponta o que merece conferência.
 function criticarBaseMAPPs(linhas, opcoes) {
     let o = opcoes || {};
@@ -249,8 +250,11 @@ function criticarBaseMAPPs(linhas, opcoes) {
         let marcados = COLUNAS_GRUPO_CRITICA.filter(g => S(r[g]) || (g === 'OPERACAO_CREDITO' && S(r.OPERACA_CREDITO)));
         if (marcados.length > 1) acumular('grupos', marcados.join(' + '), ln);
 
-        let chave = N(org) + '|' + N(fonte) + '|' + N(txt(r.MAPP).replace(/\./g, ','));
-        if (vistos[chave]) acumular('duplicado', `${txt(r.MAPP)} — ${org} — ${fonte}`, ln); else vistos[chave] = true;
+        if (o.copias && o.copias[i]) acumular('copiaSec', `${org} — ${txt(r.SECRETARIA)} (repetido na secretaria atual)`, ln);
+        else {
+            let chave = chaveMappOrgaoFonte(r);
+            if (vistos[chave]) acumular('duplicado', `${txt(r.MAPP)} — ${org} — ${fonte}`, ln); else vistos[chave] = true;
+        }
 
         if (org && siglasFora.has(N(org))) acumular('foraExecutivo', org, ln);
     });
@@ -364,7 +368,8 @@ const OBRIGATORIAS_CRITICA_SIPOG = ['MAPP', 'ORGAO', 'FONTE', 'ESTAGIO_EXECUCAO'
 async function criticarImportacaoSIPOG(linhas, nomeArquivo) {
     let ano = exercicioReferencias();
     await carregarMemoriaReferencias(ano);
-    let r = criticarBaseMAPPs(linhas, { ano, colunas: COLUNAS_CRITICA_SIPOG, obrigatorias: OBRIGATORIAS_CRITICA_SIPOG });
+    let r = criticarBaseMAPPs(linhas, { ano, colunas: COLUNAS_CRITICA_SIPOG, obrigatorias: OBRIGATORIAS_CRITICA_SIPOG,
+        copias: copiasSecretariaAntigaTela('r-expurgar-sec-antiga', 'r-sec-antiga-lista', linhas) });
     renderizarPainelCritica(r, { contId: 'critica-base', ano, titulo: `Crítica da base — ${nomeArquivo || 'arquivo importado'}`,
         aoAceitar: s => {
             if (s.acao !== 'alias' || !dadosBrutos.length) return;
@@ -380,7 +385,8 @@ async function criticarImportacaoSIPOG(linhas, nomeArquivo) {
 async function criticarBaseCarregadaSIPOG(linhas, nome) {
     let ano = exercicioReferencias();
     await carregarMemoriaReferencias(ano);
-    let r = criticarBaseMAPPs(linhas, { ano, colunas: COLUNAS_CRITICA_SIPOG, obrigatorias: OBRIGATORIAS_CRITICA_SIPOG, semAliases: true });
+    let r = criticarBaseMAPPs(linhas, { ano, colunas: COLUNAS_CRITICA_SIPOG, obrigatorias: OBRIGATORIAS_CRITICA_SIPOG, semAliases: true,
+        copias: copiasSecretariaAntigaTela('r-expurgar-sec-antiga', 'r-sec-antiga-lista', linhas) });
     renderizarPainelCritica(r, { contId: 'critica-base', ano, titulo: `Crítica da base — ${nome || 'estado carregado'}` });
     return r;
 }
