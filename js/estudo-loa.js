@@ -1431,7 +1431,8 @@ function renderizarConsolidado() {
         });
         rotuloTotal = `${grupos.length} órgão × fonte · ${linhas.length} pares com programa`;
     }
-    h += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}">TOTAL (${rotuloTotal})</td>
+    // Rodapé fixo da grade inteira: fica visível abaixo das linhas abertas, então o rótulo diz que é o geral.
+    h += `</tbody><tfoot><tr><td colspan="${colsTexto(3)}" title="Soma de TODAS as linhas da grade (todos os órgãos e fontes do filtro) — não é o total da linha aberta">TOTAL GERAL DA GRADE (${rotuloTotal})</td>
         ${tdNum(tot.loa, `Σ LOA 2027 das ${linhas.length} linhas = ${FT(tot.loa)}`)}<td class="num"${dica('Σ MAPPs ativos das linhas')}>${tot.qtd}</td>${tdNum(tot.p26, `Σ Programado 2026 = ${FT(tot.p26)}`)}
         ${tdNum(tot.prevEmp, `Σ Prev. Empenho 2026 = ${FT(tot.prevEmp)}`)}${tdNum(tot.prevEmpAj, `Σ Prev. Empenho Ajustada = ${FT(tot.prevEmpAj)}`)}${tdNum(tot.nec, dNec)}${tdNum(tot.necAj, dNecAj)}
         <td class="num"${dica(dPct)}>${fmtPct(pctTot)}</td><td class="num">—</td><td></td></tr></tfoot></table>`;
@@ -1484,13 +1485,15 @@ const LIMITE_SUB_MAPPS = 200;
 function subtabelaMappsConsolidado(mapps) {
     let cols = COLUNAS_SUB_MAPPS.map(k => COLUNAS_DETALHE.find(c => c.chave === k));
     let ordenados = mapps.slice().sort((a, b) => b.necAj - a.necAj);
-    let h = `<table class="subtabela-mapps"><thead><tr>` +
+    let tNec = mapps.reduce((s, m) => s + m.necAj, 0);
+    // Resumo no topo: o total desta linha fica visível sem rolar (o rodapé fixo da grade é o total geral).
+    let h = `<table class="subtabela-mapps"><caption class="resumo-subtabela">${mapps.length.toLocaleString('pt-BR')} MAPP(s) desta linha · Nec. 2027 Ajustada ${F(tNec)}${mapps.length > LIMITE_SUB_MAPPS ? ` · lista com os ${LIMITE_SUB_MAPPS} de maior necessidade` : ''}</caption><thead><tr>` +
         cols.map(c => thDesc(c.titulo, DESC_COLUNAS.det[c.chave], c.num ? 'num' : '')).join('') + '</tr></thead><tbody>';
     ordenados.slice(0, LIMITE_SUB_MAPPS).forEach(m => {
         h += '<tr>' + cols.map(c => c.celula ? c.celula(m) : tdNum(c.valor(m), c.dica ? c.dica(m) : '')).join('') + '</tr>';
     });
     let t = mapps.reduce((s, m) => { ['p26', 'prevEmp', 'prevEmpAj', 'p27', 'necAj'].forEach(k => s[k] += m[k]); return s; }, { p26: 0, prevEmp: 0, prevEmpAj: 0, p27: 0, necAj: 0 });
-    h += `</tbody><tfoot><tr><td colspan="3">${mapps.length} MAPP(s)${mapps.length > LIMITE_SUB_MAPPS ? ` — exibindo os ${LIMITE_SUB_MAPPS} de maior necessidade` : ''}</td>` +
+    h += `</tbody><tfoot><tr><td colspan="3">Total desta linha: ${mapps.length.toLocaleString('pt-BR')} MAPP(s)${mapps.length > LIMITE_SUB_MAPPS ? ` — exibindo os ${LIMITE_SUB_MAPPS} de maior necessidade` : ''}</td>` +
         ['p26', 'prevEmp', 'prevEmpAj', 'p27', 'necAj'].map(k => tdNum(t[k], `Σ ${COLUNAS_DETALHE.find(c => c.chave === k).titulo} = ${FT(t[k])}`)).join('') + '<td></td></tr></tfoot></table>';
     return h;
 }
@@ -2073,7 +2076,7 @@ function renderizarAjustesFinais() {
         if (aberto && mapps.length) ho += `<tr class="linha-mapps"><td colspan="7">${subtabelaMappsOrgaoAjustes(mapps)}</td></tr>`;
     });
     let to = orgaos.reduce((t, o) => { t.loa += o.loa; t.necAj += o.necAj; t.proposta += o.proposta; t.qtd += o.qtd; return t; }, { loa: 0, necAj: 0, proposta: 0, qtd: 0 });
-    ho += `</tbody><tfoot><tr><td colspan="2">TOTAL (${orgaos.length} órgãos)</td><td class="num"${dica('Σ MAPPs ativos dos órgãos')}>${to.qtd.toLocaleString('pt-BR')}</td>${tdNum(to.loa, `Σ LOA 2027 dos ${orgaos.length} órgãos = ${FT(to.loa)}`)}
+    ho += `</tbody><tfoot><tr><td colspan="2" title="Soma de TODOS os órgãos da grade — não é o total do órgão aberto">TOTAL GERAL (${orgaos.length} órgãos)</td><td class="num"${dica('Σ MAPPs ativos dos órgãos')}>${to.qtd.toLocaleString('pt-BR')}</td>${tdNum(to.loa, `Σ LOA 2027 dos ${orgaos.length} órgãos = ${FT(to.loa)}`)}
         ${tdNum(to.necAj, `Σ Nec. 2027 Ajustada = ${FT(to.necAj)}`)}${tdNum(to.proposta, `Σ Proposta = ${FT(to.proposta)}`)}${celulaDiferenca(to.loa - to.proposta, `Σ LOA − Σ Proposta = ${FT(to.loa)} − ${FT(to.proposta)} = ${FT(to.loa - to.proposta)}`)}</tr></tfoot></table>`;
     contO.innerHTML = orgaos.length ? ho : '<p class="estudo-nota" style="padding:12px;">Nenhum órgão para o filtro.</p>';
     // Com um órgão só (selecionado no filtro ou único na fonte) a grade repete os cards: fica oculta.
@@ -2114,12 +2117,13 @@ function alternarOrgaoAjustes(orgaoN) {
 
 function subtabelaMappsOrgaoAjustes(linhas) {
     let ordenadas = linhas.slice().sort((a, b) => a.fonte.localeCompare(b.fonte) || (a.programa || '').localeCompare(b.programa || '') || b.necAj - a.necAj);
-    let h = `<table class="subtabela-mapps"><thead><tr>` +
+    let tProp = linhas.reduce((s, l) => s + propostaDe(l), 0);
+    let h = `<table class="subtabela-mapps"><caption class="resumo-subtabela">${linhas.length.toLocaleString('pt-BR')} MAPP(s) deste órgão · Proposta ${F(tProp)}${linhas.length > LIMITE_SUB_MAPPS ? ` · lista com ${LIMITE_SUB_MAPPS}` : ''}</caption><thead><tr>` +
         COLUNAS_AJUSTES.map(c => `<th class="sem-ordem${c.num ? ' num' : ''}${c.classe ? ' ' + c.classe : ''}" data-desc="1"${dica(c.titulo, DESC_COLUNAS.aj[c.chave])}>${escHtml(c.titulo)}</th>`).join('') +
         '</tr></thead><tbody>';
     ordenadas.slice(0, LIMITE_SUB_MAPPS).forEach(l => { h += linhaMappAjuste(l); });
     let t = linhas.reduce((s, l) => { s.necAj += l.necAj; s.proposta += propostaDe(l); return s; }, { necAj: 0, proposta: 0 });
-    h += `</tbody><tfoot><tr><td colspan="${colsTexto(5)}">${linhas.length} MAPP(s)${linhas.length > LIMITE_SUB_MAPPS ? ` — exibindo ${LIMITE_SUB_MAPPS}; use o filtro de fonte para ver os demais` : ''}</td>
+    h += `</tbody><tfoot><tr><td colspan="${colsTexto(5)}">Total deste órgão: ${linhas.length} MAPP(s)${linhas.length > LIMITE_SUB_MAPPS ? ` — exibindo ${LIMITE_SUB_MAPPS}; use o filtro de fonte para ver os demais` : ''}</td>
         ${tdNum(t.necAj, `Σ Nec. 2027 Ajustada = ${FT(t.necAj)}`)}${tdNum(t.proposta, `Σ Proposta = ${FT(t.proposta)}`)}</tr></tfoot></table>`;
     return h;
 }
