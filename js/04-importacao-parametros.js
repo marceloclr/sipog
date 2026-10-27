@@ -27,12 +27,22 @@ function importar() {
             if (!vazia) jsonBruto.push(obj);
         });
         
-        dadosBrutos = jsonBruto.map(linha => {
+        let linhasNovas = jsonBruto.map(linha => {
             let linhaNormalizada = {};
             for (let chave in linha) { linhaNormalizada[chave.trim().toUpperCase()] = linha[chave]; }
             return linhaNormalizada;
         });
-        corrigirAcentosBase(dadosBrutos);
+        corrigirAcentosBase(linhasNovas);
+        // Crítica da base (js/referencias.js): aplica os aliases salvos e só interrompe a carga
+        // com erro estrutural (coluna obrigatória ausente ou valor que não é número).
+        if (typeof criticarImportacaoSIPOG === 'function') {
+            let critica = await criticarImportacaoSIPOG(linhasNovas, f.name);
+            if (critica.bloqueia) {
+                alert(`A base não foi carregada: ${critica.erros} erro(s) na planilha (coluna obrigatória ausente ou valor que não é número). A base anterior continua carregada. Veja a crítica no topo da aba ou baixe o xlsx dela.`);
+                return;
+            }
+        }
+        dadosBrutos = linhasNovas;
 
         dadosExcluidos = [];
         window._filtrosPendentesRestore = null; // Importação XLSX sempre usa filtros padrão (Tesouro)

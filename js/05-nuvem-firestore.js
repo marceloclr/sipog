@@ -131,6 +131,8 @@ async function aplicarPacoteNuvem(pacote, origemTexto) {
     }
     dadosBrutos = pacote.dados.dadosBrutos;
     corrigirAcentosBase(dadosBrutos);
+    // Crítica da base (js/referencias.js) só como aviso: não troca textos de um estado salvo.
+    if (typeof criticarBaseCarregadaSIPOG === 'function') criticarBaseCarregadaSIPOG(dadosBrutos, pacote.nome || origemTexto);
     totalRegistrosBase = pacote.dados.totalRegistrosBase || dadosBrutos.length;
     dadosExcluidos = [];
 
@@ -313,6 +315,7 @@ function carregarJSON() {
 
         dadosBrutos = pacote.dados.dadosBrutos;
         corrigirAcentosBase(dadosBrutos);
+        if (typeof criticarBaseCarregadaSIPOG === 'function') criticarBaseCarregadaSIPOG(dadosBrutos, 'JSON carregado');
         totalRegistrosBase = pacote.dados.totalRegistrosBase || dadosBrutos.length;
         dadosExcluidos = [];
 
@@ -413,6 +416,7 @@ function limparBase() {
         document.getElementById('tab-plodet-pivot').innerHTML = '';
 
         document.getElementById('info-registros').innerHTML = "Nenhum registro importado";
+        if (typeof renderizarPainelCritica === 'function') renderizarPainelCritica(null, { contId: 'critica-base' });
         document.getElementById('arquivo').value = "";
         let arqJson = document.getElementById('arquivo-json');
         if (arqJson) arqJson.value = "";
