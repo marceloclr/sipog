@@ -190,6 +190,24 @@ function explicarPrevEmp(m) {
     return `Regra: ${m.regra}\nPrev. Empenho 2026 = ${conta} = ${FT(m.prevEmp)}`;
 }
 
+// Composição da LOA por fonte da LOA ({ subfonte: valor }): várias fontes da LOA podem ir para a
+// mesma Fonte do MAPP; os tooltips mostram de onde vem a LOA.
+function somarComposicao(destino, origem) {
+    for (let s in (origem || {})) destino[s] = (destino[s] || 0) + origem[s];
+    return destino;
+}
+
+function descricaoFonteLOA(sub) {
+    let l = loaLinhasArquivo.find(x => x.subfonte === sub);
+    return l ? `${sub} — ${l.descSubfonte}` : sub;
+}
+
+function textoComposicao(comp) {
+    let chaves = Object.keys(comp || {}).filter(s => Math.abs(comp[s]) >= 0.5).sort((a, b) => comp[b] - comp[a]);
+    if (!chaves.length) return '';
+    return `Fontes da LOA (${chaves.length}):\n` + chaves.map(s => `  ${s}: ${FT(comp[s])}`).join('\n');
+}
+
 function explicarNecAj(m) {
     return `Nec. 2027 Ajustada = Programado 2027 + (Programado 2026 − Prev. Empenho Ajustada)\n= ${FT(m.p27)} + (${FT(m.p26)} − ${FT(m.prevEmpAj)}) = ${FT(m.necAj)}`;
 }
@@ -1246,7 +1264,7 @@ const DESC_COLUNAS = {
         necAj: 'Nec. 2027 Ajustada = Σ Programado 2027 + (Σ Programado 2026 − Σ Prev. Empenho Ajustada).',
         pctLOA: 'Necessidade ÷ LOA = Nec. 2027 Ajustada ÷ LOA 2027 × 100: quanto da LOA a necessidade dos MAPPs representa. 100% = a LOA cobre exatamente; acima de 100% (vermelho) = a necessidade passa da LOA; abaixo = sobra LOA.',
         saldo: 'Saldo = LOA 2027 − Nec. 2027 Ajustada. Negativo: a necessidade passa da LOA.',
-        subfontes: 'Sub fontes da LOA somadas nesta linha.'
+        subfontes: 'Quantas fontes da LOA compõem a LOA desta linha (várias fontes da LOA podem ir para a mesma Fonte do MAPP). Passe o mouse para ver os valores.'
     },
     det: {
         mapp: 'Número e título do MAPP.', orgao: 'Órgão do MAPP.', programa: 'Programa do MAPP (coluna PROGRAMA da base ou do arquivo "Programas dos MAPPs").',
@@ -1313,7 +1331,9 @@ const COLUNAS_CONSOLIDADO = [
       celula: l => `<td class="num ${l.pctLOA !== null && l.pctLOA > 100 ? 'pct-alto' : ''}"${dica(l.pctLOA === null ? 'Sem LOA 2027: não há percentual' : `Necessidade ÷ LOA = Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''} ÷ LOA 2027 × 100\n= ${FT(l.filhos ? l.necAjComLOA : l.necAj)} ÷ ${FT(l.loa)} × 100 = ${fmtPct(l.pctLOA)}`)}>${fmtPct(l.pctLOA)}</td>` },
     { chave: 'saldo', titulo: 'Saldo (LOA − Nec. Aj.)', num: true, valor: l => l.saldo,
       celula: l => `<td class="num ${l.saldo !== null && l.saldo < 0 ? 'pct-alto' : ''}"${dica(l.saldo === null ? 'Sem LOA 2027: não há saldo' : `Saldo = LOA 2027 − Nec. 2027 Ajustada${l.filhos ? ' (dos programas com LOA)' : ''}\n= ${FT(l.loa)} − ${FT(l.filhos ? l.necAjComLOA : l.necAj)} = ${FT(l.saldo)}`)}>${l.saldo === null ? '—' : F(l.saldo)}</td>` },
-    { chave: 'subfontes', titulo: 'Sub fontes da LOA', valor: l => l.subfontesTxt, celula: l => `<td style="font-size:11px; color:var(--muted);">${escHtml(l.subfontesTxt)}</td>` }
+    { chave: 'subfontes', titulo: 'Fontes da LOA', num: true, valor: l => l.subfontes ? l.subfontes.size : 0,
+      celula: l => { let n = l.subfontes ? l.subfontes.size : 0;
+          return `<td class="num"${dica(n ? textoComposicao(l.loaSubfonte) : 'Sem LOA')}>${n ? `${n} fonte${n > 1 ? 's' : ''}` : '—'}</td>`; } }
 ];
 
 function linhasConsolidadoOrdenadas() {
@@ -1401,7 +1421,13 @@ function renderizarConsolidado() {
             let celProg = `<td class="so-programa" style="white-space:nowrap;">${seta(aberto)} ${g.filhos.length} programa(s)</td>`;
             h += `<tr class="linha-clicavel linha-grupo" data-chave="${escHtml(g.chave)}" onclick="alternarGrupoConsolidado(this.dataset.chave)" title="${aberto ? 'Recolher' : 'Ver a distribuição nos programas'}">` +
                 COLUNAS_CONSOLIDADO.map(c => c.chave === 'programa' ? celProg : (c.celula ? c.celula(g) : tdNum(c.valor(g), c.dica ? c.dica(g) : ''))).join('') + '</tr>';
-            if (aberto) g.filhos.forEach(l => { h += linhaPar(l, true); });
+            if (aberto) {
+                // Composição da LOA da linha (várias fontes da LOA podem formar a mesma Fonte do MAPP).
+                let comp = Object.keys(g.loaSubfonte).filter(s => Math.abs(g.loaSubfonte[s]) >= 0.5).sort((a, b) => g.loaSubfonte[b] - g.loaSubfonte[a]);
+                if (comp.length) h += `<tr class="linha-composicao"><td colspan="${nCols}">Composição da LOA: ` +
+                    comp.map(s => `<span class="estudo-tag tag-prefixo"${dica(descricaoFonteLOA(s))}>${escHtml(s)} · ${F(g.loaSubfonte[s])}</span>`).join(' ') + '</td></tr>';
+                g.filhos.forEach(l => { h += linhaPar(l, true); });
+            }
         });
         rotuloTotal = `${grupos.length} órgão × fonte · ${linhas.length} pares com programa`;
     }
@@ -1839,9 +1865,14 @@ function montarAlertasFontes(f) {
     let pares = {};
     let obterPar = x => {
         let k = chavePar(x.orgao, x.programa, x.fonte);
-        return pares[k] || (pares[k] = { fonte: x.fonte, loa: 0, proposta: 0, folga: 0, qtd: 0, editados: 0 });
+        return pares[k] || (pares[k] = { fonte: x.fonte, loa: 0, proposta: 0, folga: 0, qtd: 0, editados: 0, loaSubfonte: {} });
     };
-    consolidadoAtual.forEach(c => { if (c.temLOA && noFiltroAjustes(f, c)) obterPar(c).loa += c.loa; });
+    consolidadoAtual.forEach(c => {
+        if (!c.temLOA || !noFiltroAjustes(f, c)) return;
+        let p = obterPar(c);
+        p.loa += c.loa;
+        somarComposicao(p.loaSubfonte, c.loaSubfonte);
+    });
     linhasAjustes.forEach(l => {
         if (!noFiltroAjustes(f, l)) return;
         let p = obterPar(l), prop = propostaDe(l), man = propostasManuais[l.chave];
@@ -1852,9 +1883,10 @@ function montarAlertasFontes(f) {
     });
     let porFonte = {};
     Object.values(pares).forEach(p => {
-        let a = porFonte[p.fonte] || (porFonte[p.fonte] = { fonte: p.fonte, loa: 0, proposta: 0, estouro: 0, sobraDistribuivel: 0, semDestino: 0, qtd: 0, editados: 0 });
+        let a = porFonte[p.fonte] || (porFonte[p.fonte] = { fonte: p.fonte, loa: 0, proposta: 0, estouro: 0, sobraDistribuivel: 0, semDestino: 0, qtd: 0, editados: 0, loaSubfonte: {} });
         let dif = p.loa - p.proposta;
         a.loa += p.loa; a.proposta += p.proposta; a.qtd += p.qtd; a.editados += p.editados;
+        somarComposicao(a.loaSubfonte, p.loaSubfonte);
         if (dif < 0) a.estouro += -dif;
         else { let d = Math.min(dif, p.folga); a.sobraDistribuivel += d; a.semDestino += dif - d; }
     });
@@ -1992,7 +2024,7 @@ function renderizarAjustesFinais() {
                 <td>${a.distribuivel ? `<button class="btn-mini-header" style="padding:4px 8px; font-size:11px;" onclick="distribuirDiferencaFonte('${fonteJs}')" title="Reparte a diferença de cada órgão desta fonte entre os MAPPs não editados, pela Necessidade Ajustada">⚖ Distribuir</button>` : ''}</td>
                 <td class="col-fonte">${escHtml(a.fonte)}</td>
                 <td><span class="estudo-tag tag-${a.status}">${ROTULO_ALERTA[a.status]}</span></td>
-                ${tdNum(a.loa, `Σ LOA 2027 dos órgãos do filtro nesta fonte = ${FT(a.loa)}`)}
+                ${tdNum(a.loa, `Σ LOA 2027 dos órgãos do filtro nesta fonte = ${FT(a.loa)}\n${textoComposicao(a.loaSubfonte)}`)}
                 <td class="num"${dica(`Σ Proposta dos ${a.qtd} MAPPs desta fonte = ${FT(a.proposta)}`)}><strong>${F(a.proposta)}</strong></td>
                 ${celulaDiferenca(a.dif, `Diferença = LOA − Proposta = ${FT(a.loa)} − ${FT(a.proposta)} = ${FT(a.dif)}`)}
                 <td class="num"${dica(`Σ, por órgão, da sobra (LOA − Proposta) que não cabe na Nec. Ajustada dos MAPPs não editados = ${FT(a.semDestino)}`)}>${a.semDestino ? F(a.semDestino) : '—'}</td>
@@ -2013,8 +2045,8 @@ function renderizarAjustesFinais() {
     let porOrgao = {};
     consolidadoAtual.forEach(c => {
         if (!c.temLOA || !noFiltroAjustes(f, c)) return;
-        let o = porOrgao[N(c.orgao)] || (porOrgao[N(c.orgao)] = { orgao: c.orgao, loa: 0, necAj: 0, proposta: 0, qtd: 0, fontes: new Set() });
-        o.loa += c.loa; o.fontes.add(c.fonte);
+        let o = porOrgao[N(c.orgao)] || (porOrgao[N(c.orgao)] = { orgao: c.orgao, loa: 0, necAj: 0, proposta: 0, qtd: 0, fontes: new Set(), loaSubfonte: {} });
+        o.loa += c.loa; o.fontes.add(c.fonte); somarComposicao(o.loaSubfonte, c.loaSubfonte);
     });
     linhasAjustes.forEach(l => {
         if (!noFiltroAjustes(f, l)) return;
@@ -2035,7 +2067,7 @@ function renderizarAjustesFinais() {
         let k = N(o.orgao), aberto = expandidosAj.has(k), mapps = mappsPorOrgao[k] || [];
         ho += `<tr class="${mapps.length ? 'linha-clicavel ' : ''}alerta-${st}" data-orgao="${escHtml(k)}"${mapps.length ? ` onclick="alternarOrgaoAjustes(this.dataset.orgao)" title="${aberto ? 'Recolher' : `Abrir os ${mapps.length} MAPP(s) de ${escHtml(o.orgao)}`}"` : ''}>
             <td>${mapps.length ? `<span class="seta-grupo">${aberto ? '▾' : '▸'}</span> ` : ''}<strong>${escHtml(o.orgao)}</strong></td><td class="num"${dica(`Fontes com LOA ou MAPP: ${[...o.fontes].sort().join('; ')}`)}>${o.fontes.size}</td><td class="num"${dica('MAPPs ativos do órgão no filtro')}>${o.qtd || '—'}</td>
-            <td class="num"${dica(`Σ LOA 2027 do órgão nas ${o.fontes.size} fonte(s) do filtro = ${FT(o.loa)}`)}>${o.loa ? F(o.loa) : '—'}</td>
+            <td class="num"${dica(`Σ LOA 2027 do órgão nas ${o.fontes.size} fonte(s) do filtro = ${FT(o.loa)}`, textoComposicao(o.loaSubfonte || {}))}>${o.loa ? F(o.loa) : '—'}</td>
             ${tdNum(o.necAj, `Σ Nec. 2027 Ajustada dos ${o.qtd} MAPPs do órgão = ${FT(o.necAj)}`)}<td class="num"${dica(`Σ Proposta dos ${o.qtd} MAPPs do órgão = ${FT(o.proposta)}`)}><strong>${F(o.proposta)}</strong></td>
             ${celulaDiferenca(o.dif, `Diferença = LOA − Proposta = ${FT(o.loa)} − ${FT(o.proposta)} = ${FT(o.dif)}`)}</tr>`;
         if (aberto && mapps.length) ho += `<tr class="linha-mapps"><td colspan="7">${subtabelaMappsOrgaoAjustes(mapps)}</td></tr>`;
@@ -2207,8 +2239,9 @@ function agruparNaoAlocada(itens, chave, rotulo) {
     let grupos = {};
     itens.forEach(i => {
         let k = chave(i);
-        let g = grupos[k] || (grupos[k] = { chave: k, rotulo: rotulo(i), fora: 0, semmapp: 0, sobra: 0, valor: 0, loa: 0, proposta: 0, pares: 0 });
+        let g = grupos[k] || (grupos[k] = { chave: k, rotulo: rotulo(i), fora: 0, semmapp: 0, sobra: 0, valor: 0, loa: 0, proposta: 0, pares: 0, loaSubfonte: {} });
         g[i.categoria] += i.valor; g.valor += i.valor; g.loa += i.loa; g.proposta += i.proposta; g.pares++;
+        i.linhasLOA.forEach(l => { g.loaSubfonte[l.subfonte] = (g.loaSubfonte[l.subfonte] || 0) + l.valor; });
     });
     return Object.values(grupos).sort((a, b) => b.valor - a.valor);
 }
@@ -2299,7 +2332,7 @@ function tabelaAgrupadaNA(grupos, titulo, descTitulo, vazio) {
         h += `<tr><td><strong>${escHtml(g.rotulo)}</strong></td>` +
             CATEGORIAS_NA.map(c => g[c.id] ? tdNum(g[c.id], `${c.rotulo} em ${g.rotulo} = ${FT(g[c.id])}`) : '<td class="num">—</td>').join('') +
             `<td class="num"${dica(`Não alocado = ${CATEGORIAS_NA.map(c => FT(g[c.id])).join(' + ')} = ${FT(g.valor)}`)}><strong>${F(g.valor)}</strong></td>
-            ${tdNum(g.loa, `Σ LOA 2027 dos ${g.pares} item(ns) = ${FT(g.loa)}`)}${tdNum(g.proposta, `Σ Proposta = ${FT(g.proposta)}`)}
+            ${tdNum(g.loa, `Σ LOA 2027 dos ${g.pares} item(ns) = ${FT(g.loa)}\n${textoComposicao(g.loaSubfonte)}`)}${tdNum(g.proposta, `Σ Proposta = ${FT(g.proposta)}`)}
             <td class="num"${dica(`${FT(g.valor)} ÷ ${FT(g.loa)} × 100`)}>${fmtPct(g.loa ? g.valor / g.loa * 100 : null)}</td></tr>`;
     });
     let t = grupos.reduce((s, g) => { CATEGORIAS_NA.forEach(c => s[c.id] += g[c.id]); s.valor += g.valor; s.loa += g.loa; s.proposta += g.proposta; return s; }, { fora: 0, semmapp: 0, sobra: 0, valor: 0, loa: 0, proposta: 0 });
