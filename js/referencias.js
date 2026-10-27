@@ -34,7 +34,10 @@ const TIPOS_CRITICA = {
     grupos:        { nivel: 'aviso', rotulo: 'Mais de um grupo marcado "S" (vale o de maior prioridade)' },
     foraExecutivo: { nivel: 'aviso', rotulo: 'Órgão fora do Executivo (expurgado)' },
     orgaoSemLOA:   { nivel: 'aviso', rotulo: 'Órgão do MAPP sem órgão na LOA' },
-    loaSemSigla:   { nivel: 'aviso', rotulo: 'Órgão da LOA sem ligação com a base de MAPPs' }
+    loaSemSigla:   { nivel: 'aviso', rotulo: 'Órgão da LOA sem ligação com a base de MAPPs' },
+    loaOrgaoNovo:  { nivel: 'aviso', rotulo: 'LOA: órgão novo (não estava na última carga)' },
+    loaFonteNova:  { nivel: 'aviso', rotulo: 'LOA: fonte nova (não estava na última carga)' },
+    loaProgNovo:   { nivel: 'aviso', rotulo: 'LOA: programa novo (não estava na última carga)' }
 };
 
 function escRef(v) {
@@ -184,7 +187,7 @@ function sugerirConhecido(valor, conhecidos, campo) {
 
 // ─── CRÍTICA DA BASE DE MAPPs ───────────────────────────────────────────────
 // opcoes: { ano, colunas: { pBase, lBase, eBase, pago, pLOA } (listas de nomes possíveis),
-//           obrigatorias, siglasFora: Set(N(sigla)), loa: { siglas: {cod: sigla}, orgaos: {cod: nome} } }
+//           obrigatorias, siglasFora: Set(N(sigla)), semAliases }
 // Não muda valores: só aplica aliases e aponta o que merece conferência.
 function criticarBaseMAPPs(linhas, opcoes) {
     let o = opcoes || {};
@@ -224,7 +227,6 @@ function criticarBaseMAPPs(linhas, opcoes) {
     let atual = extrairCadastroMAPP(linhas);
     let vistos = {};
     let siglasFora = o.siglasFora || new Set();
-    let siglasLOA = o.loa ? new Set(Object.values(o.loa.siglas || {}).map(N)) : null;
 
     linhas.forEach((r, i) => {
         let ln = i + 2;   // linha na planilha (cabeçalho = 1)
@@ -251,7 +253,6 @@ function criticarBaseMAPPs(linhas, opcoes) {
         if (vistos[chave]) acumular('duplicado', `${txt(r.MAPP)} — ${org} — ${fonte}`, ln); else vistos[chave] = true;
 
         if (org && siglasFora.has(N(org))) acumular('foraExecutivo', org, ln);
-        if (org && siglasLOA && !siglasFora.has(N(org)) && !siglasLOA.has(N(org))) acumular('orgaoSemLOA', org, ln);
     });
 
     // Novidades em relação à última carga (na primeira carga do exercício, nada é "novo").
@@ -273,25 +274,34 @@ function criticarBaseMAPPs(linhas, opcoes) {
             let sug = sugerirConhecido(f, conhecidos.FONTE, 'FONTE');
             if (sug) it.sugestao = { acao: 'alias', campo: 'FONTE', de: f, para: sug };
         }
-        for (let p in atual.programas) if (!(anterior.programas || {})[p]) add('programaNovo', p, { qtd: atual.programas[p] });
+        // Base anterior sem a coluna PROGRAMA (ex.: Consulta Primária): não há com o que comparar.
+        if (Object.keys(anterior.programas || {}).length)
+            for (let p in atual.programas) if (!anterior.programas[p]) add('programaNovo', p, { qtd: atual.programas[p] });
     }
-
-    // Detalhes de alguns tipos.
-    itens.forEach(it => {
-        if (it.tipo === 'orgaoSemLOA' && o.loa) {
-            let k = chaveTolerante(it.valor);
-            let cod = Object.keys(o.loa.orgaos || {}).find(c => chaveTolerante(o.loa.orgaos[c]) === k && !(o.loa.siglas || {})[c]);
-            if (cod) it.sugestao = { acao: 'sigla', cod, sigla: it.valor, nome: o.loa.orgaos[cod] };
-        }
-    });
 
     return montarResultadoCritica(itens, { ano, atual, primeiraCarga: !anterior, linhas: linhas.length });
 }
 
-// Órgãos da LOA (Executivo, com valor no recorte) sem sigla da base de MAPPs.
+// Estudo LOA: órgãos dos dois lados sem ligação. orgaosLOA = {cod: nome} (Executivo, no recorte),
+// siglas = {cod: sigla} (ligação atual), orgaosMAPP = {texto do ORGAO: qtd} (sem os expurgados).
+// A sugestão vem do nome igual (tolerante) entre o órgão da LOA e o ORGAO do MAPP.
 function criticarLOAxMAPP(orgaosLOA, siglas, orgaosMAPP) {
     let itens = [];
     let mapp = Object.keys(orgaosMAPP || {});
+    let ligadas = new Set(Object.values(siglas || {}).map(N));
+    mapp.forEach(org => {
+        if (ligadas.has(N(org))) return;
+        let it = { tipo: 'orgaoSemLOA', valor: org, qtd: orgaosMAPP[org], linhas: [] };
+        let k = chaveTolerante(org);
+        let cod = Object.keys(orgaosLOA).find(c => chaveTolerante(orgaosLOA[c]) === k && !siglas[c]);
+        if (cod) it.sugestao = { acao: 'sigla', cod, sigla: org, nome: orgaosLOA[cod] };
+        else {
+            // Sigla quase igual (ex.: "CIPP S.A" na LOA × "CIPP S,A" na base): religa o código ao texto da base.
+            let codSigla = Object.keys(siglas).find(c => chaveTolerante(siglas[c]) === k);
+            if (codSigla) it.sugestao = { acao: 'sigla', cod: codSigla, sigla: org, nome: `${orgaosLOA[codSigla] || ''} (hoje "${siglas[codSigla]}")` };
+        }
+        itens.push(it);
+    });
     for (let cod in orgaosLOA) {
         if (siglas[cod]) continue;   // com sigla, mesmo sem MAPP na base: a ligação existe
         let it = { tipo: 'loaSemSigla', valor: `${cod} ${orgaosLOA[cod]}`, qtd: 1, linhas: [] };
@@ -319,10 +329,20 @@ function registrarCargaMAPP(resultado) {
     salvarMemoriaReferencias(resultado.ano);
 }
 
-function registrarCargaLOA(ano, creditos) {
+// LOA carregada: novidades em relação à última carga (ou ao exercício anterior) e registro.
+function criticarCargaLOA(ano, creditos) {
+    let atual = extrairCadastroLOA(creditos);
+    let ant = memoriaComparacao(ano, 'loa');
+    let itens = [];
+    if (ant) {
+        for (let c in atual.orgaos) if (!(ant.orgaos || {})[c]) itens.push({ tipo: 'loaOrgaoNovo', valor: `${c} ${atual.orgaos[c]}`, qtd: 1, linhas: [] });
+        for (let f in atual.fontes) if (!(ant.fontes || {})[f]) itens.push({ tipo: 'loaFonteNova', valor: f, qtd: atual.fontes[f], linhas: [] });
+        for (let p in atual.programas) if (!(ant.programas || {})[p]) itens.push({ tipo: 'loaProgNovo', valor: `${p} ${atual.programas[p]}`, qtd: 1, linhas: [] });
+    }
     let m = memoriaReferencias(ano);
-    m.loa = unirCadastros(m.loa, extrairCadastroLOA(creditos));
+    m.loa = unirCadastros(m.loa, atual);
     salvarMemoriaReferencias(ano);
+    return itens;
 }
 
 function salvarAlias(ano, campo, de, para) {
@@ -377,7 +397,7 @@ function renderizarPainelCritica(resultado, ctx) {
     cont.style.display = 'block';
     let cab = `<div class="critica-cab"><strong>${escRef(ctx.titulo || 'Crítica da base')}</strong> · ` +
         (resultado.bloqueia ? `<span class="critica-erro">✖ ${resultado.erros} erro(s) — a carga foi interrompida</span>`
-            : `<span class="critica-ok">✔ carregada</span>`) +
+            : `<span class="critica-ok">✔ carregada</span>` + (resultado.erros ? ` · <span class="critica-erro">✖ ${resultado.erros} erro(s) na planilha</span>` : '')) +
         (resultado.avisos ? ` · <span class="critica-aviso">⚠ ${resultado.avisos} aviso(s)</span>` : '') +
         (resultado.infos ? ` · ${resultado.infos} correção(ões) por alias` : '') +
         (resultado.primeiraCarga ? ' · primeira carga do exercício: órgãos, fontes e programas registrados como referência' : '') +

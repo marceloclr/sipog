@@ -16,6 +16,7 @@ let mappsColunasOriginais = [];
 let mappsCalculados = [];    // resultado de calcularPrevisaoEmpenhoEstudo por linha
 let deParaSugerido = {};     // { subfonte: { fonte, regra } }
 let deParaManual = {};       // { subfonte: fonteSIPOG | '' } — escolhas do usuário
+let deParaPadrao = {};       // { subfonte: fonteSIPOG | '' } — padrão do exercício (js/referencias.js); o manual prevalece
 let consolidadoAtual = [];   // linhas do Órgão × Fonte (para tela e exportação)
 let situacaoPorPar = {};     // { 'ORGAO||fonte': 'OK' | 'SEM_LOA' | 'SEM_MAPP' } — filtro Situação no card 5
 
@@ -470,6 +471,7 @@ async function carregarPLOADoRepositorio() {
 function carregarLOAPloa(pacote, nomeArquivo) {
     if (!pacote || !Array.isArray(pacote.creditos)) throw new Error('O arquivo não é o PLOA 2027 por ação (falta a lista "creditos").');
     loaCreditos = pacote.creditos;
+    novidadesLOA = criticarCargaLOA(exercicioLOA, loaCreditos);
     let conf = pacote.conferencia || {};
     carregarLOA({ linhas: montarLinhasPLOA(loaCreditos, lerParametrosEstudo()), conferido: true, origem: 'ploa',
         divergencias: (conf.difResumos || []).map(d => ({ item: `${d.orgao}${d.programa ? ' prog. ' + d.programa : ''} ${d.fonte} GND ${d.gnd}`, esperado: d.resumo, lido: d.creditos })),
@@ -693,7 +695,7 @@ async function selecionarArquivoMAPPs(input) {
             await wb.xlsx.load(buffer);
             r = lerMAPPsDeWorkbook(wb);
         }
-        carregarMAPPs(r.linhas, arquivo.name, r.headers);
+        carregarMAPPs(r.linhas, arquivo.name, r.headers, true);
     } catch (err) {
         console.error(err);
         mappsBrutos = [];
@@ -703,18 +705,33 @@ async function selecionarArquivoMAPPs(input) {
 }
 
 // Também usada nos testes, com as linhas já em memória (ex.: dadosBrutos do SIPOG).
-function carregarMAPPs(linhas, nomeArquivo, headers) {
-    mappsBrutos = linhas.map(l => {
+// bloquearComErro (upload do usuário): erro estrutural na crítica não carrega a base; estudos e
+// pacotes já salvos carregam sempre, com a crítica só como aviso.
+function carregarMAPPs(linhas, nomeArquivo, headers, bloquearComErro) {
+    let brutos = linhas.map(l => {
         let o = {};
         for (let k in l) o[String(k).trim().toUpperCase()] = l[k];
         return o;
     });
-    let cab = (headers && headers.length ? headers : Object.keys(mappsBrutos[0] || {})).map(h => String(h).trim().toUpperCase());
+    let cab = (headers && headers.length ? headers : Object.keys(brutos[0] || {})).map(h => String(h).trim().toUpperCase());
     // Cópia do arquivo como veio (as linhas de mappsBrutos recebem as colunas traduzidas).
-    mappsOriginais = mappsBrutos.map(o => Object.assign({}, o));
+    let originais = brutos.map(o => Object.assign({}, o));
+    let corrigidos = corrigirMojibakeLinhas(brutos);
+    let n = normalizarLayoutMAPPs(brutos, cab);
+    // Crítica (js/referencias.js): aliases salvos, avisos e novidades desde a última carga.
+    let critica = criticarBaseMAPPs(brutos, { ano: exercicioLOA, colunas: colunasCriticaEstudo(),
+        obrigatorias: COLUNAS_OBRIGATORIAS_MAPPS.concat(Object.values(COLS_PAPEL)), siglasFora: siglasForaDoExecutivo() });
+    if (bloquearComErro && critica.bloqueia) {
+        renderizarPainelCritica(critica, { contId: 'critica-estudo', ano: exercicioLOA, titulo: `Crítica da base de MAPPs — ${nomeArquivo || ''}` });
+        document.getElementById('status-mapps').innerHTML = `<span class="erro">✖ ${escHtml(nomeArquivo || '')} não foi carregado: ${critica.erros} erro(s) na planilha (coluna obrigatória ausente ou valor que não é número) — veja a crítica abaixo.</span>` +
+            (mappsArquivo ? `<br>Continua carregada: ${escHtml(mappsArquivo)}.` : '');
+        return false;
+    }
+    registrarCargaMAPP(critica);
+    criticaMAPPsEstudo = critica;
+    mappsBrutos = brutos;
+    mappsOriginais = originais;
     mappsColunasOriginais = cab;
-    let corrigidos = corrigirMojibakeLinhas(mappsBrutos);
-    let n = normalizarLayoutMAPPs(mappsBrutos, cab);
     mappsArquivo = nomeArquivo || '';
     // Edições da Proposta (Ajustes Finais) feitas antes com este mesmo arquivo.
     propostasManuais = lerPropostasLocal(mappsArquivo);
@@ -982,6 +999,12 @@ function recalcularDeParaSugerido() {
             deParaSugerido[l.subfonte] = { fonte: deParaManual[codigos[0]], regra: 'manual' };
             return;
         }
+        // Padrão do exercício: só se a Fonte do MAPP existir na base carregada ("" = sem fonte).
+        let chavePadrao = [l.subfonte].concat(codigos.length === 1 ? codigos : []).find(k => Object.prototype.hasOwnProperty.call(deParaPadrao, k));
+        if (chavePadrao !== undefined && (deParaPadrao[chavePadrao] === '' || fontes.includes(deParaPadrao[chavePadrao]))) {
+            deParaSugerido[l.subfonte] = { fonte: deParaPadrao[chavePadrao], regra: 'padrao' };
+            return;
+        }
         deParaSugerido[l.subfonte] = sugerirFonteSIPOG(l, fontes);
     });
 }
@@ -1000,7 +1023,7 @@ function alterarDePara(sel) {
     recalcularEstudo();
 }
 
-const ROTULO_REGRA_DEPARA = { exata: 'exata', tesouro: 'tesouro', prefixo: 'prefixo', manual: 'manual', sem: 'sem par' };
+const ROTULO_REGRA_DEPARA = { exata: 'exata', tesouro: 'tesouro', prefixo: 'prefixo', padrao: 'padrão', manual: 'manual', sem: 'sem par' };
 
 function renderizarDePara() {
     let cont = document.getElementById('tabela-depara');
@@ -1769,6 +1792,7 @@ function recalcularEstudo() {
     renderizarDetalhe();
     calcularPropostasAutomaticas();
     renderizarAjustesFinais();
+    atualizarCriticaEstudo();
     let semDados = (loaLinhas.length === 0 && mappsCalculados.length === 0);
     ['btn-exportar-estudo', 'btn-salvar-estudo'].forEach(id => {
         let btn = document.getElementById(id);
@@ -2496,6 +2520,8 @@ async function salvarEstudoNuvem() {
             arquivos: { loa: loaArquivo || null, mapps: mappsArquivo || null },
             parametros: coletarParametrosEstudoTela(),
             deParaManual: deParaManual,
+            // Ligações em uso (siglas, fontes da LOA, fora do Executivo, padrão + manual): o estudo reabre igual.
+            ligacoes: ligacoesAtuais(),
             ordemTabelas: ordemTabelas,
             propostasManuais: propostasManuais,
             // "dadosBrutos" alimenta o totalRegistros dos metadados (gravarPacoteFragmentado).
@@ -2547,7 +2573,8 @@ async function carregarEstudoNuvemPorId(id) {
         let pacote = await lerPacoteFragmentado(fb, COLECAO_ESTUDOS, id);
         if (!pacote || !pacote.dados) { alert('Estudo não encontrado ou vazio — pode ter sido excluído.'); return; }
         aplicarParametrosEstudoTela(pacote.parametros);
-        deParaManual = pacote.deParaManual || {};
+        aplicarLigacoes(pacote.ligacoes, false);
+        deParaManual = Object.assign({}, (pacote.ligacoes || {}).dePara || {}, pacote.deParaManual || {});
         salvarDeParaManual();
         if (pacote.ordemTabelas) ordemTabelas = pacote.ordemTabelas;
         let dados = pacote.dados;
@@ -3059,9 +3086,90 @@ async function selecionarArquivoDePara(input) {
     }
 }
 
+// ─── CRÍTICA DOS ARQUIVOS E LIGAÇÕES DO EXERCÍCIO (js/referencias.js) ──────
+let criticaMAPPsEstudo = null;   // crítica da base de MAPPs carregada (aliases, avisos, novidades)
+let novidadesLOA = [];           // órgãos, fontes e programas novos na LOA carregada
+
+function colunasCriticaEstudo() {
+    let B = anoBase();
+    return { pBase: COLS_PAPEL.pBase, lBase: COLS_PAPEL.lBase, eBase: COLS_PAPEL.eBase,
+        pago: [`VLR_PAGO_${B}`, `VLR_PAGO_${String(B).slice(-2)}`], pLOA: COLS_PAPEL.pLOA };
+}
+
+// Painel único da aba 1: crítica dos MAPPs + novidades da LOA + órgãos sem ligação LOA × MAPP.
+function atualizarCriticaEstudo() {
+    let ctx = { contId: 'critica-estudo', ano: exercicioLOA, titulo: `Crítica dos arquivos — LOA ${exercicioLOA} × MAPPs`, aoAceitar: aceitarSugestaoEstudo };
+    if (!criticaMAPPsEstudo && !loaLinhas.length) return renderizarPainelCritica(null, ctx);
+    let itens = (criticaMAPPsEstudo ? criticaMAPPsEstudo.itens : []).concat(loaConferencia.origem === 'ploa' ? novidadesLOA : []);
+    if (loaLinhas.length && mappsCalculados.length) {
+        let orgaosLOA = {}, siglas = Object.assign({}, SIGLAS_ORGAO_LOA), orgaosMAPP = {};
+        loaLinhas.forEach(l => {
+            orgaosLOA[l.codOrgao] = l.orgao;
+            if (!siglas[l.codOrgao] && loaConferencia.origem !== 'ploa' && l.sigla) siglas[l.codOrgao] = l.sigla;
+        });
+        mappsCalculados.forEach(m => { if (!m.expurgado && m.orgao) orgaosMAPP[m.orgao] = (orgaosMAPP[m.orgao] || 0) + 1; });
+        itens = itens.concat(criticarLOAxMAPP(orgaosLOA, siglas, orgaosMAPP));
+    }
+    let r = montarResultadoCritica(itens, { ano: exercicioLOA, primeiraCarga: !!(criticaMAPPsEstudo && criticaMAPPsEstudo.primeiraCarga) });
+    r.bloqueia = false;   // o que está na tela já foi carregado
+    renderizarPainelCritica(r, ctx);
+}
+
+function aceitarSugestaoEstudo(s) {
+    if (s.acao === 'alias') aplicarAliases(mappsBrutos, memoriaReferencias(exercicioLOA).aliases);
+    if (s.acao === 'sigla') SIGLAS_ORGAO_LOA[s.cod] = s.sigla;
+    recalcularEstudo();
+}
+
+// Ligações LOA × MAPP em uso: editáveis a qualquer momento (aba 3, pacote, painel de crítica).
+function ligacoesAtuais() {
+    let copia = o => JSON.parse(JSON.stringify(o));
+    return { siglas: Object.assign({}, SIGLAS_ORGAO_LOA), fontesLoa: copia(FONTES_LOA), subfontePorOrgao: copia(SUBFONTE_LOA_POR_ORGAO),
+        fora: [...orgaosForaPacote], dentro: [...orgaosDentroPacote], dePara: Object.assign({}, deParaPadrao, deParaManual) };
+}
+
+// comoPadrao: o de-para entra como padrão do exercício (abaixo do manual); senão, fica a cargo de quem chama.
+function aplicarLigacoes(lig, comoPadrao) {
+    if (!lig) return;
+    let trocar = (alvo, novo) => { if (!novo) return; Object.keys(alvo).forEach(k => delete alvo[k]); Object.assign(alvo, novo); };
+    Object.assign(SIGLAS_ORGAO_LOA, lig.siglas || {});
+    trocar(FONTES_LOA, lig.fontesLoa);
+    trocar(SUBFONTE_LOA_POR_ORGAO, lig.subfontePorOrgao);
+    if (lig.fora) orgaosForaPacote = new Set(lig.fora);
+    if (lig.dentro) orgaosDentroPacote = new Set(lig.dentro);
+    if (comoPadrao) deParaPadrao = Object.assign({}, lig.dePara || {});
+}
+
+async function salvarLigacoesPadrao() {
+    if (!confirm(`Gravar as ligações atuais como padrão do exercício ${exercicioLOA}?\n\nSiglas dos órgãos, fontes da LOA, órgãos fora do Executivo e o de-para (automático conferido + manual). Os próximos estudos de ${exercicioLOA} partem delas; as escolhas manuais de cada estudo continuam valendo.`)) return;
+    let st = document.getElementById('status-ligacoes-padrao');
+    let lig = ligacoesAtuais();
+    // O de-para automático da tela também entra (é o que o usuário conferiu ao salvar).
+    Object.keys(deParaSugerido).forEach(sf => { if (!Object.prototype.hasOwnProperty.call(lig.dePara, sf) && deParaSugerido[sf].fonte) lig.dePara[sf] = deParaSugerido[sf].fonte; });
+    let m = memoriaReferencias(exercicioLOA);
+    m.ligacoes = Object.assign(lig, { salvoEm: new Date().toISOString() });
+    deParaPadrao = Object.assign({}, lig.dePara);
+    st.innerHTML = 'Salvando…';
+    let ok = await salvarMemoriaReferencias(exercicioLOA);
+    st.innerHTML = (ok ? `<span class="ok">✅ Padrão do exercício ${exercicioLOA} salvo na nuvem</span>` : `<span class="aviso">⚠ Padrão salvo só neste navegador — a nuvem não respondeu.</span>`) +
+        ` — ${Object.keys(lig.siglas).length} siglas, ${Object.keys(lig.dePara).length} ligações de fonte.`;
+    recalcularEstudo();
+}
+
+async function carregarPadraoExercicio() {
+    let m = await carregarMemoriaReferencias(exercicioLOA);
+    let st = document.getElementById('status-ligacoes-padrao');
+    if (m.ligacoes) {
+        aplicarLigacoes(m.ligacoes, true);
+        if (st) st.innerHTML = `Padrão do exercício ${exercicioLOA} em uso (salvo em ${new Date(m.ligacoes.salvoEm).toLocaleString('pt-BR')}).`;
+        if (loaLinhas.length || mappsBrutos.length) recalcularEstudo();
+    } else if (st) st.innerHTML = `Sem padrão salvo para ${exercicioLOA}: valem as tabelas do sistema.`;
+}
+
 // ─── INICIALIZAÇÃO ──────────────────────────────────────────────────────────
 carregarDeParaManual();
 restaurarParametrosEstudo();
+carregarPadraoExercicio();
 (function abrirAbaInicial() {
     let aba = 'carga';
     try { aba = localStorage.getItem(CHAVE_ABA_LOCAL) || 'carga'; } catch (e) {}

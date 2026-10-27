@@ -54,6 +54,7 @@
     .tag-tesouro { background: rgba(245,156,0,0.15); color: var(--warning); }
     .tag-prefixo { background: rgba(45,179,158,0.15); color: var(--teal); }
     .tag-manual { background: rgba(176,124,255,0.15); color: var(--purple); }
+    .tag-padrao { background: rgba(70,85,100,0.15); color: var(--text); }
     .tag-sem { background: rgba(233,79,14,0.12); color: var(--danger); }
     .estudo-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
     .estudo-resumo div { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
@@ -195,6 +196,7 @@
                 <div class="estudo-carga"><h3>Base de MAPPs carregada</h3><div class="estudo-status" id="status-mapps">Nenhum arquivo carregado.</div>
                     <div class="estudo-status" id="status-mapps-expurgo"></div><div class="estudo-status" id="status-programas"></div></div>
             </div>
+            <div id="critica-estudo" class="critica-painel" style="display:none;"></div>
             <details class="estudo-avancado" style="margin-top:14px;">
                 <summary style="cursor:pointer; font-weight:700; font-size:13px;">Avançado — carregar os arquivos separadamente</summary>
                 <div class="estudo-grid-carga" style="margin-top:10px;">
@@ -286,15 +288,19 @@
                 <span class="estudo-tag tag-tesouro">tesouro</span> sub fontes 500/501 do grupo Tesouro → (500)-(501) Tesouro;
                 <span class="estudo-tag tag-prefixo">prefixo</span> única fonte do MAPP com o mesmo código de 3 dígitos;
                 <span class="estudo-tag tag-sem">sem par</span> escolha manual.
-                Escolhas manuais (<span class="estudo-tag tag-manual">manual</span>) ficam guardadas neste navegador.
+                Escolhas manuais (<span class="estudo-tag tag-manual">manual</span>) ficam guardadas neste navegador e no estudo salvo.
+                <span class="estudo-tag tag-padrao">padrão</span> veio do padrão do exercício: as ligações (siglas dos órgãos, fontes da LOA e de-para)
+                salvas para todos os estudos do ano. Elas são só o ponto de partida — qualquer escolha manual prevalece.
             </p>
             <div class="estudo-filtros">
                 <label>Grupo de Fonte <select id="filtro-dp-grupo" onchange="renderizarDePara()"><option value="">(todos)</option></select></label>
                 <button class="btn-mini-header" onclick="baixarDeParaXLSX()" title="Baixa o de-para atual em xlsx (aba DE_PARA_FONTES) com a lista das fontes válidas (aba FONTES_DO_MAPP)">⬇ Baixar de-para (xlsx)</button>
                 <label class="btn-mini-header" style="cursor:pointer;" title="Carrega um xlsx com as colunas SUB FONTE e FONTE DO MAPP (o mesmo layout do download); as escolhas viram de-para manual">⬆ Carregar de-para (xlsx)
                     <input type="file" accept=".xlsx" onchange="selecionarArquivoDePara(this)" style="display:none;"></label>
+                <button class="btn-mini-header" onclick="salvarLigacoesPadrao()" title="Grava as ligações atuais (siglas dos órgãos, fontes da LOA, órgãos fora do Executivo e o de-para) como padrão do exercício, na nuvem; os próximos estudos do ano partem delas">☁ Salvar como padrão do exercício</button>
             </div>
             <div class="estudo-status" id="status-depara-xlsx" style="margin:-4px 0 10px;"></div>
+            <div class="estudo-status" id="status-ligacoes-padrao" style="margin:-4px 0 10px;"></div>
             <details class="estudo-carga" id="bloco-import-depara" style="margin-bottom:12px;">
                 <summary style="cursor:pointer; font-weight:700; font-size:13px;">⬆ Importar de-para (CSV ou xlsx, formato livre)</summary>
                 <p class="estudo-nota">Para planilhas em qualquer formato: depois de carregar, indique a coluna da <strong>fonte da LOA</strong>, a da <strong>Fonte do MAPP</strong> e, se houver, a do <strong>órgão</strong>. Os códigos são reconhecidos em vários formatos (500.9.1.0.00.00, 500.00, 1.500.00; "(500)-(501) Tesouro", "500-501" ou só a descrição). Várias fontes da LOA podem ir para a mesma Fonte do MAPP; a mesma fonte da LOA em duas Fontes do MAPP é conflito (vale a 1ª linha). Nada muda antes de "Aplicar".</p>
@@ -470,6 +476,7 @@
 <script src="js/06-classificacao-gate.js"></script>
 <script src="js/05-nuvem-firestore.js"></script>
 <script src="js/estudo-loa-tabelas.js"></script>
+<script src="js/referencias.js"></script>
 <script src="js/estudo-loa-pacote.js"></script>
 <script src="js/estudo-loa.js"></script>
 </body>
