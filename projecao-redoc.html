@@ -109,6 +109,7 @@
 <div class="estudo-layout">
 <nav class="estudo-menu" aria-label="Etapas da projeção">
     <button class="estudo-menu-item" data-aba="carga" onclick="mostrarAbaRedoc('carga')"><span class="estudo-menu-num">1</span> Carga e crítica</button>
+    <button class="estudo-menu-item" data-aba="parametros" onclick="mostrarAbaRedoc('parametros')"><span class="estudo-menu-num">2</span> Parâmetros</button>
 </nav>
 
 <main class="wrap estudo-conteudo">
@@ -129,6 +130,63 @@
             </div>
             <div id="critica-redoc" class="critica-painel" style="display:none;"></div>
             <div id="totais-carga"></div>
+        </div>
+    </section>
+
+    <section class="estudo-aba estudo-secao" data-aba="parametros">
+        <h2 class="estudo-aba-titulo">2. Parâmetros</h2>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">Cada linha da extração recebe uma <strong>classe de comportamento</strong> e passa por duas contas: o <strong>fechamento do ano base</strong> (o empenhado até a data de corte, levado até dezembro) e a <strong>projeção do exercício</strong> (o fechamento corrigido pela regra da classe). Os valores ficam guardados neste navegador; o cenário salvo leva os parâmetros junto. <button class="btn-link" onclick="restaurarPadroesRedoc()">↺ Voltar aos padrões</button></p>
+
+            <h3 class="estudo-subtitulo">Classes de comportamento</h3>
+            <p class="estudo-nota">A ordem é: pontual → contratual → pessoal (Tipo PESSOAL) → investimento (Tipo INVESTIMENTO) → custeio recorrente (o resto). A classe de uma linha também pode ser trocada à mão, na aba 4.</p>
+            <div class="estudo-params">
+                <div><label for="p-cl-pontual-elem">Pontual: elementos</label><input type="text" id="p-cl-pontual-elem" onchange="alterouParametroRedoc()"><div class="dica-param">91 Sentenças, 92 DEA, 93 Indenizações, 77 FGO, 65 Aumento de capital</div></div>
+                <div><label for="p-cl-pontual-gid">Pontual: GIDs</label><input type="text" id="p-cl-pontual-gid" onchange="alterouParametroRedoc()"><div class="dica-param">Separados por vírgula</div></div>
+                <div><label for="p-cl-contrato-tipo">Contratual: Tipos de MAPP</label><input type="text" id="p-cl-contrato-tipo" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-cl-contrato-fonte">Contratual: fontes (1º código)</label><input type="text" id="p-cl-contrato-fonte" onchange="alterouParametroRedoc()"><div class="dica-param">754 = operações de crédito</div></div>
+            </div>
+
+            <h3 class="estudo-subtitulo">Fechamento do ano base (<span class="ano-base"></span>)</h3>
+            <p class="estudo-nota">Fechamento = empenhado até a data de corte × fator da classe. Os padrões vêm da relação entre o ano base parcial e o último ano completo na extração de 13/11/2026 (Pessoal: 10,5 meses + 13º salário por vir). Com o empenhado mensal, o fator pode ser recalibrado.</p>
+            <div class="estudo-params">
+                <div><label for="p-fat-A-PESSOAL">Fator · Pessoal</label><input type="text" inputmode="decimal" id="p-fat-A-PESSOAL" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-fat-A-CUSTEIO">Fator · Custeio recorrente</label><input type="text" inputmode="decimal" id="p-fat-A-CUSTEIO" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-fat-B-INVEST">Fator · Investimento</label><input type="text" inputmode="decimal" id="p-fat-B-INVEST" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-fat-C-PONTUAL">Fator · Pontual</label><input type="text" inputmode="decimal" id="p-fat-C-PONTUAL" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-fat-E-CONTRATO">Fator · Contratual</label><input type="text" inputmode="decimal" id="p-fat-E-CONTRATO" onchange="alterouParametroRedoc()"></div>
+            </div>
+            <label class="estudo-check"><input type="checkbox" id="p-limite-teto" onchange="alterouParametroRedoc()"> Limite do ano base como teto do fechamento (o fechamento só passa do limite quando o empenhado já passou)</label>
+            <label class="estudo-check"><input type="checkbox" id="p-incluir-so-limite" onchange="alterouParametroRedoc()"> Linhas com limite e sem empenho entram pelo valor do limite</label>
+
+            <h3 class="estudo-subtitulo">Projeção do exercício (<span class="ano-exercicio"></span>)</h3>
+            <div class="estudo-params">
+                <div><label for="p-veg">Pessoal · crescimento vegetativo (%)</label><input type="text" inputmode="decimal" id="p-veg" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-reaj">Pessoal · reajuste (%)</label><input type="text" inputmode="decimal" id="p-reaj" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-ipca">Custeio · IPCA (%)</label><input type="text" inputmode="decimal" id="p-ipca" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-real">Custeio · crescimento real (%)</label><input type="text" inputmode="decimal" id="p-real" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-inv">Investimento · correção (%)</label><input type="text" inputmode="decimal" id="p-inv" onchange="alterouParametroRedoc()"></div>
+                <div><label for="p-pontual-regra">Pontual · regra</label>
+                    <select id="p-pontual-regra" onchange="alterouParametroRedoc()">
+                        <option value="media_sem_maior">Média dos anos completos, sem o maior</option>
+                        <option value="media">Média dos anos completos</option>
+                        <option value="fechamento">Fechamento do ano base</option>
+                        <option value="zero">Zero (informar à mão)</option>
+                    </select></div>
+                <div><label for="p-contrato-regra">Contratual · regra</label>
+                    <select id="p-contrato-regra" onchange="alterouParametroRedoc()">
+                        <option value="fechamento">Fechamento do ano base (informar cronograma)</option>
+                        <option value="limite">Limite do ano base</option>
+                        <option value="zero">Zero (informar à mão)</option>
+                    </select></div>
+            </div>
+
+            <h3 class="estudo-subtitulo">Resumo por classe</h3>
+            <div id="resumo-classes"><p class="estudo-nota">Carregue a extração na aba 1.</p></div>
+
+            <h3 class="estudo-subtitulo">Índice próprio por GID</h3>
+            <p class="estudo-nota">Para um GID com correção diferente da classe (por exemplo, Terceirização pela repactuação ou Contratos de Gestão pelo contrato), informe o percentual. Vale para as linhas das classes A e B desse GID.</p>
+            <div id="indices-gid"></div>
         </div>
     </section>
 

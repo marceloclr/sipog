@@ -320,8 +320,181 @@ function atualizarAnosNaPagina() {
     document.querySelectorAll('.ano-base').forEach(e => e.textContent = redocAnos.base || '');
 }
 
-// Recalcula a projeção (as etapas seguintes acrescentam a classificação, o fechamento e a projeção).
-function recalcularRedoc() {}
+// ─── PARÂMETROS ─────────────────────────────────────────────────────────────
+// Classes de comportamento (teste retroativo de 16/11/2026, projetando 2025 com 2023–2024, no nível Órgão × Tipo × GID):
+// Pessoal acerta com crescimento (WAPE 3,8%), custeio com índice (17%), investimento sem tendência (32%; com tendência, 53%);
+// pontuais não seguem regra (~87%) e dívida/operação de crédito dependem de cronograma (~40%).
+const CLASSES_REDOC = {
+    'A-PESSOAL': { rotulo: 'A · Pessoal', desc: 'Pessoal recorrente: cresce de forma estável (vegetativo + reajuste).' },
+    'A-CUSTEIO': { rotulo: 'A · Custeio recorrente', desc: 'Custeio recorrente (contratos, serviços, materiais): corrige por índice.' },
+    'B-INVEST': { rotulo: 'B · Investimento', desc: 'Investimento: volátil; repete o fechamento corrigido, sem extrapolar tendência.' },
+    'C-PONTUAL': { rotulo: 'C · Pontual', desc: 'Despesa pontual (DEA, sentenças, indenizações, FGO, aumento de capital): sem tendência.' },
+    'E-CONTRATO': { rotulo: 'E · Contratual', desc: 'Dívida e operações de crédito: segue o cronograma dos contratos.' }
+};
+const ORDEM_CLASSES = Object.keys(CLASSES_REDOC);
+
+// id do campo na aba 2 → valor padrão. Percentuais em % (4,5 = 4,5%).
+const PADROES_REDOC = {
+    'p-fat-A-PESSOAL': 1.22, 'p-fat-A-CUSTEIO': 1.10, 'p-fat-B-INVEST': 1.05, 'p-fat-C-PONTUAL': 1.00, 'p-fat-E-CONTRATO': 1.10,
+    'p-veg': 2.0, 'p-reaj': 4.5, 'p-ipca': 4.5, 'p-real': 2.5, 'p-inv': 4.5,
+    'p-pontual-regra': 'media_sem_maior', 'p-contrato-regra': 'fechamento',
+    'p-cl-pontual-elem': '91, 92, 93, 77, 65', 'p-cl-pontual-gid': 'DEA',
+    'p-cl-contrato-tipo': 'SERVIÇO DA DÍVIDA', 'p-cl-contrato-fonte': '754'
+};
+const PADROES_REDOC_CHECK = { 'p-limite-teto': true, 'p-incluir-so-limite': true };
+const CHAVE_PARAMS_REDOC = 'sipog_redoc_params_v1';
+
+let redocIndiceGid = {};       // GID → % próprio (substitui o índice da classe nas classes A e B)
+let redocClasseManual = {};    // chave da linha → classe escolhida à mão
+let redocValorManual = {};     // chave da linha → valor do exercício digitado à mão
+
+function listaTexto(v) { return String(v || '').split(/[,;\n]/).map(x => N(x)).filter(Boolean); }
+
+function lerParametrosRedoc() {
+    let p = {};
+    for (let id in PADROES_REDOC) {
+        let el = document.getElementById(id), v = el ? el.value : PADROES_REDOC[id];
+        p[id] = typeof PADROES_REDOC[id] === 'number' ? (v === '' || v === null || v === undefined ? PADROES_REDOC[id] : V(v)) : (v || PADROES_REDOC[id]);
+    }
+    for (let id in PADROES_REDOC_CHECK) { let el = document.getElementById(id); p[id] = el ? !!el.checked : PADROES_REDOC_CHECK[id]; }
+    p.fator = {}; ORDEM_CLASSES.forEach(c => p.fator[c] = p['p-fat-' + c]);
+    p.indice = {
+        'A-PESSOAL': (p['p-veg'] + p['p-reaj']) / 100,
+        'A-CUSTEIO': (p['p-ipca'] + p['p-real']) / 100,
+        'B-INVEST': p['p-inv'] / 100
+    };
+    p.pontualElem = listaTexto(p['p-cl-pontual-elem']).map(e => e.padStart(2, '0'));
+    p.pontualGid = listaTexto(p['p-cl-pontual-gid']);
+    p.contratoTipo = listaTexto(p['p-cl-contrato-tipo']);
+    p.contratoFonte = listaTexto(p['p-cl-contrato-fonte']);
+    return p;
+}
+
+function coletarParametrosRedocTela() {
+    let campos = {};
+    for (let id in PADROES_REDOC) { let el = document.getElementById(id); if (el) campos[id] = el.value; }
+    for (let id in PADROES_REDOC_CHECK) { let el = document.getElementById(id); if (el) campos[id] = el.checked; }
+    return { campos, indiceGid: redocIndiceGid };
+}
+function aplicarParametrosRedocTela(p) {
+    let campos = Object.assign({}, PADROES_REDOC, PADROES_REDOC_CHECK, (p && p.campos) || {});
+    for (let id in campos) {
+        let el = document.getElementById(id); if (!el) continue;
+        if (el.type === 'checkbox') el.checked = !!campos[id];
+        else el.value = typeof campos[id] === 'number' ? String(campos[id]).replace('.', ',') : campos[id];
+    }
+    redocIndiceGid = Object.assign({}, (p && p.indiceGid) || {});
+}
+function guardarParametrosRedocLocal() {
+    try { localStorage.setItem(CHAVE_PARAMS_REDOC, JSON.stringify(coletarParametrosRedocTela())); } catch (e) {}
+}
+function restaurarPadroesRedoc() {
+    if (!confirm('Voltar todos os parâmetros (fatores, índices, regras de classe e índices por GID) aos valores padrão?')) return;
+    aplicarParametrosRedocTela(null);
+    alterouParametroRedoc();
+}
+function alterouParametroRedoc() {
+    guardarParametrosRedocLocal();
+    recalcularRedoc();
+}
+function alterarIndiceGid(input) {
+    let gid = input.dataset.gid, t = input.value.trim();
+    if (t === '') delete redocIndiceGid[gid]; else redocIndiceGid[gid] = V(t);
+    alterouParametroRedoc();
+}
+
+// ─── CLASSE E FECHAMENTO DO ANO BASE ────────────────────────────────────────
+function classeAutomatica(l, p) {
+    if (p.pontualElem.includes(l.elem) || p.pontualGid.includes(N(l.gid))) return 'C-PONTUAL';
+    if (p.contratoTipo.includes(N(l.tipo))) return 'E-CONTRATO';
+    let fonteCod = (l.fonte.match(/\((\d+)\)/) || [])[1] || '';
+    if (p.contratoFonte.some(f => fonteCod === f || N(l.fonte).startsWith(f))) return 'E-CONTRATO';
+    if (N(l.tipo) === 'PESSOAL') return 'A-PESSOAL';
+    if (N(l.tipo) === 'INVESTIMENTO') return 'B-INVEST';
+    return 'A-CUSTEIO';
+}
+
+// Fechamento = Emp. base × fator da classe; com Limite e "Limite como teto", não passa do limite
+// (salvo se o empenhado já passou); nunca fica abaixo do já empenhado.
+function fechamentoLinha(l, p) {
+    let e = l['e' + redocAnos.base] || 0, lim = l.lim || 0, f = p.fator[l.classe];
+    if (e === 0 && lim > 0) {
+        return p['p-incluir-so-limite']
+            ? { v: lim, regra: 'só limite', exp: `Sem empenho em ${redocAnos.base}: fechamento = Limite ${F(lim)}` }
+            : { v: 0, regra: 'só limite (fora)', exp: `Sem empenho em ${redocAnos.base} e "linhas só com limite" desligado: 0` };
+    }
+    let bruto = e * f, v = bruto, exp = `${F(e)} × ${String(f).replace('.', ',')} = ${F(bruto)}`;
+    if (p['p-limite-teto'] && lim > 0 && v > Math.max(lim, e)) { v = Math.max(lim, e); exp += ` → teto do Limite ${F(lim)}`; }
+    if (v < e) { v = e; exp += ` → não fica abaixo do empenhado ${F(e)}`; }
+    return { v, regra: 'fator', exp };
+}
+
+// Recalcula classe, fechamento e projeção de todas as linhas e redesenha as abas.
+function recalcularRedoc() {
+    if (!redocLinhas.length) return;
+    let p = lerParametrosRedoc();
+    for (let l of redocLinhas) {
+        l.classeAuto = classeAutomatica(l, p);
+        l.classe = redocClasseManual[l.chave] || l.classeAuto;
+        let fc = fechamentoLinha(l, p);
+        l.fech = fc.v; l.fechExp = fc.exp; l.fechRegra = fc.regra;
+    }
+    if (typeof projetarLinhasRedoc === 'function') projetarLinhasRedoc(p);
+    renderizarParametrosRedoc(p);
+    if (typeof renderizarProjecaoRedoc === 'function') renderizarProjecaoRedoc();
+    if (typeof renderizarComportamentoRedoc === 'function') renderizarComportamentoRedoc(p);
+}
+
+// ─── TELA: PARÂMETROS ───────────────────────────────────────────────────────
+function resumoPorClasse(linhas) {
+    let r = {};
+    ORDEM_CLASSES.forEach(c => r[c] = { n: 0, base: 0, lim: 0, fech: 0, proj: 0, hist: {} });
+    for (let l of linhas) {
+        let x = r[l.classe]; x.n++; x.base += l['e' + redocAnos.base] || 0; x.lim += l.lim || 0; x.fech += l.fech || 0; x.proj += l.proj || 0;
+        for (let a of redocAnos.completos) x.hist[a] = (x.hist[a] || 0) + (l['e' + a] || 0);
+    }
+    return r;
+}
+
+function renderizarParametrosRedoc(p) {
+    let el = document.getElementById('resumo-classes');
+    if (!el) return;
+    let a = redocAnos, r = resumoPorClasse(redocLinhas), ult = a.completos[a.completos.length - 1];
+    let h = `<div class="estudo-tabela-wrap"><table><thead><tr><th class="sem-ordem">Classe</th><th class="sem-ordem num">Linhas</th>`
+        + `<th class="sem-ordem num">Empenhado ${ult} (R$ mi)</th><th class="sem-ordem num">Empenhado ${a.base} parcial (R$ mi)</th><th class="sem-ordem num">Limite ${a.limite || a.base} (R$ mi)</th>`
+        + `<th class="sem-ordem num" title="Empenhado do ano base × fator da classe, limitado pelo Limite quando ligado">Fechamento ${a.base} (R$ mi)</th>`
+        + `<th class="sem-ordem num" title="Fechamento ÷ empenhado parcial">Fator efetivo</th><th class="sem-ordem num" title="Fechamento ÷ empenhado do último ano completo">Fechamento ÷ ${ult}</th></tr></thead><tbody>`;
+    let t = { n: 0, u: 0, base: 0, lim: 0, fech: 0 };
+    for (let c of ORDEM_CLASSES) {
+        let x = r[c], u = x.hist[ult] || 0;
+        t.n += x.n; t.u += u; t.base += x.base; t.lim += x.lim; t.fech += x.fech;
+        h += `<tr><td><span class="estudo-tag cl-${c}" title="${escR(CLASSES_REDOC[c].desc)}">${CLASSES_REDOC[c].rotulo}</span></td><td class="num">${fmtNum(x.n)}</td><td class="num">${fmtMi(u)}</td><td class="num">${fmtMi(x.base)}</td><td class="num">${fmtMi(x.lim)}</td><td class="num">${fmtMi(x.fech)}</td>`
+            + `<td class="num">${x.base ? (x.fech / x.base).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) : '—'}</td><td class="num">${u ? fmtPct(x.fech / u - 1) : '—'}</td></tr>`;
+    }
+    h += `</tbody><tfoot><tr><td>Total</td><td class="num">${fmtNum(t.n)}</td><td class="num">${fmtMi(t.u)}</td><td class="num">${fmtMi(t.base)}</td><td class="num">${fmtMi(t.lim)}</td><td class="num">${fmtMi(t.fech)}</td><td class="num">${t.base ? (t.fech / t.base).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) : '—'}</td><td class="num">${t.u ? fmtPct(t.fech / t.u - 1) : '—'}</td></tr></tfoot></table></div>`;
+    el.innerHTML = h;
+    renderizarIndicesGid();
+}
+
+function renderizarIndicesGid() {
+    let el = document.getElementById('indices-gid');
+    if (!el) return;
+    let p = lerParametrosRedoc(), g = {};
+    for (let l of redocLinhas) {
+        let x = g[l.gid] = g[l.gid] || { gid: l.gid, fech: 0, porClasse: {} };
+        x.fech += l.fech; x.porClasse[l.classe] = (x.porClasse[l.classe] || 0) + l.fech;
+    }
+    let lista = Object.values(g).sort((a, b) => b.fech - a.fech);
+    let h = `<div class="estudo-tabela-wrap" style="max-height:420px;"><table><thead><tr><th class="sem-ordem">GID</th><th class="sem-ordem">Classe predominante</th><th class="sem-ordem num">Fechamento ${redocAnos.base} (R$ mi)</th><th class="sem-ordem num">Índice da classe</th><th class="sem-ordem num" title="Deixe em branco para usar o índice da classe. Vale só para as classes A e B.">Índice próprio (%)</th></tr></thead><tbody>`;
+    for (let x of lista) {
+        let pred = Object.entries(x.porClasse).sort((a, b) => b[1] - a[1])[0][0];
+        let ind = p.indice[pred];
+        let proprio = redocIndiceGid[x.gid];
+        h += `<tr><td>${escR(x.gid)}</td><td><span class="estudo-tag cl-${pred}">${CLASSES_REDOC[pred].rotulo}</span></td><td class="num">${fmtMi(x.fech)}</td><td class="num">${ind === undefined ? 'não se aplica' : fmtPct(ind)}</td>`
+            + `<td class="num"><input class="input-valor" style="width:90px;" data-gid="${escR(x.gid)}" value="${proprio === undefined ? '' : String(proprio).replace('.', ',')}" placeholder="—" onchange="alterarIndiceGid(this)"></td></tr>`;
+    }
+    el.innerHTML = h + '</tbody></table></div>';
+}
 
 // ─── NAVEGAÇÃO E TEMA ───────────────────────────────────────────────────────
 function mostrarAbaRedoc(aba) {
@@ -339,6 +512,9 @@ function alternarTemaRedoc() {
 
 function iniciarRedoc() {
     try { let t = localStorage.getItem('spopic_theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    let salvos = null;
+    try { salvos = JSON.parse(localStorage.getItem(CHAVE_PARAMS_REDOC) || 'null'); } catch (e) {}
+    aplicarParametrosRedocTela(salvos);
     let aba = 'carga';
     try { aba = localStorage.getItem(CHAVE_ABA_REDOC) || 'carga'; } catch (e) {}
     mostrarAbaRedoc(aba);
