@@ -695,7 +695,7 @@ function linhaFolhaRedoc(l) {
     let s = Object.assign({ fech: l.fech, proj: l.proj, lim: l.lim }, ...redocAnos.empenho.map(a => ({ ['e' + a]: l['e' + a] })));
     let cels = celulasValores(s, l.fechExp, l.projExp);
     return `<tr class="nivel-4 ${editada || classeTrocada ? 'linha-editada' : ''}">`
-        + `<td title="${escR(`${l.mapp}\n${l.fonte}\nNatureza ${l.nat} — ${l.delem} / ${l.ditem}\nChave REDOC: ${l.chaveRedoc}`)}"><strong>MAPP ${escR(l.cod)}</strong> — ${escR(l.mapp.length > 90 ? l.mapp.slice(0, 90) + '…' : l.mapp)}<br><span style="color:var(--muted);">${escR(l.fonte)} · ${escR(l.nat)} ${escR(l.ditem)}</span></td>`
+        + `<td title="${escR(`${l.mapp}\n${l.fonte}\nNatureza ${l.nat} — ${l.delem} / ${l.ditem}\nChave REDOC: ${l.chaveRedoc}`)}"><span class="txt-mapp"><strong>MAPP ${escR(l.cod)}</strong> — ${escR(l.mapp)}</span><span style="color:var(--muted);">${escR(l.fonte)} · ${escR(l.nat)} ${escR(l.ditem)}</span></td>`
         + cels
         + `<td><select class="select-classe" data-chave="${chave}" onchange="alterarClasseRedoc(this)" onclick="event.stopPropagation()">${opts}</select></td>`
         + `<td style="font-size:11px;min-width:130px;">${escR(l.projRegra)}</td>`

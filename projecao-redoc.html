@@ -72,10 +72,21 @@
     tr.nivel-2 td:first-child { padding-left: 38px; }
     tr.nivel-3 td:first-child { padding-left: 52px; }
     tr.nivel-4 td { background: var(--panel2); font-size: 11.5px; }
-    tr.nivel-4 td:first-child { padding-left: 66px; min-width: 260px; max-width: 380px; white-space: normal; }
+    tr.nivel-4 td:first-child { padding-left: 66px; white-space: normal; }
+    tr.nivel-4 td:first-child .txt-mapp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+    #grade-projecao table td:first-child, #grade-projecao table th:first-child { min-width: 340px; max-width: 420px; }
+    #grade-projecao table td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 0; }
+    #grade-projecao tr.nivel-4 td:first-child { background: var(--panel2); }
+    #grade-projecao table th:first-child { left: 0; z-index: 2; }
+    #grade-projecao table td, #grade-projecao table th { padding: 6px 8px; }
+    #grade-projecao tr.nivel-1 td:first-child { padding-left: 22px; }
+    #grade-projecao tr.nivel-2 td:first-child { padding-left: 36px; }
+    #grade-projecao tr.nivel-3 td:first-child { padding-left: 50px; }
+    #grade-projecao tr.nivel-4 td:first-child { padding-left: 64px; }
+    .estudo-conteudo.wrap { max-width: none; }
     tr.linha-editada td { background: rgba(245,156,0,0.12) !important; }
     tr.linha-aviso > td { background: var(--panel2); color: var(--warning); font-size: 11px; padding-left: 66px; }
-    input.input-valor { width: 140px; text-align: right; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    input.input-valor { width: 118px; text-align: right; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; }
     tr.linha-editada input.input-valor { border-color: var(--warning); font-weight: 700; }
     select.select-classe { width: auto; padding: 3px 4px; font-size: 11px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
     .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }

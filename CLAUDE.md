@@ -237,3 +237,29 @@ e do XLSX exportado terminam em `DDMMAAAA-HHMM` (`carimboDataHora()`), regra dos
   dele) e na aba FONTES_MAPP_LOA do pacote (as linhas de DE_PARA_FONTES iguais à oficial não viram manuais). Conferido em 27/10
   (base real + PLOA GND 44): LOA do Executivo igual (R$ 5.682.613.358); fora do cruzamento R$ 1,44 bi → R$ 946 mi; 501.70
   (R$ 629,5 mi) passa a (700)-(070); fora da tabela: 722.00, 754.64, 754.71, 754.72, 762.01. Órgão casa pela sigla entre parênteses.
+
+## Projeção REDOC: `projecao-redoc.html` + `js/projecao-redoc.js` (16/11/2026)
+
+Projeção do exercício seguinte (ano base + 1) das despesas da extração do REDOC (`redoc_DD-MM-AA.csv`), por item de despesa.
+Plano: `docs/planos/2026-11-16-projecao-redoc-2027.md`. Página separada, link "📈 Projeção REDOC" no topo do SIPOG; carrega só
+o js/03 e o js/05 (definições) e não toca no estado do SIPOG.
+
+- **Carga** (`interpretarMatrizRedoc`): CSV `;` (UTF-8 ou 1252; campo entre aspas só se começar com aspas — os textos têm aspas no
+  meio) ou xlsx. Anos pelos cabeçalhos `Empenhado (AAAA)`/`Limite (AAAA)`: último empenho = ano base (parcial), anteriores = anos
+  completos, exercício = base + 1. Data de corte pelo nome do arquivo (editável). Chave da linha Órgão × Tipo × MAPP (código + texto)
+  × Fonte × natureza de 11 dígitos; repetidas são somadas; linhas sem valor algum saem. Só coluna ausente e valor não numérico bloqueiam.
+  Chave REDOC `ORGAO__MAPP<cod>__F<dígitos da fonte>__<natureza>` (`chaveRedocLinha`; formato "fonte6" suposto, a conferir no REDOC).
+- **Classes** (`classeAutomatica`, regras editáveis na aba 2): pontual (elementos 91, 92, 93, 77, 65 e GID DEA) → contratual (Tipo
+  SERVIÇO DA DÍVIDA e fonte 754) → pessoal → investimento → custeio. Troca manual por linha (`redocClasseManual`).
+- **Fechamento** (`fechamentoLinha`): Emp. base × fator da classe (padrões 1,22 / 1,10 / 1,05 / 1,00 / 1,10), Limite como teto, nunca
+  abaixo do empenhado; linha só com limite entra pelo limite (opção).
+- **Projeção** (`projecaoAutomatica`): A e B = fechamento × (1 + índice da classe ou do GID); pontual = média dos anos completos sem o
+  maior (ou média/fechamento/zero); contratual = fechamento (ou limite/zero). Valor manual por linha (`redocValorManual`). Ajustes
+  guardados em `localStorage` por nome de arquivo; parâmetros em `sipog_redoc_params_v1`.
+- Aba 3: série por dimensão, padrão de ocorrência, picos e **teste retroativo** (`calcularTesteRetroativo`: último ano completo pelos
+  anteriores, Órgão × Tipo × GID × classe, WAPE). Aba 4: árvore Secretaria → Órgão → Tipo → GID → linhas (até 300 por nó).
+- Exportação xlsx (PROJECAO com conta e regra, resumos, teste, crítica); cenário em JSON ou na nuvem, coleção `projecoes_redoc`
+  (linhas em colunas, ~30 chunks para 22 mil linhas).
+- Conferido em 16/11 com `redoc_13-11-26.csv` (Chrome): 23.031 lidas → 22.065 linhas; totais iguais ao CSV (33,082 / 37,701 /
+  44,794 / 39,018 / Limite 37,141 bi); fechamento 2026 R$ 44,14 bi, projeção 2027 R$ 45,90 bi (+4,0%); JSON ida e volta igual;
+  xlsx gerado (10 abas). A gravação na coleção `projecoes_redoc` não foi testada (escrita na nuvem compartilhada).
