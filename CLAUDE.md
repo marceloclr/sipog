@@ -264,6 +264,8 @@ o js/03 e o js/05 (definições) e não toca no estado do SIPOG.
   no nome da tabela desce, trilha volta): evolução do nó (empenhado, estimativa até dezembro, projeção), 12 maiores filhos (último ano
   completo × projeção; o resto só na nota e na tabela) e composição do fechamento pela situação da linha (`situacaoGrafico`). Paleta
   `--viz-1..4` validada (dataviz) com passos próprios do tema escuro; desenhados só com a aba visível (`graficosSujos`).
+  Filtros ligados da aba 3 (`FILTROS_COMP`: Secretaria, Órgão, Tipo, MAPP, Fonte, GID, Classe, Elemento, Item + busca;
+  `linhasFiltradasComp`) valem para a aba inteira: gráficos, série, teste retroativo, padrão de ocorrência e picos.
 - Exportação xlsx (PROJECAO com conta e regra, resumos, teste, crítica); cenário em JSON ou na nuvem, coleção `projecoes_redoc`
   (linhas em colunas, ~30 chunks para 22 mil linhas).
 - Conferido em 16/11 com `redoc_13-11-26.csv` (Chrome): 23.031 lidas → 22.065 linhas; totais iguais ao CSV (33,082 / 37,701 /

@@ -68,6 +68,7 @@
     .graf-canvas { position: relative; height: 300px; }
     .graf-trilha { font-size: 12px; margin: 4px 0 12px; padding: 8px 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; }
     @media (max-width: 640px) { .graf-grade { grid-template-columns: 1fr; } }
+    .estudo-filtros label.filtro-ativo select { border-color: var(--accent); font-weight: 700; }
     /* Classes de comportamento */
     .cl-A-PESSOAL { background: rgba(42,120,214,0.15); color: #2a78d6; }
     .cl-A-CUSTEIO { background: rgba(27,175,122,0.15); color: #12895f; }
@@ -235,8 +236,19 @@
                     <option value="item">Item de despesa (Grupo › Elemento › Item › Órgão)</option>
                     <option value="orgao">Órgão (Secretaria › Órgão › Tipo › GID)</option>
                 </select></label>
-                <span class="estudo-nota" style="margin:0;">Clique numa barra (ou num nome da tabela) para abrir o nível seguinte; use a trilha para voltar.</span>
+                <label>Secretaria <select id="cf-sec" onchange="alterarFiltroComp()"></select></label>
+                <label>Órgão <select id="cf-orgao" onchange="alterarFiltroComp()"></select></label>
+                <label>Tipo <select id="cf-tipo" onchange="alterarFiltroComp()"></select></label>
+                <label>MAPP <select id="cf-mapp" onchange="alterarFiltroComp()" style="max-width:360px;"></select></label>
+                <label>Fonte <select id="cf-fonte" onchange="alterarFiltroComp()"></select></label>
+                <label>GID <select id="cf-gid" onchange="alterarFiltroComp()"></select></label>
+                <label>Classe <select id="cf-classe" onchange="alterarFiltroComp()"></select></label>
+                <label>Elemento <select id="cf-elem" onchange="alterarFiltroComp()"></select></label>
+                <label>Item <select id="cf-nat" onchange="alterarFiltroComp()" style="max-width:360px;"></select></label>
+                <label>Busca <input type="search" id="cf-busca" placeholder="MAPP, natureza, item…" onchange="alterarFiltroComp()"></label>
+                <button class="btn-mini-header" id="cf-limpar" onclick="limparFiltrosComp()">Limpar filtros</button>
             </div>
+            <p class="estudo-nota" style="margin-top:-4px;">Os filtros valem para a aba inteira (gráficos, série, teste retroativo, padrão de ocorrência e picos) e cada lista mostra só o que existe com os demais filtros. Clique numa barra (ou num nome da tabela) para abrir o nível seguinte; use a trilha para voltar.</p>
             <div class="graf-trilha" id="g-trilha"></div>
             <div class="graf-grade">
                 <figure class="graf-caixa" style="grid-column: 1 / -1;">

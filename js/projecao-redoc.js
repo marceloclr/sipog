@@ -732,13 +732,15 @@ function renderizarComportamentoRedoc(p) {
     if (!el || !redocLinhas.length) return;
     p = p || lerParametrosRedoc();
     let a = redocAnos, cs = a.completos, ult = cs[cs.length - 1];
+    atualizarFiltrosComp();
 
     // 1. Gráficos e série do nó atual (mesmas visões agrupadas da aba 4)
     renderizarGraficosRedoc();
 
-    // 2. Padrão de ocorrência (anos com empenho) por linha
+    // 2. Padrão de ocorrência (anos com empenho) por linha — só as linhas dos filtros da aba
+    let base = linhasFiltradasComp();
     let pad = new Map(), totFech = 0;
-    for (let l of redocLinhas) {
+    for (let l of base) {
         let anos = a.empenho.map(y => (l['e' + y] || 0) > 0);
         let k = anos.map(v => v ? '1' : '0').join('');
         let x = pad.get(k) || { anos, n: 0, ult: 0, base: 0, fech: 0, proj: 0 };
@@ -758,7 +760,7 @@ function renderizarComportamentoRedoc(p) {
 
     // 3. Picos: maior ano completo > R$ 50 mi e > 3× a mediana dos anos completos
     let mediana = v => { let s = v.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-    let picos = redocLinhas.map(l => { let v = cs.map(y => l['e' + y] || 0), mx = Math.max(...v); return { l, mx, ano: cs[v.indexOf(mx)], med: mediana(v) }; })
+    let picos = base.map(l => { let v = cs.map(y => l['e' + y] || 0), mx = Math.max(...v); return { l, mx, ano: cs[v.indexOf(mx)], med: mediana(v) }; })
         .filter(x => x.mx > 50e6 && x.mx > 3 * Math.max(x.med, 1)).sort((x, y) => y.mx - x.mx);
     document.getElementById('comp-picos').innerHTML = !picos.length ? '<p class="estudo-nota">Nenhum pico.</p>'
         : `<p class="estudo-nota">${fmtNum(picos.length)} linha(s), R$ ${fmtMi(picos.reduce((s, x) => s + x.mx, 0))} mi nos anos de pico. Confira a classe: uma despesa que não se repete deve ser pontual ou contratual.</p>`
@@ -789,8 +791,62 @@ function situacaoGrafico(l) {
     let anos = redocAnos.empenho.map(y => (l['e' + y] || 0) > 0), o = descreverOcorrencia(anos, redocAnos.empenho).ordem;
     return o === 0 ? 'recorrente' : o === 1 ? 'continua' : o === 2 ? 'nova' : 'outras';
 }
+// Filtros da aba 3 (esferas de análise). Ligados: cada lista mostra só os valores que existem com os OUTROS filtros.
+const FILTROS_COMP = [
+    { id: 'cf-sec', k: l => l.sec, t: l => l.sec, todos: '(todas as secretarias)' },
+    { id: 'cf-orgao', k: l => l.orgao, t: l => l.orgao, todos: '(todos os órgãos)' },
+    { id: 'cf-tipo', k: l => l.tipo, t: l => l.tipo, todos: '(todos os tipos)' },
+    { id: 'cf-mapp', k: l => `${l.orgao}|${l.cod}`, t: l => `${l.cod} — ${l.mapp.length > 70 ? l.mapp.slice(0, 69) + '…' : l.mapp} (${l.orgao})`, todos: '(todos os MAPPs)' },
+    { id: 'cf-fonte', k: l => l.fonte, t: l => l.fonte, todos: '(todas as fontes)' },
+    { id: 'cf-gid', k: l => l.gid, t: l => l.gid, todos: '(todos os GIDs)' },
+    { id: 'cf-classe', k: l => l.classe, t: l => CLASSES_REDOC[l.classe].rotulo, todos: '(todas as classes)' },
+    { id: 'cf-elem', k: l => `${l.grupo}.${l.elem}`, t: rotuloElemento, todos: '(todos os elementos)' },
+    { id: 'cf-nat', k: l => l.nat, t: rotuloNatureza, todos: '(todos os itens)' }
+];
+let compFiltros = {};          // id do filtro → valor escolhido
+let compBusca = '';
+
+function linhasFiltradasComp(excetoId) {
+    let ativos = FILTROS_COMP.filter(f => f.id !== excetoId && compFiltros[f.id]), b = N(compBusca);
+    if (!ativos.length && !b) return redocLinhas;
+    return redocLinhas.filter(l => ativos.every(f => f.k(l) === compFiltros[f.id])
+        && (!b || N(`${l.orgao} ${l.cod} ${l.mapp} ${l.nat} ${l.ditem} ${l.delem} ${l.fonte}`).includes(b)));
+}
+function atualizarFiltrosComp() {
+    for (let f of FILTROS_COMP) {
+        let el = document.getElementById(f.id); if (!el) continue;
+        let m = new Map();
+        for (let l of linhasFiltradasComp(f.id)) { let k = f.k(l); if (!m.has(k)) m.set(k, f.t(l)); }
+        let atual = compFiltros[f.id] || '';
+        if (atual && !m.has(atual)) { let l = redocLinhas.find(x => f.k(x) === atual); m.set(atual, l ? f.t(l) : atual); }
+        let ops = [...m.entries()].sort((x, y) => x[1].localeCompare(y[1], 'pt-BR'));
+        el.innerHTML = `<option value="">${f.todos}</option>` + ops.map(([v, t]) => `<option value="${escR(v)}" ${v === atual ? 'selected' : ''}>${escR(t)}</option>`).join('');
+        let lb = el.closest && el.closest('label'); if (lb) lb.classList.toggle('filtro-ativo', !!atual);
+    }
+    let ativos = FILTROS_COMP.filter(f => compFiltros[f.id]).length + (compBusca ? 1 : 0);
+    let bt = document.getElementById('cf-limpar'); if (bt) bt.textContent = ativos ? `Limpar filtros (${ativos})` : 'Limpar filtros';
+}
+function alterarFiltroComp() {
+    compFiltros = {};
+    for (let f of FILTROS_COMP) { let el = document.getElementById(f.id); if (el && el.value) compFiltros[f.id] = el.value; }
+    compBusca = (document.getElementById('cf-busca') || {}).value || '';
+    graficosSujos = true;
+    renderizarComportamentoRedoc();
+}
+function limparFiltrosComp() {
+    compFiltros = {}; compBusca = '';
+    let b = document.getElementById('cf-busca'); if (b) b.value = '';
+    graficosSujos = true;
+    renderizarComportamentoRedoc();
+}
+function descricaoFiltrosComp() {
+    let partes = FILTROS_COMP.filter(f => compFiltros[f.id]).map(f => { let el = document.getElementById(f.id); let op = el && el.selectedOptions && el.selectedOptions[0]; return op ? op.textContent : compFiltros[f.id]; });
+    if (compBusca) partes.push(`busca "${compBusca}"`);
+    return partes.join(' · ');
+}
+
 function niveisComp() { return ARVORES_REDOC[compAgrupamento].niveis; }
-function linhasDoNoComp() { let nv = niveisComp(); return redocLinhas.filter(l => compCaminho.every((k, i) => nv[i](l) === k)); }
+function linhasDoNoComp() { let nv = niveisComp(); return linhasFiltradasComp().filter(l => compCaminho.every((k, i) => nv[i](l) === k)); }
 // Filhos do nó atual: o próximo nível da árvore ou, no último, as linhas da extração (MAPP × fonte).
 function filhosDoNoComp(linhas) {
     let nv = niveisComp(), f = compCaminho.length < nv.length ? nv[compCaminho.length] : (l => `MAPP ${l.cod} · ${l.fonte} · ${l.orgao}`);
@@ -833,7 +889,13 @@ function renderizarGraficosRedoc() {
     // Trilha (breadcrumb)
     document.getElementById('g-trilha').innerHTML = `<button class="btn-link" style="font-size:12px;" onclick="irParaNivelComp(0)">Todas as despesas</button>`
         + compCaminho.map((k, i) => ` › <button class="btn-link" style="font-size:12px;" onclick="irParaNivelComp(${i + 1})">${escR(k)}</button>`).join('')
-        + ` <span class="estudo-nota" style="margin-left:8px;">${fmtNum(linhas.length)} linhas · R$ ${fmtMi(tot.proj)} mi projetados</span>`;
+        + ` <span class="estudo-nota" style="margin-left:8px;">${fmtNum(linhas.length)} linhas · R$ ${fmtMi(tot.proj)} mi projetados</span>`
+        + (descricaoFiltrosComp() ? `<div class="estudo-nota" style="margin:4px 0 0;">Filtros: <strong>${escR(descricaoFiltrosComp())}</strong></div>` : '');
+    if (!linhas.length) {
+        Object.keys(graficosRedoc).forEach(id => { graficosRedoc[id].destroy(); delete graficosRedoc[id]; });
+        document.getElementById('comp-serie').innerHTML = '<p class="estudo-nota">Nenhuma linha com esses filtros.</p>';
+        return;
+    }
     renderizarSerieComp(filhos, proxNivel);
 
     // Os gráficos só são desenhados com a aba visível (canvas oculto não tem tamanho).
@@ -962,12 +1024,12 @@ function descreverOcorrencia(anos, lista) {
 
 // Projeta o último ano completo com os anteriores, no nível Órgão × Tipo × GID × classe, pela regra da tela
 // (o ano anterior faz o papel do fechamento) e compara com "repetir o ano anterior".
-function calcularTesteRetroativo(p) {
+function calcularTesteRetroativo(p, linhasBase) {
     let cs = redocAnos.completos;
     if (cs.length < 2) return null;
     let alvo = cs[cs.length - 1], hist = cs.slice(0, -1), ant = hist[hist.length - 1];
     let g = new Map();
-    for (let l of redocLinhas) {
+    for (let l of (linhasBase || redocLinhas)) {
         let k = [l.orgao, l.tipo, l.gid, l.classe].join('|'), x = g.get(k);
         if (!x) { x = { classe: l.classe, gid: l.gid, real: 0 }; hist.forEach(y => x['e' + y] = 0); g.set(k, x); }
         x.real += l['e' + alvo] || 0; hist.forEach(y => x['e' + y] += l['e' + y] || 0);
@@ -993,7 +1055,7 @@ function calcularTesteRetroativo(p) {
 
 function renderizarTesteRetroativo(p) {
     let el = document.getElementById('comp-teste');
-    let t = calcularTesteRetroativo(p);
+    let t = calcularTesteRetroativo(p, linhasFiltradasComp());
     if (!t) { el.innerHTML = '<p class="estudo-nota">São precisos ao menos dois anos completos.</p>'; return; }
     let linha = (c, r) => `<tr><td>${c === 'TOTAL' ? '<strong>Total</strong>' : `<span class="estudo-tag cl-${c}">${CLASSES_REDOC[c].rotulo}</span>`}</td><td class="num">${fmtNum(r.n)}</td><td class="num">${fmtMi(r.real)}</td>`
         + `<td class="num">${fmtMi(r.regra)}</td><td class="num">${r.real ? fmtPct(r.regra / r.real - 1) : '—'}</td><td class="num"><strong>${r.real ? fmtPct(r.absRegra / r.real) : '—'}</strong></td>`
