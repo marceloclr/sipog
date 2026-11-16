@@ -703,6 +703,125 @@ function linhaFolhaRedoc(l) {
         + `${editada || classeTrocada ? ` <button class="btn-link" title="Volta à classe e à regra automáticas" onclick="voltarRegraRedoc(this.dataset.chave)" data-chave="${chave}">↺</button>` : ''}</td></tr>`;
 }
 
+// ─── TELA: COMPORTAMENTO E TESTE RETROATIVO ─────────────────────────────────
+const DIMENSOES_REDOC = {
+    tipo: { rotulo: 'Tipo de MAPP', f: l => l.tipo },
+    classe: { rotulo: 'Classe', f: l => CLASSES_REDOC[l.classe].rotulo },
+    gid: { rotulo: 'GID', f: l => l.gid },
+    fonte: { rotulo: 'Fonte', f: l => l.fonte },
+    sec: { rotulo: 'Secretaria', f: l => l.sec },
+    elemento: { rotulo: 'Grupo.Elemento', f: l => `${l.grupo}.${l.elem} ${l.delem}` }
+};
+
+function cagr(primeiro, ultimo, anos) { return primeiro > 0 && ultimo > 0 && anos > 0 ? Math.pow(ultimo / primeiro, 1 / anos) - 1 : null; }
+function coefVar(vals) {
+    let m = vals.reduce((s, x) => s + x, 0) / vals.length;
+    if (!m) return null;
+    return Math.sqrt(vals.reduce((s, x) => s + (x - m) * (x - m), 0) / vals.length) / m;
+}
+
+function renderizarComportamentoRedoc(p) {
+    let el = document.getElementById('comp-serie');
+    if (!el || !redocLinhas.length) return;
+    p = p || lerParametrosRedoc();
+    let a = redocAnos, cs = a.completos, ult = cs[cs.length - 1];
+    let dimSel = document.getElementById('c-dim'), dim = DIMENSOES_REDOC[dimSel.value] ? dimSel.value : 'tipo';
+
+    // 1. Série por dimensão
+    let g = new Map();
+    for (let l of redocLinhas) {
+        let k = DIMENSOES_REDOC[dim].f(l), x = g.get(k);
+        if (!x) { x = { k, fech: 0, proj: 0 }; a.empenho.forEach(y => x['e' + y] = 0); g.set(k, x); }
+        a.empenho.forEach(y => x['e' + y] += l['e' + y] || 0); x.fech += l.fech; x.proj += l.proj;
+    }
+    let lista = [...g.values()].sort((x, y) => y['e' + ult] - x['e' + ult]);
+    let tot = { k: 'Total', fech: 0, proj: 0 }; a.empenho.forEach(y => tot['e' + y] = 0);
+    lista.forEach(x => { a.empenho.forEach(y => tot['e' + y] += x['e' + y]); tot.fech += x.fech; tot.proj += x.proj; });
+    let linhaSerie = (x, tag) => {
+        let c = cagr(x['e' + cs[0]], x['e' + ult], cs.length - 1), cv = coefVar(cs.map(y => x['e' + y]));
+        return `<${tag}><td>${escR(x.k)}</td>` + a.empenho.map(y => `<td class="num">${fmtMi(x['e' + y])}</td>`).join('')
+            + `<td class="num">${fmtMi(x.fech)}</td><td class="num"><strong>${fmtMi(x.proj)}</strong></td>`
+            + `<td class="num">${fmtPct(c)}</td><td class="num">${cv === null ? '—' : cv.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</td>`
+            + `<td class="num">${x['e' + ult] ? fmtPct(x.proj / x['e' + ult] - 1) : '—'}</td></${tag}>`;
+    };
+    el.innerHTML = `<div class="estudo-tabela-wrap" style="max-height:520px;"><table><thead><tr><th class="sem-ordem">${DIMENSOES_REDOC[dim].rotulo}</th>`
+        + a.empenho.map(y => `<th class="sem-ordem num">${y}${y === a.base ? ' parcial' : ''}</th>`).join('')
+        + `<th class="sem-ordem num">Fechamento ${a.base}</th><th class="sem-ordem num">Projeção ${a.exercicio}</th>`
+        + `<th class="sem-ordem num" title="Crescimento médio anual de ${cs[0]} a ${ult}">Cresc. a.a. ${cs[0]}–${ult}</th>`
+        + `<th class="sem-ordem num" title="Coeficiente de variação dos anos completos (desvio-padrão ÷ média): acima de 0,25 indica despesa volátil">Variação (CV)</th>`
+        + `<th class="sem-ordem num" title="Projeção ÷ último ano completo − 1">Proj. ÷ ${ult}</th></tr></thead><tbody>`
+        + lista.map(x => linhaSerie(x, 'tr')).join('') + `</tbody><tfoot>${linhaSerie(tot, 'tr')}</tfoot></table></div>`;
+
+    // 2. Padrão de ocorrência (anos com empenho) por linha
+    let pad = new Map();
+    for (let l of redocLinhas) {
+        let k = a.empenho.map(y => (l['e' + y] || 0) > 0 ? '■' : '·').join(' ');
+        let x = pad.get(k) || { k, n: 0, ult: 0, base: 0, fech: 0, proj: 0 };
+        x.n++; x.ult += l['e' + ult] || 0; x.base += l['e' + a.base] || 0; x.fech += l.fech; x.proj += l.proj; pad.set(k, x);
+    }
+    let pads = [...pad.values()].sort((x, y) => (y.fech + y.ult) - (x.fech + x.ult));
+    document.getElementById('comp-padrao').innerHTML = `<div class="estudo-tabela-wrap" style="max-height:420px;"><table><thead><tr><th class="sem-ordem" title="■ = empenhou no ano; · = não empenhou">${a.empenho.join(' ')}</th><th class="sem-ordem num">Linhas</th><th class="sem-ordem num">Empenhado ${ult} (R$ mi)</th><th class="sem-ordem num">${a.base} parcial (R$ mi)</th><th class="sem-ordem num">Fechamento (R$ mi)</th><th class="sem-ordem num">Projeção (R$ mi)</th></tr></thead><tbody>`
+        + pads.map(x => `<tr><td style="font-family:monospace;letter-spacing:2px;">${x.k}</td><td class="num">${fmtNum(x.n)}</td><td class="num">${fmtMi(x.ult)}</td><td class="num">${fmtMi(x.base)}</td><td class="num">${fmtMi(x.fech)}</td><td class="num">${fmtMi(x.proj)}</td></tr>`).join('')
+        + '</tbody></table></div>';
+
+    // 3. Picos: maior ano completo > R$ 50 mi e > 3× a mediana dos anos completos
+    let mediana = v => { let s = v.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    let picos = redocLinhas.map(l => { let v = cs.map(y => l['e' + y] || 0), mx = Math.max(...v); return { l, mx, ano: cs[v.indexOf(mx)], med: mediana(v) }; })
+        .filter(x => x.mx > 50e6 && x.mx > 3 * Math.max(x.med, 1)).sort((x, y) => y.mx - x.mx);
+    document.getElementById('comp-picos').innerHTML = !picos.length ? '<p class="estudo-nota">Nenhum pico.</p>'
+        : `<p class="estudo-nota">${fmtNum(picos.length)} linha(s), R$ ${fmtMi(picos.reduce((s, x) => s + x.mx, 0))} mi nos anos de pico. Confira a classe: uma despesa que não se repete deve ser pontual ou contratual.</p>`
+        + `<div class="estudo-tabela-wrap" style="max-height:420px;"><table><thead><tr><th class="sem-ordem">Linha</th><th class="sem-ordem">Classe</th>` + a.empenho.map(y => `<th class="sem-ordem num">${y}</th>`).join('') + `<th class="sem-ordem num">Projeção ${a.exercicio}</th></tr></thead><tbody>`
+        + picos.slice(0, 40).map(({ l }) => `<tr><td title="${escR(l.mapp)}">${escR(l.sec)} · ${escR(l.orgao)} · MAPP ${escR(l.cod)}<br><span style="color:var(--muted);font-size:11px;">${escR(l.fonte)} · ${escR(l.grupo + '.' + l.elem + ' ' + l.delem)}</span></td><td><span class="estudo-tag cl-${l.classe}">${CLASSES_REDOC[l.classe].rotulo}</span></td>`
+            + a.empenho.map(y => `<td class="num">${fmtMi(l['e' + y])}</td>`).join('') + `<td class="num">${fmtMi(l.proj)}</td></tr>`).join('')
+        + '</tbody></table></div>';
+
+    renderizarTesteRetroativo(p);
+}
+
+// Projeta o último ano completo com os anteriores, no nível Órgão × Tipo × GID × classe, pela regra da tela
+// (o ano anterior faz o papel do fechamento) e compara com "repetir o ano anterior".
+function calcularTesteRetroativo(p) {
+    let cs = redocAnos.completos;
+    if (cs.length < 2) return null;
+    let alvo = cs[cs.length - 1], hist = cs.slice(0, -1), ant = hist[hist.length - 1];
+    let g = new Map();
+    for (let l of redocLinhas) {
+        let k = [l.orgao, l.tipo, l.gid, l.classe].join('|'), x = g.get(k);
+        if (!x) { x = { classe: l.classe, gid: l.gid, real: 0 }; hist.forEach(y => x['e' + y] = 0); g.set(k, x); }
+        x.real += l['e' + alvo] || 0; hist.forEach(y => x['e' + y] += l['e' + y] || 0);
+    }
+    let res = {};
+    ORDEM_CLASSES.concat(['TOTAL']).forEach(c => res[c] = { real: 0, regra: 0, repete: 0, absRegra: 0, absRepete: 0, n: 0 });
+    for (let x of g.values()) {
+        let prior = x['e' + ant], prev;
+        if (x.classe === 'C-PONTUAL') {
+            let regra = p['p-pontual-regra'], v = hist.map(y => x['e' + y]);
+            if (regra === 'zero') prev = 0;
+            else if (regra === 'fechamento') prev = prior;
+            else { if (regra === 'media_sem_maior' && v.length >= 3) v.splice(v.indexOf(Math.max(...v)), 1); prev = v.reduce((s, y) => s + y, 0) / v.length; }
+        } else if (x.classe === 'E-CONTRATO') prev = p['p-contrato-regra'] === 'zero' ? 0 : prior;
+        else { let i = redocIndiceGid[x.gid] !== undefined ? redocIndiceGid[x.gid] / 100 : p.indice[x.classe]; prev = prior * (1 + i); }
+        for (let c of [x.classe, 'TOTAL']) {
+            let r = res[c]; r.n++; r.real += x.real; r.regra += prev; r.repete += prior;
+            r.absRegra += Math.abs(prev - x.real); r.absRepete += Math.abs(prior - x.real);
+        }
+    }
+    return { alvo, hist, res };
+}
+
+function renderizarTesteRetroativo(p) {
+    let el = document.getElementById('comp-teste');
+    let t = calcularTesteRetroativo(p);
+    if (!t) { el.innerHTML = '<p class="estudo-nota">São precisos ao menos dois anos completos.</p>'; return; }
+    let linha = (c, r) => `<tr><td>${c === 'TOTAL' ? '<strong>Total</strong>' : `<span class="estudo-tag cl-${c}">${CLASSES_REDOC[c].rotulo}</span>`}</td><td class="num">${fmtNum(r.n)}</td><td class="num">${fmtMi(r.real)}</td>`
+        + `<td class="num">${fmtMi(r.regra)}</td><td class="num">${r.real ? fmtPct(r.regra / r.real - 1) : '—'}</td><td class="num"><strong>${r.real ? fmtPct(r.absRegra / r.real) : '—'}</strong></td>`
+        + `<td class="num">${fmtMi(r.repete)}</td><td class="num">${r.real ? fmtPct(r.repete / r.real - 1) : '—'}</td><td class="num">${r.real ? fmtPct(r.absRepete / r.real) : '—'}</td></tr>`;
+    el.innerHTML = `<p class="estudo-nota">Projeta <strong>${t.alvo}</strong> com ${t.hist.join(' e ')}, usando as regras e os índices desta tela (o ano ${t.hist[t.hist.length - 1]} faz o papel do fechamento), em grupos Órgão × Tipo × GID × classe, e compara com o realizado. <strong>WAPE</strong> = Σ |previsto − realizado| ÷ Σ realizado: mede o erro grupo a grupo; o erro no total mostra se a soma fica acima ou abaixo.</p>`
+        + `<div class="estudo-tabela-wrap"><table><thead><tr><th class="sem-ordem" rowspan="2">Classe</th><th class="sem-ordem num" rowspan="2">Grupos</th><th class="sem-ordem num" rowspan="2">Realizado ${t.alvo} (R$ mi)</th><th class="sem-ordem" colspan="3" style="text-align:center;">Regra da tela</th><th class="sem-ordem" colspan="3" style="text-align:center;">Repetir ${t.hist[t.hist.length - 1]}</th></tr>`
+        + `<tr><th class="sem-ordem num">Previsto</th><th class="sem-ordem num">Erro no total</th><th class="sem-ordem num">WAPE</th><th class="sem-ordem num">Previsto</th><th class="sem-ordem num">Erro no total</th><th class="sem-ordem num">WAPE</th></tr></thead><tbody>`
+        + ORDEM_CLASSES.map(c => linha(c, t.res[c])).join('') + `</tbody><tfoot>${linha('TOTAL', t.res.TOTAL)}</tfoot></table></div>`;
+}
+
 // ─── NAVEGAÇÃO E TEMA ───────────────────────────────────────────────────────
 function mostrarAbaRedoc(aba) {
     if (!document.querySelector(`.estudo-aba[data-aba="${aba}"]`)) aba = 'carga';

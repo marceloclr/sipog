@@ -110,6 +110,7 @@
 <nav class="estudo-menu" aria-label="Etapas da projeção">
     <button class="estudo-menu-item" data-aba="carga" onclick="mostrarAbaRedoc('carga')"><span class="estudo-menu-num">1</span> Carga e crítica</button>
     <button class="estudo-menu-item" data-aba="parametros" onclick="mostrarAbaRedoc('parametros')"><span class="estudo-menu-num">2</span> Parâmetros</button>
+    <button class="estudo-menu-item" data-aba="comportamento" onclick="mostrarAbaRedoc('comportamento')"><span class="estudo-menu-num">3</span> Comportamento</button>
     <button class="estudo-menu-item" data-aba="projecao" onclick="mostrarAbaRedoc('projecao')"><span class="estudo-menu-num">4</span> Projeção <span class="ano-exercicio"></span></button>
 </nav>
 
@@ -188,6 +189,26 @@
             <h3 class="estudo-subtitulo">Índice próprio por GID</h3>
             <p class="estudo-nota">Para um GID com correção diferente da classe (por exemplo, Terceirização pela repactuação ou Contratos de Gestão pelo contrato), informe o percentual. Vale para as linhas das classes A e B desse GID.</p>
             <div id="indices-gid"></div>
+        </div>
+    </section>
+
+    <section class="estudo-aba estudo-secao" data-aba="comportamento">
+        <h2 class="estudo-aba-titulo">3. Comportamento das despesas</h2>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">Como cada conjunto de despesas evoluiu nos anos completos, e se a regra escolhida na aba 2 teria acertado o último ano. Valores em R$ milhões. O ano base é parcial: compare o fechamento, não o empenhado parcial.</p>
+            <h3 class="estudo-subtitulo">Série histórica por
+                <select id="c-dim" onchange="renderizarComportamentoRedoc()" style="width:auto; padding:4px 8px; font-size:12px; margin-left:6px;">
+                    <option value="tipo">Tipo de MAPP</option><option value="classe">Classe</option><option value="gid">GID</option>
+                    <option value="fonte">Fonte</option><option value="sec">Secretaria</option><option value="elemento">Grupo.Elemento</option>
+                </select></h3>
+            <div id="comp-serie"><p class="estudo-nota">Carregue a extração na aba 1.</p></div>
+            <h3 class="estudo-subtitulo">Teste retroativo da regra</h3>
+            <div id="comp-teste"></div>
+            <h3 class="estudo-subtitulo">Padrão de ocorrência das linhas</h3>
+            <p class="estudo-nota">Em quais anos cada linha da extração (MAPP × fonte × natureza) teve empenho. Muitas linhas aparecem num ano só: os MAPPs mudam de código entre os anos. Por isso a projeção parte do fechamento do ano base, que já traz os MAPPs vigentes, e o histórico serve para calibrar os índices e as despesas pontuais.</p>
+            <div id="comp-padrao"></div>
+            <h3 class="estudo-subtitulo">Picos (despesas que não se repetem)</h3>
+            <div id="comp-picos"></div>
         </div>
     </section>
 
