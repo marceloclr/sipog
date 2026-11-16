@@ -260,6 +260,10 @@ o js/03 e o js/05 (definições) e não toca no estado do SIPOG.
   anteriores, Órgão × Tipo × GID × classe, WAPE). Aba 4: árvore `ARVORES_REDOC` — padrão **por item de despesa** (Grupo → Elemento →
   Item = natureza completa de 11 dígitos, decisão do usuário 16/11 → Secretaria/Órgão → linhas) ou por órgão (Secretaria → Órgão → Tipo → GID →
   linhas); filtros de Elemento e Item; até 300 linhas por nó. XLSX com RESUMO_ITEM e RESUMO_ITEM_ORGAO.
+- Aba 3, gráficos (Chart.js 4.4.0, `renderizarGraficosRedoc`): mesma árvore da aba 4 (`compAgrupamento`/`compCaminho`, clique na barra ou
+  no nome da tabela desce, trilha volta): evolução do nó (empenhado, estimativa até dezembro, projeção), 12 maiores filhos (último ano
+  completo × projeção; o resto só na nota e na tabela) e composição do fechamento pela situação da linha (`situacaoGrafico`). Paleta
+  `--viz-1..4` validada (dataviz) com passos próprios do tema escuro; desenhados só com a aba visível (`graficosSujos`).
 - Exportação xlsx (PROJECAO com conta e regra, resumos, teste, crítica); cenário em JSON ou na nuvem, coleção `projecoes_redoc`
   (linhas em colunas, ~30 chunks para 22 mil linhas).
 - Conferido em 16/11 com `redoc_13-11-26.csv` (Chrome): 23.031 lidas → 22.065 linhas; totais iguais ao CSV (33,082 / 37,701 /

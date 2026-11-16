@@ -720,16 +720,6 @@ function linhaFolhaRedoc(l) {
 }
 
 // ─── TELA: COMPORTAMENTO E TESTE RETROATIVO ─────────────────────────────────
-const DIMENSOES_REDOC = {
-    tipo: { rotulo: 'Tipo de MAPP', f: l => l.tipo },
-    classe: { rotulo: 'Classe', f: l => CLASSES_REDOC[l.classe].rotulo },
-    gid: { rotulo: 'GID', f: l => l.gid },
-    fonte: { rotulo: 'Fonte', f: l => l.fonte },
-    sec: { rotulo: 'Secretaria', f: l => l.sec },
-    elemento: { rotulo: 'Grupo.Elemento', f: rotuloElemento },
-    natureza: { rotulo: 'Item de despesa (natureza)', f: rotuloNatureza }
-};
-
 function cagr(primeiro, ultimo, anos) { return primeiro > 0 && ultimo > 0 && anos > 0 ? Math.pow(ultimo / primeiro, 1 / anos) - 1 : null; }
 function coefVar(vals) {
     let m = vals.reduce((s, x) => s + x, 0) / vals.length;
@@ -742,32 +732,9 @@ function renderizarComportamentoRedoc(p) {
     if (!el || !redocLinhas.length) return;
     p = p || lerParametrosRedoc();
     let a = redocAnos, cs = a.completos, ult = cs[cs.length - 1];
-    let dimSel = document.getElementById('c-dim'), dim = DIMENSOES_REDOC[dimSel.value] ? dimSel.value : 'tipo';
 
-    // 1. Série por dimensão
-    let g = new Map();
-    for (let l of redocLinhas) {
-        let k = DIMENSOES_REDOC[dim].f(l), x = g.get(k);
-        if (!x) { x = { k, fech: 0, proj: 0 }; a.empenho.forEach(y => x['e' + y] = 0); g.set(k, x); }
-        a.empenho.forEach(y => x['e' + y] += l['e' + y] || 0); x.fech += l.fech; x.proj += l.proj;
-    }
-    let lista = [...g.values()].sort((x, y) => y['e' + ult] - x['e' + ult]);
-    let tot = { k: 'Total', fech: 0, proj: 0 }; a.empenho.forEach(y => tot['e' + y] = 0);
-    lista.forEach(x => { a.empenho.forEach(y => tot['e' + y] += x['e' + y]); tot.fech += x.fech; tot.proj += x.proj; });
-    let linhaSerie = (x, tag) => {
-        let c = cagr(x['e' + cs[0]], x['e' + ult], cs.length - 1), cv = coefVar(cs.map(y => x['e' + y]));
-        return `<${tag}><td>${escR(x.k)}</td>` + a.empenho.map(y => `<td class="num">${fmtMi(x['e' + y])}</td>`).join('')
-            + `<td class="num">${fmtMi(x.fech)}</td><td class="num"><strong>${fmtMi(x.proj)}</strong></td>`
-            + `<td class="num">${fmtPct(c)}</td><td class="num">${cv === null ? '—' : cv.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</td>`
-            + `<td class="num">${x['e' + ult] ? fmtPct(x.proj / x['e' + ult] - 1) : '—'}</td></${tag}>`;
-    };
-    el.innerHTML = `<div class="estudo-tabela-wrap" style="max-height:520px;"><table><thead><tr><th class="sem-ordem">${DIMENSOES_REDOC[dim].rotulo}</th>`
-        + a.empenho.map(y => `<th class="sem-ordem num">${y}${y === a.base ? ' parcial' : ''}</th>`).join('')
-        + `<th class="sem-ordem num">Fechamento ${a.base}</th><th class="sem-ordem num">Projeção ${a.exercicio}</th>`
-        + `<th class="sem-ordem num" title="Crescimento médio anual de ${cs[0]} a ${ult}">Cresc. a.a. ${cs[0]}–${ult}</th>`
-        + `<th class="sem-ordem num" title="Coeficiente de variação dos anos completos (desvio-padrão ÷ média): acima de 0,25 indica despesa volátil">Variação (CV)</th>`
-        + `<th class="sem-ordem num" title="Projeção ÷ último ano completo − 1">Proj. ÷ ${ult}</th></tr></thead><tbody>`
-        + lista.map(x => linhaSerie(x, 'tr')).join('') + `</tbody><tfoot>${linhaSerie(tot, 'tr')}</tfoot></table></div>`;
+    // 1. Gráficos e série do nó atual (mesmas visões agrupadas da aba 4)
+    renderizarGraficosRedoc();
 
     // 2. Padrão de ocorrência (anos com empenho) por linha
     let pad = new Map(), totFech = 0;
@@ -801,6 +768,181 @@ function renderizarComportamentoRedoc(p) {
         + '</tbody></table></div>';
 
     renderizarTesteRetroativo(p);
+}
+
+// ─── GRÁFICOS DO COMPORTAMENTO (mesmas visões agrupadas da aba 4, com navegação por clique) ──
+let compAgrupamento = 'item';
+let compCaminho = [];          // chaves escolhidas, do 1º nível para baixo
+let graficosRedoc = {};        // instâncias Chart.js
+let graficosSujos = true;
+const MAX_FILHOS_GRAFICO = 12;
+const SITUACOES_GRAFICO = [
+    { id: 'recorrente', rotulo: 'Recorrente (todos os anos)', cor: '--viz-1' },
+    { id: 'continua', rotulo: 'Começou depois e continua', cor: '--viz-2' },
+    { id: 'nova', rotulo: 'Nova no ano base', cor: '--viz-3' },
+    { id: 'outras', rotulo: 'Intermitente ou só limite', cor: '--viz-4' }
+];
+
+function corViz(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function comAlfa(hex, a) { let n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+function situacaoGrafico(l) {
+    let anos = redocAnos.empenho.map(y => (l['e' + y] || 0) > 0), o = descreverOcorrencia(anos, redocAnos.empenho).ordem;
+    return o === 0 ? 'recorrente' : o === 1 ? 'continua' : o === 2 ? 'nova' : 'outras';
+}
+function niveisComp() { return ARVORES_REDOC[compAgrupamento].niveis; }
+function linhasDoNoComp() { let nv = niveisComp(); return redocLinhas.filter(l => compCaminho.every((k, i) => nv[i](l) === k)); }
+// Filhos do nó atual: o próximo nível da árvore ou, no último, as linhas da extração (MAPP × fonte).
+function filhosDoNoComp(linhas) {
+    let nv = niveisComp(), f = compCaminho.length < nv.length ? nv[compCaminho.length] : (l => `MAPP ${l.cod} · ${l.fonte} · ${l.orgao}`);
+    let g = new Map();
+    for (let l of linhas) { let k = f(l), x = g.get(k); if (!x) { x = { k, ls: [] }; g.set(k, x); } x.ls.push(l); }
+    return [...g.values()].map(x => Object.assign(x, somarNo(x.ls))).sort((a, b) => b.proj - a.proj);
+}
+function alterarAgrupamentoComp(v) { compAgrupamento = ARVORES_REDOC[v] ? v : 'item'; compCaminho = []; renderizarGraficosRedoc(); }
+function irParaNivelComp(n) { compCaminho = compCaminho.slice(0, n); renderizarGraficosRedoc(); }
+function descerComp(k) { if (compCaminho.length < niveisComp().length) { compCaminho.push(k); renderizarGraficosRedoc(); } }
+
+function opcoesBaseGrafico(extra) {
+    let txt = corViz('--text'), mut = corViz('--muted'), grade = comAlfa(corViz('--border').startsWith('#') ? corViz('--border') : '#cbd5e1', 0.6);
+    return Object.assign({
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { position: 'top', align: 'start', labels: { color: txt, boxWidth: 12, boxHeight: 12, font: { size: 11 } } },
+            tooltip: { callbacks: { label: c => `${c.dataset.label}: R$ ${fmtMi(c.raw)} mi` } } },
+        scales: {
+            x: { ticks: { color: mut, font: { size: 11 } }, grid: { color: grade } },
+            y: { ticks: { color: mut, font: { size: 11 } }, grid: { color: grade } }
+        }
+    }, extra || {});
+}
+function recriarGrafico(id, config) {
+    if (graficosRedoc[id]) graficosRedoc[id].destroy();
+    let cv = document.getElementById(id); if (!cv) return;
+    graficosRedoc[id] = new Chart(cv, config);
+}
+
+function renderizarGraficosRedoc() {
+    if (!redocLinhas.length) return;
+    let a = redocAnos, ult = a.completos[a.completos.length - 1], nv = niveisComp();
+    let sel = document.getElementById('g-agrupar'); if (sel) sel.value = compAgrupamento;
+    let linhas = linhasDoNoComp();
+    if (!linhas.length && compCaminho.length) { compCaminho = []; linhas = linhasDoNoComp(); }
+    let tot = somarNo(linhas), filhos = filhosDoNoComp(linhas);
+    let nomesNivel = compAgrupamento === 'item' ? ['grupo', 'elemento', 'item', 'órgão', 'linha'] : ['secretaria', 'órgão', 'tipo', 'GID', 'linha'];
+    let proxNivel = nomesNivel[Math.min(compCaminho.length, nomesNivel.length - 1)];
+
+    // Trilha (breadcrumb)
+    document.getElementById('g-trilha').innerHTML = `<button class="btn-link" style="font-size:12px;" onclick="irParaNivelComp(0)">Todas as despesas</button>`
+        + compCaminho.map((k, i) => ` › <button class="btn-link" style="font-size:12px;" onclick="irParaNivelComp(${i + 1})">${escR(k)}</button>`).join('')
+        + ` <span class="estudo-nota" style="margin-left:8px;">${fmtNum(linhas.length)} linhas · R$ ${fmtMi(tot.proj)} mi projetados</span>`;
+    renderizarSerieComp(filhos, proxNivel);
+
+    // Os gráficos só são desenhados com a aba visível (canvas oculto não tem tamanho).
+    let sec = document.querySelector('.estudo-aba[data-aba="comportamento"]');
+    if (typeof Chart === 'undefined') return;
+    if (!sec || !sec.classList.contains('ativa')) { graficosSujos = true; return; }
+    graficosSujos = false;
+
+    let c1 = corViz('--viz-1'), c2 = corViz('--viz-2'), sup = corViz('--panel');
+    let tickMi = v => (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
+    // 1. Evolução do nó: realizado, estimado até dezembro e projetado
+    let anosRot = a.empenho.map(String).concat([String(a.exercicio)]);
+    let n = anosRot.length, vazio = () => new Array(n).fill(null);
+    let real = vazio(), est = vazio(), proj = vazio();
+    a.empenho.forEach((y, i) => real[i] = tot['e' + y]);
+    est[a.empenho.length - 1] = Math.max(0, tot.fech - tot['e' + a.base]);
+    proj[n - 1] = tot.proj;
+    anosRot[a.empenho.length - 1] = `${a.base} (até ${dataBR(redocDataCorte).slice(0, 5)} + estimativa)`;
+    recriarGrafico('g-evolucao', {
+        type: 'bar',
+        data: { labels: anosRot, datasets: [
+            { label: 'Empenhado', data: real, backgroundColor: c1, borderRadius: 4, borderSkipped: false },
+            { label: `Estimado até dezembro (fechamento ${a.base})`, data: est, backgroundColor: comAlfa(c1, 0.4), borderRadius: 4, borderSkipped: false },
+            { label: `Projeção ${a.exercicio}`, data: proj, backgroundColor: c2, borderRadius: 4, borderSkipped: false }
+        ] },
+        options: opcoesBaseGrafico({
+            scales: { x: { stacked: true, ticks: { color: corViz('--muted') }, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, ticks: { color: corViz('--muted'), callback: v => tickMi(v) }, title: { display: true, text: 'R$ milhões', color: corViz('--muted') } } },
+            plugins: { legend: { position: 'top', align: 'start', labels: { color: corViz('--text'), boxWidth: 12, boxHeight: 12, font: { size: 11 } } },
+                tooltip: { filter: c => c.raw !== null, callbacks: { label: c => `${c.dataset.label}: R$ ${fmtMi(c.raw)} mi`,
+                    footer: it => { let i = it[0].dataIndex; return i === a.empenho.length - 1 ? `Fechamento ${a.base}: R$ ${fmtMi(tot.fech)} mi` : ''; } } } }
+        })
+    });
+
+    // 2. Filhos: último ano completo × projeção (clique desce um nível)
+    // "Demais" fica fora das barras (somado, ele achataria a escala) e vai na nota.
+    let top = filhos.slice(0, MAX_FILHOS_GRAFICO), resto = filhos.slice(MAX_FILHOS_GRAFICO);
+    let itens = top.map(f => ({ k: f.k, u: f['e' + ult], p: f.proj, fech: f.fech, ls: f.ls }));
+    let notaDemais = resto.length ? `Os ${MAX_FILHOS_GRAFICO} maiores pela projeção. Fora do gráfico: mais ${fmtNum(resto.length)}, com R$ ${fmtMi(resto.reduce((s, f) => s + f['e' + ult], 0))} mi em ${ult} e R$ ${fmtMi(resto.reduce((s, f) => s + f.proj, 0))} mi projetados (estão na tabela abaixo).` : 'Todos os itens do nível.';
+    document.getElementById('g-filhos-nota').textContent = notaDemais;
+    // Rótulo curto no eixo (o nome completo fica no tooltip): no item, só a descrição.
+    let rot = s => { let m = s.match(/^\d{11} — (.*?)(?: \(\d{2} .*\))?$/); let t = m ? m[1] : s; return t.length > 34 ? t.slice(0, 33) + '…' : t; };
+    let alturaBarras = Math.max(220, itens.length * 42 + 70);
+    document.getElementById('g-filhos-caixa').style.height = alturaBarras + 'px';
+    document.getElementById('g-situacao-caixa').style.height = alturaBarras + 'px';
+    document.getElementById('g-filhos-titulo').textContent = `Por ${proxNivel}: ${ult} × projeção ${a.exercicio}`
+        + (compCaminho.length < nv.length ? ' — clique numa barra para abrir' : '');
+    recriarGrafico('g-filhos', {
+        type: 'bar',
+        data: { labels: itens.map(x => rot(x.k)), datasets: [
+            { label: `Empenhado ${ult}`, data: itens.map(x => x.u), backgroundColor: c1, borderRadius: 4, borderSkipped: false, borderColor: sup, borderWidth: 1 },
+            { label: `Projeção ${a.exercicio}`, data: itens.map(x => x.p), backgroundColor: c2, borderRadius: 4, borderSkipped: false, borderColor: sup, borderWidth: 1 }
+        ] },
+        options: opcoesBaseGrafico({
+            indexAxis: 'y',
+            onClick: (ev, el) => { if (el.length && !itens[el[0].index].demais) descerComp(itens[el[0].index].k); },
+            onHover: (ev, el) => { ev.native.target.style.cursor = el.length && !itens[el[0].index].demais && compCaminho.length < nv.length ? 'pointer' : 'default'; },
+            scales: { x: { beginAtZero: true, ticks: { color: corViz('--muted'), callback: v => tickMi(v) }, title: { display: true, text: 'R$ milhões', color: corViz('--muted') } },
+                y: { ticks: { color: corViz('--text'), font: { size: 11 } }, grid: { display: false } } },
+            plugins: { legend: { position: 'top', align: 'start', labels: { color: corViz('--text'), boxWidth: 12, boxHeight: 12, font: { size: 11 } } },
+                tooltip: { callbacks: { title: it => itens[it[0].dataIndex].k, label: c => `${c.dataset.label}: R$ ${fmtMi(c.raw)} mi`,
+                    footer: it => { let x = itens[it[0].dataIndex]; return x.u ? `Variação: ${fmtPct(x.p / x.u - 1)}` : 'Sem empenho no último ano completo'; } } } }
+        })
+    });
+
+    // 3. De onde vem o fechamento do ano base: situação das linhas (100% por filho)
+    let dsSit = SITUACOES_GRAFICO.map(s => ({
+        label: s.rotulo, backgroundColor: corViz(s.cor), borderColor: sup, borderWidth: 1, borderSkipped: false,
+        data: itens.map(x => { let t = x.fech || 0, v = x.ls.filter(l => situacaoGrafico(l) === s.id).reduce((acc, l) => acc + l.fech, 0); return t ? 100 * v / t : 0; }),
+        valores: itens.map(x => x.ls.filter(l => situacaoGrafico(l) === s.id).reduce((acc, l) => acc + l.fech, 0))
+    }));
+    recriarGrafico('g-situacao', {
+        type: 'bar',
+        data: { labels: itens.map(x => rot(x.k)), datasets: dsSit },
+        options: opcoesBaseGrafico({
+            indexAxis: 'y',
+            onClick: (ev, el) => { if (el.length && !itens[el[0].index].demais) descerComp(itens[el[0].index].k); },
+            scales: { x: { stacked: true, max: 100, ticks: { color: corViz('--muted'), callback: v => v + '%' } },
+                y: { stacked: true, ticks: { color: corViz('--text'), font: { size: 11 } }, grid: { display: false } } },
+            plugins: { legend: { position: 'top', align: 'start', labels: { color: corViz('--text'), boxWidth: 12, boxHeight: 12, font: { size: 11 } } },
+                tooltip: { callbacks: { title: it => itens[it[0].dataIndex].k,
+                    label: c => `${c.dataset.label}: ${c.raw.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% (R$ ${fmtMi(c.dataset.valores[c.dataIndex])} mi)` } } }
+        })
+    });
+}
+
+// Tabela da série histórica do nó atual (mesmos filhos dos gráficos) — também é a leitura em texto dos gráficos.
+function renderizarSerieComp(filhos, proxNivel) {
+    let el = document.getElementById('comp-serie'); if (!el) return;
+    let a = redocAnos, cs = a.completos, ult = cs[cs.length - 1];
+    let tot = { k: 'Total', fech: 0, proj: 0 }; a.empenho.forEach(y => tot['e' + y] = 0);
+    filhos.forEach(x => { a.empenho.forEach(y => tot['e' + y] += x['e' + y]); tot.fech += x.fech; tot.proj += x.proj; });
+    let podeDescer = compCaminho.length < niveisComp().length;
+    let linha = (x, total) => {
+        let c = cagr(x['e' + cs[0]], x['e' + ult], cs.length - 1), cv = coefVar(cs.map(y => x['e' + y]));
+        let nome = total || !podeDescer ? escR(x.k) : `<button class="btn-link" style="font-size:12px;text-align:left;" data-k="${escR(x.k)}" onclick="descerComp(this.dataset.k)">${escR(x.k)}</button>`;
+        return `<tr><td>${nome}</td>` + a.empenho.map(y => `<td class="num">${fmtMi(x['e' + y])}</td>`).join('')
+            + `<td class="num">${fmtMi(x.fech)}</td><td class="num"><strong>${fmtMi(x.proj)}</strong></td>`
+            + `<td class="num">${fmtPct(c)}</td><td class="num">${cv === null ? '—' : cv.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</td>`
+            + `<td class="num">${x['e' + ult] ? fmtPct(x.proj / x['e' + ult] - 1) : '—'}</td></tr>`;
+    };
+    el.innerHTML = `<div class="estudo-tabela-wrap" style="max-height:520px;"><table><thead><tr><th class="sem-ordem">${escR(proxNivel[0].toUpperCase() + proxNivel.slice(1))}</th>`
+        + a.empenho.map(y => `<th class="sem-ordem num">${y}${y === a.base ? ' parcial' : ''}</th>`).join('')
+        + `<th class="sem-ordem num">Fechamento ${a.base}</th><th class="sem-ordem num">Projeção ${a.exercicio}</th>`
+        + `<th class="sem-ordem num" title="Crescimento médio anual de ${cs[0]} a ${ult}">Cresc. a.a. ${cs[0]}–${ult}</th>`
+        + `<th class="sem-ordem num" title="Coeficiente de variação dos anos completos (desvio-padrão ÷ média): acima de 0,25 indica despesa volátil">Variação (CV)</th>`
+        + `<th class="sem-ordem num" title="Projeção ÷ último ano completo − 1">Proj. ÷ ${ult}</th></tr></thead><tbody>`
+        + filhos.map(x => linha(x, false)).join('') + `</tbody><tfoot>${linha(tot, true)}</tfoot></table></div>`;
 }
 
 // Situação de uma linha pelos anos em que empenhou (anos = [bool] na ordem de `lista`), em palavras.
@@ -1087,12 +1229,15 @@ function mostrarAbaRedoc(aba) {
     document.querySelectorAll('.estudo-aba').forEach(s => s.classList.toggle('ativa', s.dataset.aba === aba));
     document.querySelectorAll('.estudo-menu-item').forEach(b => b.classList.toggle('ativo', b.dataset.aba === aba));
     try { localStorage.setItem(CHAVE_ABA_REDOC, aba); } catch (e) {}
+    if (aba === 'comportamento' && graficosSujos) renderizarGraficosRedoc();
     window.scrollTo({ top: 0 });
 }
 function alternarTemaRedoc() {
     let novo = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', novo);
     try { localStorage.setItem('spopic_theme', novo); } catch (e) {}
+    graficosSujos = true;
+    renderizarGraficosRedoc();   // cores dos gráficos acompanham o tema
 }
 
 function iniciarRedoc() {
