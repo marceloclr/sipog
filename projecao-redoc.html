@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projeção REDOC 2027 — SIPOG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Maitree:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+<style>
+    /* Estilos exclusivos da projeção REDOC — o restante vem de css/styles.css (SIPOG). */
+    .estudo-secao { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 18px; box-shadow: 0 4px 6px -1px var(--shadow); }
+    .estudo-corpo { padding: 0 18px 18px; }
+    .estudo-nota { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 6px 0 12px; }
+    .estudo-carga { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+    .estudo-carga h3 { font-size: 13px; margin-bottom: 4px; }
+    .estudo-status { font-size: 12px; margin-top: 10px; line-height: 1.5; }
+    .estudo-status .ok { color: var(--success); font-weight: 700; }
+    .estudo-status .aviso { color: var(--warning); font-weight: 700; }
+    .estudo-status .erro { color: var(--danger); font-weight: 700; }
+    .estudo-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+    .estudo-params label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+    .estudo-params input, .estudo-params select { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 13px; }
+    .estudo-params .dica-param { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+    .estudo-filtros { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+    .estudo-filtros label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+    .estudo-filtros select, .estudo-filtros input[type="search"] { width: auto; max-width: 260px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; }
+    .estudo-filtros input[type="search"] { width: 200px; }
+    .estudo-tabela-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; max-height: 640px; overflow-y: auto; }
+    .estudo-tabela-wrap table { font-size: 12px; }
+    .estudo-tabela-wrap th, .estudo-tabela-wrap td { padding: 7px 10px; }
+    .estudo-tabela-wrap thead th { position: sticky; top: 0; z-index: 1; white-space: normal; }
+    .estudo-tabela-wrap tfoot td { position: sticky; bottom: 0; background: var(--panel2); font-weight: 700; }
+    .estudo-tabela-wrap th.sem-ordem::after { content: ''; }
+    .estudo-tabela-wrap th[title] { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+    td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    td.num[title], .estudo-resumo div[title] { cursor: help; }
+    .estudo-tag { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .estudo-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .estudo-resumo div { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .estudo-resumo b { display: block; font-size: 16px; margin-top: 2px; }
+    .estudo-resumo span { font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+    input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; vertical-align: middle; accent-color: var(--accent); }
+    .estudo-check { display: block; font-size: 12px; cursor: pointer; margin: 4px 0; }
+    /* Layout com menu lateral (abas) */
+    .estudo-layout { display: flex; align-items: flex-start; min-height: calc(100vh - 90px); }
+    .estudo-menu { position: sticky; top: 0; flex: 0 0 230px; display: flex; flex-direction: column; gap: 4px; padding: 18px 12px; background: var(--panel); border-right: 1px solid var(--border); min-height: calc(100vh - 90px); }
+    .estudo-menu-item { display: flex; align-items: center; gap: 8px; text-align: left; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text); font-family: var(--ceara-font-ui); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .estudo-menu-item:hover { background: var(--panel2); }
+    .estudo-menu-item.ativo { background: rgba(38,167,55,0.12); border-color: var(--accent); color: var(--accent); }
+    .estudo-menu-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--panel2); color: var(--muted); font-size: 11px; font-weight: 700; }
+    .estudo-menu-item.ativo .estudo-menu-num { background: var(--accent); color: #fff; }
+    .estudo-conteudo { flex: 1 1 auto; min-width: 0; }
+    .estudo-aba { display: none; }
+    .estudo-aba.ativa { display: block; }
+    .estudo-aba-titulo { font-size: 16px; padding: 16px 18px 6px; }
+    .estudo-subtitulo { font-size: 13px; margin: 18px 0 8px; }
+    /* Classes de comportamento */
+    .cl-A-PESSOAL { background: rgba(42,120,214,0.15); color: #2a78d6; }
+    .cl-A-CUSTEIO { background: rgba(27,175,122,0.15); color: #12895f; }
+    .cl-B-INVEST { background: rgba(235,104,52,0.15); color: #c4531f; }
+    .cl-C-PONTUAL { background: rgba(176,124,255,0.18); color: #7d4fd0; }
+    .cl-E-CONTRATO { background: rgba(100,116,139,0.18); color: var(--text); }
+    /* Grade em árvore */
+    tr.no-arvore td { cursor: pointer; }
+    tr.no-arvore:hover td { background: var(--panel2); }
+    tr.no-arvore .seta { display: inline-block; width: 12px; color: var(--accent); }
+    tr.nivel-0 td { font-weight: 700; }
+    tr.nivel-1 td:first-child { padding-left: 24px; }
+    tr.nivel-2 td:first-child { padding-left: 38px; }
+    tr.nivel-3 td:first-child { padding-left: 52px; }
+    tr.nivel-4 td { background: var(--panel2); font-size: 11.5px; }
+    tr.nivel-4 td:first-child { padding-left: 66px; min-width: 260px; max-width: 380px; white-space: normal; }
+    tr.linha-editada td { background: rgba(245,156,0,0.12) !important; }
+    tr.linha-aviso > td { background: var(--panel2); color: var(--warning); font-size: 11px; padding-left: 66px; }
+    input.input-valor { width: 140px; text-align: right; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    tr.linha-editada input.input-valor { border-color: var(--warning); font-weight: 700; }
+    select.select-classe { width: auto; padding: 3px 4px; font-size: 11px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+    .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
+    .var-pos { color: var(--danger); }
+    .var-neg { color: var(--success); }
+    @media (max-width: 900px) {
+        .estudo-layout { flex-direction: column; }
+        .estudo-menu { position: static; flex: none; width: 100%; min-height: 0; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; }
+        .estudo-menu-item { white-space: nowrap; flex: 0 0 auto; }
+    }
+    @media (max-width: 640px) {
+        .top-header { padding: 14px 16px; }
+        .wrap { padding: 16px; }
+    }
+</style>
+</head>
+<body>
+<header class="top-header">
+    <div class="header-row-main">
+        <div class="header-title">
+            <h1>Projeção <span class="ano-exercicio">2027</span> das despesas — REDOC</h1>
+            <p>Página separada do SIPOG: projeta o empenho por item de despesa a partir do histórico da extração do REDOC</p>
+        </div>
+        <div class="header-actions">
+            <a class="btn-mini-header" href="index.html" style="text-decoration:none;" title="Volta ao SIPOG">↩ Voltar ao SIPOG</a>
+            <button class="btn-mini-header" onclick="alternarTemaRedoc()" title="Alterna entre tema claro e escuro">🌗 Tema</button>
+        </div>
+    </div>
+</header>
+
+<div class="estudo-layout">
+<nav class="estudo-menu" aria-label="Etapas da projeção">
+    <button class="estudo-menu-item" data-aba="carga" onclick="mostrarAbaRedoc('carga')"><span class="estudo-menu-num">1</span> Carga e crítica</button>
+</nav>
+
+<main class="wrap estudo-conteudo">
+
+    <section class="estudo-aba estudo-secao" data-aba="carga">
+        <h2 class="estudo-aba-titulo">1. Carga e crítica</h2>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">Extração do REDOC em CSV (separado por ";", UTF-8 ou Windows-1252) ou xlsx (1ª aba, cabeçalho na linha 1). Colunas: SECRETARIA, ORGAO, TIPO_MAPP, DSC_FONTE_MAPP, COD_MAPP, DSC_MAPP, DSC_GID, CODIGO_COMPLETO (natureza com 11 dígitos), as descrições de grupo, modalidade, elemento e item, <strong>Empenhado (AAAA)</strong> de cada ano e <strong>Limite (AAAA)</strong> do ano corrente. Os anos são lidos dos cabeçalhos: o último ano de empenho é o <strong>ano base</strong> (parcial, até a data de corte), os anteriores são os anos completos e o exercício projetado é o ano base + 1. O arquivo é lido só neste navegador.</p>
+            <div class="estudo-carga">
+                <h3>Extração do REDOC</h3>
+                <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+                    <input type="file" id="arquivo-redoc" accept=".csv,.txt,.xlsx" onchange="selecionarArquivoRedoc(this)">
+                    <label style="font-size:12px; font-weight:600;">Data de corte do ano base
+                        <input type="date" id="data-corte" onchange="alterarDataCorte()" style="width:auto; padding:5px 8px; margin-left:6px;">
+                    </label>
+                </div>
+                <div class="estudo-status" id="status-redoc">Nenhum arquivo carregado.</div>
+            </div>
+            <div id="critica-redoc" class="critica-painel" style="display:none;"></div>
+            <div id="totais-carga"></div>
+        </div>
+    </section>
+
+</main>
+</div>
+
+<!-- Utilitários do SIPOG reaproveitados (só definições, sem efeito ao carregar):
+     js/03 → N, V, F, valorCelulaExcelJS, corrigirMojibake. -->
+<script src="js/03-utils-formatacao.js"></script>
+<script src="js/projecao-redoc.js"></script>
+</body>
+</html>
