@@ -785,6 +785,60 @@ const SITUACOES_GRAFICO = [
     { id: 'outras', rotulo: 'Intermitente ou só limite', cor: '--viz-4' }
 ];
 
+let evolucaoModo = 'colunas';  // 'colunas' | 'linhas' | 'linhas-nivel'
+try { evolucaoModo = localStorage.getItem('sipog_redoc_evolucao_v1') || 'colunas'; } catch (e) {}
+function alterarModoEvolucao(m) {
+    evolucaoModo = m;
+    try { localStorage.setItem('sipog_redoc_evolucao_v1', m); } catch (e) {}
+    graficosSujos = true; renderizarGraficosRedoc();
+}
+
+// Evolução em linhas: anos completos em linha cheia; fechamento do ano base e projeção em tracejado (são estimativas).
+function desenharEvolucaoLinhas(a, tot, filhos, c1, c2, tickMi) {
+    let ne = a.empenho.length, iBase = ne - 1;
+    let rotulos = a.completos.map(String).concat([`${a.base} (fechamento)`, `${a.exercicio} (projeção)`]);
+    let tracejar = ctx => ctx.p1DataIndex >= iBase ? [6, 4] : undefined;
+    let serie = s => a.completos.map(y => s['e' + y]).concat([s.fech, s.proj]);
+    let datasets, cursorPonto = false;
+    let corTxt = corViz('--text'), sup = corViz('--panel');
+    if (evolucaoModo === 'linhas') {
+        let parcial = new Array(ne + 1).fill(null); parcial[iBase] = tot['e' + a.base];
+        let proj = new Array(ne + 1).fill(null); proj[iBase] = tot.fech; proj[ne] = tot.proj;
+        let hist = serie(tot); hist[ne] = null;
+        datasets = [
+            { label: `Empenhado e fechamento ${a.base}`, data: hist, borderColor: c1, backgroundColor: c1, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBorderColor: sup, pointBorderWidth: 2, segment: { borderDash: tracejar }, spanGaps: false },
+            { label: `Projeção ${a.exercicio}`, data: proj, borderColor: c2, backgroundColor: c2, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBorderColor: sup, pointBorderWidth: 2, borderDash: [6, 4] },
+            { label: `Empenhado até ${dataBR(redocDataCorte).slice(0, 5)}/${a.base}`, data: parcial, showLine: false, borderColor: c1, backgroundColor: sup, borderWidth: 2, pointStyle: 'rectRot', pointRadius: 6, pointHoverRadius: 8 }
+        ];
+    } else {
+        let cores = ['--viz-1', '--viz-2', '--viz-3', '--viz-4', '--viz-5'].map(corViz);
+        let curto = s => { let m = s.match(/^\d{11} — (.*?)(?: \(\d{2} .*\))?$/); let t = m ? m[1] : s; return t.length > 40 ? t.slice(0, 39) + '…' : t; };
+        datasets = filhos.slice(0, 5).map((f, i) => ({
+            label: curto(f.k), chave: f.k, data: serie(f), borderColor: cores[i], backgroundColor: cores[i], borderWidth: 2,
+            pointRadius: 4, pointHoverRadius: 6, pointBorderColor: sup, pointBorderWidth: 2, segment: { borderDash: tracejar }
+        }));
+        cursorPonto = compCaminho.length < niveisComp().length;
+    }
+    recriarGrafico('g-evolucao', {
+        type: 'line',
+        data: { labels: rotulos, datasets },
+        options: opcoesBaseGrafico({
+            interaction: { mode: 'index', intersect: false },
+            onClick: (ev, el, ch) => {
+                if (evolucaoModo !== 'linhas-nivel' || !cursorPonto) return;
+                let pts = ch.getElementsAtEventForMode(ev, 'nearest', { intersect: true }, false);
+                if (pts.length) descerComp(ch.data.datasets[pts[0].datasetIndex].chave);
+            },
+            scales: { x: { ticks: { color: corViz('--muted') }, grid: { display: false } },
+                y: { beginAtZero: true, ticks: { color: corViz('--muted'), callback: v => tickMi(v) }, title: { display: true, text: 'R$ milhões', color: corViz('--muted') } } },
+            plugins: { legend: { position: 'top', align: 'start', labels: { color: corTxt, boxWidth: 12, boxHeight: 12, font: { size: 11 }, usePointStyle: evolucaoModo === 'linhas' } },
+                // No ano base, a linha da projeção só parte do fechamento: não repete o valor no tooltip.
+                tooltip: { filter: c => c.raw !== null && !(evolucaoModo === 'linhas' && c.datasetIndex === 1 && c.dataIndex === iBase), callbacks: { title: it => rotulos[it[0].dataIndex],
+                    label: c => `${c.dataset.chave || c.dataset.label}: R$ ${fmtMi(c.raw)} mi` } } }
+        })
+    });
+}
+
 function corViz(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 function comAlfa(hex, a) { let n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
 function situacaoGrafico(l) {
@@ -915,7 +969,14 @@ function renderizarGraficosRedoc() {
     est[a.empenho.length - 1] = Math.max(0, tot.fech - tot['e' + a.base]);
     proj[n - 1] = tot.proj;
     anosRot[a.empenho.length - 1] = `${a.base} (até ${dataBR(redocDataCorte).slice(0, 5)} + estimativa)`;
-    recriarGrafico('g-evolucao', {
+    document.querySelectorAll('[data-evolucao]').forEach(b => b.classList.toggle('ativo', b.dataset.evolucao === evolucaoModo));
+    document.getElementById('g-evolucao-nota').textContent = evolucaoModo === 'colunas'
+        ? 'A coluna do ano base soma o que já foi empenhado até a data de corte (cor cheia) e a estimativa até dezembro (cor clara).'
+        : evolucaoModo === 'linhas'
+            ? `Linha cheia = empenhado nos anos completos; tracejada = estimativa (fechamento ${a.base}) e projeção ${a.exercicio}. O losango marca o empenhado até a data de corte.`
+            : `Uma linha para cada um dos ${Math.min(5, filhos.length)} maiores do nível seguinte (pela projeção); tracejado = fechamento estimado e projeção. Clique num ponto para abrir.`;
+    if (evolucaoModo !== 'colunas') { desenharEvolucaoLinhas(a, tot, filhos, c1, c2, tickMi); }
+    else recriarGrafico('g-evolucao', {
         type: 'bar',
         data: { labels: anosRot, datasets: [
             { label: 'Empenhado', data: real, backgroundColor: c1, borderRadius: 4, borderSkipped: false },

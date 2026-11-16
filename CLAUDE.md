@@ -262,7 +262,8 @@ o js/03 e o js/05 (definições) e não toca no estado do SIPOG.
   linhas); filtros de Elemento e Item; até 300 linhas por nó. XLSX com RESUMO_ITEM e RESUMO_ITEM_ORGAO.
 - Aba 3, gráficos (Chart.js 4.4.0, `renderizarGraficosRedoc`): mesma árvore da aba 4 (`compAgrupamento`/`compCaminho`, clique na barra ou
   no nome da tabela desce, trilha volta): evolução do nó (empenhado, estimativa até dezembro, projeção), 12 maiores filhos (último ano
-  completo × projeção; o resto só na nota e na tabela) e composição do fechamento pela situação da linha (`situacaoGrafico`). Paleta
+  completo × projeção; o resto só na nota e na tabela). A evolução tem 3 modos (`evolucaoModo`, guardado no navegador): colunas,
+  linhas (total) e linhas por nível (5 maiores filhos; `desenharEvolucaoLinhas`), com fechamento e projeção tracejados e composição do fechamento pela situação da linha (`situacaoGrafico`). Paleta
   `--viz-1..4` validada (dataviz) com passos próprios do tema escuro; desenhados só com a aba visível (`graficosSujos`).
   Filtros ligados da aba 3 (`FILTROS_COMP`: Secretaria, Órgão, Tipo, MAPP, Fonte, GID, Classe, Elemento, Item + busca;
   `linhasFiltradasComp`) valem para a aba inteira: gráficos, série, teste retroativo, padrão de ocorrência e picos.

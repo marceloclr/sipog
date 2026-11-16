@@ -59,8 +59,12 @@
     .estudo-aba-titulo { font-size: 16px; padding: 16px 18px 6px; }
     .estudo-subtitulo { font-size: 13px; margin: 18px 0 8px; }
     /* Gráficos: paleta categórica validada (slots 1–4), passos próprios para o tema escuro */
-    :root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; }
-    :root[data-theme="dark"] { --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; }
+    :root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; --viz-5: #e87ba4; }
+    :root[data-theme="dark"] { --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; }
+    .seletor-graf { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-left: 10px; vertical-align: middle; }
+    .seletor-graf button { border: none; background: var(--panel); color: var(--text); font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; font-family: inherit; }
+    .seletor-graf button + button { border-left: 1px solid var(--border); }
+    .seletor-graf button.ativo { background: var(--accent); color: #fff; }
     .graf-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; margin-bottom: 10px; }
     .graf-caixa { margin: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
     .graf-caixa figcaption { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
@@ -252,8 +256,13 @@
             <div class="graf-trilha" id="g-trilha"></div>
             <div class="graf-grade">
                 <figure class="graf-caixa" style="grid-column: 1 / -1;">
-                    <figcaption>Evolução: empenhado, fechamento estimado do ano base e projeção</figcaption>
-                    <p class="estudo-nota">A barra do ano base soma o que já foi empenhado até a data de corte (cor cheia) e a estimativa até dezembro (cor clara).</p>
+                    <figcaption>Evolução: empenhado, fechamento estimado do ano base e projeção
+                        <span class="seletor-graf" role="group" aria-label="Tipo de gráfico">
+                            <button data-evolucao="colunas" onclick="alterarModoEvolucao('colunas')" title="Total do nível em colunas">Colunas</button>
+                            <button data-evolucao="linhas" onclick="alterarModoEvolucao('linhas')" title="Total do nível em linha">Linhas</button>
+                            <button data-evolucao="linhas-nivel" onclick="alterarModoEvolucao('linhas-nivel')" title="Uma linha para cada um dos 5 maiores do nível seguinte">Linhas por nível</button>
+                        </span></figcaption>
+                    <p class="estudo-nota" id="g-evolucao-nota"></p>
                     <div class="graf-canvas" style="height:280px;"><canvas id="g-evolucao" role="img" aria-label="Evolução anual do empenho e projeção do nível selecionado"></canvas></div>
                 </figure>
                 <figure class="graf-caixa">
