@@ -770,16 +770,24 @@ function renderizarComportamentoRedoc(p) {
         + lista.map(x => linhaSerie(x, 'tr')).join('') + `</tbody><tfoot>${linhaSerie(tot, 'tr')}</tfoot></table></div>`;
 
     // 2. Padrão de ocorrência (anos com empenho) por linha
-    let pad = new Map();
+    let pad = new Map(), totFech = 0;
     for (let l of redocLinhas) {
-        let k = a.empenho.map(y => (l['e' + y] || 0) > 0 ? '■' : '·').join(' ');
-        let x = pad.get(k) || { k, n: 0, ult: 0, base: 0, fech: 0, proj: 0 };
+        let anos = a.empenho.map(y => (l['e' + y] || 0) > 0);
+        let k = anos.map(v => v ? '1' : '0').join('');
+        let x = pad.get(k) || { anos, n: 0, ult: 0, base: 0, fech: 0, proj: 0 };
         x.n++; x.ult += l['e' + ult] || 0; x.base += l['e' + a.base] || 0; x.fech += l.fech; x.proj += l.proj; pad.set(k, x);
+        totFech += l.fech;
     }
-    let pads = [...pad.values()].sort((x, y) => (y.fech + y.ult) - (x.fech + x.ult));
-    document.getElementById('comp-padrao').innerHTML = `<div class="estudo-tabela-wrap" style="max-height:420px;"><table><thead><tr><th class="sem-ordem" title="■ = empenhou no ano; · = não empenhou">${a.empenho.join(' ')}</th><th class="sem-ordem num">Linhas</th><th class="sem-ordem num">Empenhado ${ult} (R$ mi)</th><th class="sem-ordem num">${a.base} parcial (R$ mi)</th><th class="sem-ordem num">Fechamento (R$ mi)</th><th class="sem-ordem num">Projeção (R$ mi)</th></tr></thead><tbody>`
-        + pads.map(x => `<tr><td style="font-family:monospace;letter-spacing:2px;">${x.k}</td><td class="num">${fmtNum(x.n)}</td><td class="num">${fmtMi(x.ult)}</td><td class="num">${fmtMi(x.base)}</td><td class="num">${fmtMi(x.fech)}</td><td class="num">${fmtMi(x.proj)}</td></tr>`).join('')
-        + '</tbody></table></div>';
+    let pads = [...pad.values()].map(x => Object.assign(x, descreverOcorrencia(x.anos, a.empenho)))
+        .sort((x, y) => x.ordem - y.ordem || (y.fech + y.ult) - (x.fech + x.ult));
+    let celAno = v => v ? '<td style="text-align:center;color:var(--success);font-weight:700;" title="Teve empenho no ano">✔</td>'
+        : '<td style="text-align:center;color:var(--muted);" title="Sem empenho no ano">—</td>';
+    document.getElementById('comp-padrao').innerHTML = `<div class="estudo-tabela-wrap" style="max-height:460px;"><table><thead><tr>`
+        + `<th class="sem-ordem">Situação da linha</th>` + a.empenho.map(y => `<th class="sem-ordem" style="text-align:center;" title="✔ = teve empenho em ${y}; — = não teve">${y}${y === a.base ? '*' : ''}</th>`).join('')
+        + `<th class="sem-ordem num">Linhas</th><th class="sem-ordem num">Empenhado ${ult} (R$ mi)</th><th class="sem-ordem num">Fechamento ${a.base} (R$ mi)</th><th class="sem-ordem num" title="Participação no fechamento total do ano base">% do fechamento</th><th class="sem-ordem num">Projeção ${a.exercicio} (R$ mi)</th></tr></thead><tbody>`
+        + pads.map(x => `<tr><td><strong>${escR(x.titulo)}</strong><br><span style="color:var(--muted);font-size:11px;">${escR(x.leitura)}</span></td>${x.anos.map(celAno).join('')}`
+            + `<td class="num">${fmtNum(x.n)}</td><td class="num">${fmtMi(x.ult)}</td><td class="num">${fmtMi(x.fech)}</td><td class="num">${totFech ? fmtPct(x.fech / totFech) : '—'}</td><td class="num">${fmtMi(x.proj)}</td></tr>`).join('')
+        + `</tbody></table></div><p class="estudo-nota">* ${a.base} é parcial (até ${dataBR(redocDataCorte)}).</p>`;
 
     // 3. Picos: maior ano completo > R$ 50 mi e > 3× a mediana dos anos completos
     let mediana = v => { let s = v.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -793,6 +801,21 @@ function renderizarComportamentoRedoc(p) {
         + '</tbody></table></div>';
 
     renderizarTesteRetroativo(p);
+}
+
+// Situação de uma linha pelos anos em que empenhou (anos = [bool] na ordem de `lista`), em palavras.
+function descreverOcorrencia(anos, lista) {
+    let base = lista[lista.length - 1], idx = anos.map((v, i) => v ? i : -1).filter(i => i >= 0);
+    if (!idx.length) return { ordem: 6, titulo: 'Sem empenho em nenhum ano', leitura: `Só tem limite em ${base}.` };
+    let ini = idx[0], fim = idx[idx.length - 1], continua = idx.length === fim - ini + 1;
+    if (idx.length === anos.length) return { ordem: 0, titulo: 'Recorrente', leitura: 'Empenhou em todos os anos.' };
+    if (!continua) return { ordem: 5, titulo: 'Intermitente', leitura: `Empenhou em ${idx.map(i => lista[i]).join(', ')}, com intervalo.` };
+    if (fim === anos.length - 1) {
+        if (ini === fim) return { ordem: 2, titulo: `Nova em ${base}`, leitura: `Só empenhou no ano base.` };
+        return { ordem: 1, titulo: `Começou em ${lista[ini]} e continua`, leitura: `Empenhou de ${lista[ini]} a ${base}.` };
+    }
+    if (ini === fim) return { ordem: 4, titulo: `Só em ${lista[ini]}`, leitura: `Empenhou só em ${lista[ini]}; não aparece em ${base}.` };
+    return { ordem: 3, titulo: `Parou em ${lista[fim]}`, leitura: `Empenhou de ${lista[ini]} a ${lista[fim]}; não aparece em ${base}.` };
 }
 
 // Projeta o último ano completo com os anteriores, no nível Órgão × Tipo × GID × classe, pela regra da tela
