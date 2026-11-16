@@ -222,7 +222,7 @@
             <h3 class="estudo-subtitulo">Série histórica por
                 <select id="c-dim" onchange="renderizarComportamentoRedoc()" style="width:auto; padding:4px 8px; font-size:12px; margin-left:6px;">
                     <option value="tipo">Tipo de MAPP</option><option value="classe">Classe</option><option value="gid">GID</option>
-                    <option value="fonte">Fonte</option><option value="sec">Secretaria</option><option value="elemento">Grupo.Elemento</option>
+                    <option value="fonte">Fonte</option><option value="sec">Secretaria</option><option value="elemento">Grupo.Elemento</option><option value="natureza">Item de despesa (natureza)</option>
                 </select></h3>
             <div id="comp-serie"><p class="estudo-nota">Carregue a extração na aba 1.</p></div>
             <h3 class="estudo-subtitulo">Teste retroativo da regra</h3>
@@ -238,9 +238,15 @@
     <section class="estudo-aba estudo-secao" data-aba="projecao">
         <h2 class="estudo-aba-titulo">4. Projeção <span class="ano-exercicio"></span> por item de despesa</h2>
         <div class="estudo-corpo">
-            <p class="estudo-nota">Clique numa linha para abrir o nível seguinte (Secretaria → Órgão → Tipo → GID → linhas da extração). Valores em R$. Passe o mouse sobre o fechamento e a projeção para ver a conta. Na linha, a <strong>classe</strong> pode ser trocada e o <strong>valor manual</strong> substitui a regra (em branco volta à regra; ↺ desfaz os dois). Os ajustes ficam guardados neste navegador para o mesmo arquivo.</p>
+            <p class="estudo-nota">Clique numa linha para abrir o nível seguinte. Por <strong>item de despesa</strong> (padrão): Grupo → Elemento → Item (natureza completa de 11 dígitos, que separa a modalidade) → Órgão → linhas da extração (MAPP × fonte). Por <strong>órgão</strong>: Secretaria → Órgão → Tipo → GID → linhas. Valores em R$. Passe o mouse sobre o fechamento e a projeção para ver a conta. Na linha, a <strong>classe</strong> pode ser trocada e o <strong>valor manual</strong> substitui a regra (em branco volta à regra; ↺ desfaz os dois). Os ajustes ficam guardados neste navegador para o mesmo arquivo.</p>
             <div class="estudo-resumo" id="cards-projecao"></div>
             <div class="estudo-filtros">
+                <label>Agrupar por <select id="f-agrupar" onchange="alterarAgrupamentoRedoc(this.value)">
+                    <option value="item">Item de despesa (Grupo › Elemento › Item › Órgão)</option>
+                    <option value="orgao">Órgão (Secretaria › Órgão › Tipo › GID)</option>
+                </select></label>
+                <label>Elemento <select id="f-elem" onchange="alterarFiltroRedoc()"></select></label>
+                <label>Item <select id="f-nat" onchange="alterarFiltroRedoc()" style="max-width:420px;"></select></label>
                 <label>Secretaria <select id="f-sec" onchange="alterarFiltroRedoc()"></select></label>
                 <label>Tipo <select id="f-tipo" onchange="alterarFiltroRedoc()"></select></label>
                 <label>Classe <select id="f-classe" onchange="alterarFiltroRedoc()"></select></label>

@@ -575,11 +575,20 @@ function descartarManuaisRedoc() {
     guardarManuaisRedoc(); recalcularRedoc();
 }
 
-// ─── TELA: PROJEÇÃO (grade em árvore Secretaria → Órgão → Tipo → GID → linhas) ──
-const NIVEIS_ARVORE = [['sec', 'Secretaria'], ['orgao', 'Órgão'], ['tipo', 'Tipo de MAPP'], ['gid', 'GID']];
+// ─── TELA: PROJEÇÃO (grade em árvore, agrupada por item de despesa ou por órgão) ──
+// Item de despesa = natureza completa (11 dígitos: grupo, modalidade, elemento e item) — decisão do usuário em 16/11/2026.
+function rotuloElemento(l) { return `${l.grupo}.${l.elem} — ${l.delem || 'sem descrição'}`; }
+function rotuloNatureza(l) { return `${l.nat} — ${l.ditem || 'sem descrição'}${l.dmod ? ` (${l.mod} ${l.dmod})` : ''}`; }
+const ARVORES_REDOC = {
+    item: { titulo: 'Grupo › Elemento › Item de despesa › Órgão › linha', niveis: [
+        l => `${l.grupo} — ${l.dgrupo || 'sem descrição'}`, rotuloElemento, rotuloNatureza, l => `${l.sec} / ${l.orgao}`] },
+    orgao: { titulo: 'Secretaria › Órgão › Tipo › GID › linha', niveis: [l => l.sec, l => l.orgao, l => l.tipo, l => l.gid] }
+};
 const MAX_LINHAS_NO = 300;
 let expandidosRedoc = new Set();
-let filtrosRedoc = { sec: '', tipo: '', classe: '', fonte: '', busca: '', editadas: false };
+let agrupamentoRedoc = 'item';
+let filtrosRedoc = { sec: '', tipo: '', classe: '', fonte: '', elem: '', nat: '', busca: '', editadas: false };
+function alterarAgrupamentoRedoc(v) { agrupamentoRedoc = ARVORES_REDOC[v] ? v : 'item'; expandidosRedoc.clear(); renderizarProjecaoRedoc(); }
 
 function fmtR(v) { let n = Math.round(Number(v || 0)); return n === 0 ? '-' : n.toLocaleString('pt-BR'); }
 function celVar(proj, fech) {
@@ -591,7 +600,7 @@ function celVar(proj, fech) {
 function linhasFiltradasRedoc() {
     let f = filtrosRedoc, b = N(f.busca);
     return redocLinhas.filter(l => (!f.sec || l.sec === f.sec) && (!f.tipo || l.tipo === f.tipo) && (!f.classe || l.classe === f.classe)
-        && (!f.fonte || l.fonte === f.fonte)
+        && (!f.fonte || l.fonte === f.fonte) && (!f.elem || `${l.grupo}.${l.elem}` === f.elem) && (!f.nat || l.nat === f.nat)
         && (!f.editadas || redocValorManual[l.chave] !== undefined || redocClasseManual[l.chave] !== undefined)
         && (!b || N(`${l.orgao} ${l.cod} ${l.mapp} ${l.nat} ${l.ditem} ${l.delem} ${l.fonte}`).includes(b)));
 }
@@ -604,12 +613,13 @@ function alterarFiltroRedoc() {
     filtrosRedoc = {
         sec: document.getElementById('f-sec').value, tipo: document.getElementById('f-tipo').value,
         classe: document.getElementById('f-classe').value, fonte: document.getElementById('f-fonte').value,
+        elem: document.getElementById('f-elem').value, nat: document.getElementById('f-nat').value,
         busca: document.getElementById('f-busca').value, editadas: document.getElementById('f-editadas').checked
     };
     renderizarProjecaoRedoc();
 }
 function limparFiltrosRedoc() {
-    ['f-sec', 'f-tipo', 'f-classe', 'f-fonte', 'f-busca'].forEach(id => document.getElementById(id).value = '');
+    ['f-sec', 'f-tipo', 'f-classe', 'f-fonte', 'f-elem', 'f-nat', 'f-busca'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-editadas').checked = false;
     alterarFiltroRedoc();
 }
@@ -647,6 +657,12 @@ function renderizarProjecaoRedoc() {
     preencherFiltroRedoc('f-tipo', uniq('tipo'), '(todos os tipos)', f.tipo);
     preencherFiltroRedoc('f-fonte', uniq('fonte'), '(todas as fontes)', f.fonte);
     preencherFiltroRedoc('f-classe', ORDEM_CLASSES.map(c => [c, CLASSES_REDOC[c].rotulo]), '(todas as classes)', f.classe);
+    let porCodigo = (fk, fr) => { let m = new Map(); redocLinhas.forEach(l => { if (!m.has(fk(l))) m.set(fk(l), fr(l)); }); return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0])); };
+    preencherFiltroRedoc('f-elem', porCodigo(l => `${l.grupo}.${l.elem}`, rotuloElemento), '(todos os elementos)', f.elem);
+    // A lista de itens acompanha o elemento escolhido.
+    preencherFiltroRedoc('f-nat', porCodigo(l => l.nat, rotuloNatureza).filter(([n]) => !f.elem || `${n.slice(0, 2)}.${n.slice(4, 6)}` === f.elem), '(todos os itens)', f.nat);
+    let selAg = document.getElementById('f-agrupar'); if (selAg) selAg.value = agrupamentoRedoc;
+    let arvore = ARVORES_REDOC[agrupamentoRedoc];
 
     let linhas = linhasFiltradasRedoc(), tot = somarNo(linhas);
     let nManuais = Object.keys(redocValorManual).length, nClasse = Object.keys(redocClasseManual).length;
@@ -658,7 +674,7 @@ function renderizarProjecaoRedoc() {
         + `<div><span>Linhas no filtro</span><b>${fmtNum(linhas.length)}</b></div>`
         + `<div title="Valores digitados e classes trocadas à mão (em todas as linhas)"><span>Ajustes manuais</span><b>${fmtNum(nManuais)} valor(es) · ${fmtNum(nClasse)} classe(s)</b></div>`;
 
-    let cab = `<tr><th class="sem-ordem">Secretaria › Órgão › Tipo › GID › linha</th>`
+    let cab = `<tr><th class="sem-ordem">${arvore.titulo}</th>`
         + a.empenho.map(y => `<th class="sem-ordem num" title="Empenhado ${y}${y === a.base ? ` até ${dataBR(redocDataCorte)}` : ''}">${y}${y === a.base ? ' parcial' : ''}</th>`).join('')
         + `<th class="sem-ordem num">Limite ${a.limite || a.base}</th><th class="sem-ordem num" title="Empenhado parcial × fator da classe (aba 2), com o Limite como teto">Fechamento ${a.base}</th>`
         + `<th class="sem-ordem num" title="Fechamento corrigido pela regra da classe, ou o valor digitado">Projeção ${a.exercicio}</th><th class="sem-ordem num" title="Projeção ÷ fechamento − 1">Var.</th>`
@@ -666,14 +682,14 @@ function renderizarProjecaoRedoc() {
     let ncol = a.empenho.length + 8;
     let corpo = [];
     let montar = (lista, nivel, caminho) => {
-        if (nivel === NIVEIS_ARVORE.length) {
+        if (nivel === arvore.niveis.length) {
             let ordenadas = lista.slice().sort((x, y) => y.proj - x.proj);
             ordenadas.slice(0, MAX_LINHAS_NO).forEach(l => corpo.push(linhaFolhaRedoc(l)));
             if (ordenadas.length > MAX_LINHAS_NO) corpo.push(`<tr class="linha-aviso"><td colspan="${ncol}">Mostrando ${MAX_LINHAS_NO} de ${fmtNum(ordenadas.length)} linhas (as de maior projeção). Use a busca para achar as demais.</td></tr>`);
             return;
         }
-        let campo = NIVEIS_ARVORE[nivel][0], grupos = new Map();
-        for (let l of lista) { let k = l[campo]; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(l); }
+        let chaveNivel = arvore.niveis[nivel], grupos = new Map();
+        for (let l of lista) { let k = chaveNivel(l); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(l); }
         let ordem = [...grupos.entries()].map(([k, ls]) => [k, ls, somarNo(ls)]).sort((x, y) => y[2].proj - x[2].proj);
         for (let [k, ls, s] of ordem) {
             let cam = caminho + '¦' + k, aberto = expandidosRedoc.has(cam);
@@ -695,7 +711,7 @@ function linhaFolhaRedoc(l) {
     let s = Object.assign({ fech: l.fech, proj: l.proj, lim: l.lim }, ...redocAnos.empenho.map(a => ({ ['e' + a]: l['e' + a] })));
     let cels = celulasValores(s, l.fechExp, l.projExp);
     return `<tr class="nivel-4 ${editada || classeTrocada ? 'linha-editada' : ''}">`
-        + `<td title="${escR(`${l.mapp}\n${l.fonte}\nNatureza ${l.nat} — ${l.delem} / ${l.ditem}\nChave REDOC: ${l.chaveRedoc}`)}"><span class="txt-mapp"><strong>MAPP ${escR(l.cod)}</strong> — ${escR(l.mapp)}</span><span style="color:var(--muted);">${escR(l.fonte)} · ${escR(l.nat)} ${escR(l.ditem)}</span></td>`
+        + `<td title="${escR(`${l.mapp}\n${l.fonte}\nNatureza ${l.nat} — ${l.delem} / ${l.ditem}\nChave REDOC: ${l.chaveRedoc}`)}"><span class="txt-mapp"><strong>MAPP ${escR(l.cod)}</strong> — ${escR(l.mapp)}</span><span style="color:var(--muted);">${escR(l.fonte)} · ${agrupamentoRedoc === 'item' ? `${escR(l.tipo)} · ${escR(l.gid)}` : `${escR(l.nat)} ${escR(l.ditem)}`}</span></td>`
         + cels
         + `<td><select class="select-classe" data-chave="${chave}" onchange="alterarClasseRedoc(this)" onclick="event.stopPropagation()">${opts}</select></td>`
         + `<td style="font-size:11px;min-width:130px;">${escR(l.projRegra)}</td>`
@@ -710,7 +726,8 @@ const DIMENSOES_REDOC = {
     gid: { rotulo: 'GID', f: l => l.gid },
     fonte: { rotulo: 'Fonte', f: l => l.fonte },
     sec: { rotulo: 'Secretaria', f: l => l.sec },
-    elemento: { rotulo: 'Grupo.Elemento', f: l => `${l.grupo}.${l.elem} ${l.delem}` }
+    elemento: { rotulo: 'Grupo.Elemento', f: rotuloElemento },
+    natureza: { rotulo: 'Item de despesa (natureza)', f: rotuloNatureza }
 };
 
 function cagr(primeiro, ultimo, anos) { return primeiro > 0 && ultimo > 0 && anos > 0 ? Math.pow(ultimo / primeiro, 1 / anos) - 1 : null; }
@@ -851,7 +868,7 @@ function resumoPor(campoFn) {
     let a = redocAnos, g = new Map();
     for (let l of redocLinhas) {
         let k = campoFn(l), x = g.get(k);
-        if (!x) { x = { k, n: 0, lim: 0, fech: 0, proj: 0 }; a.empenho.forEach(y => x['e' + y] = 0); g.set(k, x); }
+        if (!x) { x = { k, l, n: 0, lim: 0, fech: 0, proj: 0 }; a.empenho.forEach(y => x['e' + y] = 0); g.set(k, x); }
         x.n++; x.lim += l.lim || 0; x.fech += l.fech; x.proj += l.proj; a.empenho.forEach(y => x['e' + y] += l['e' + y] || 0);
     }
     return [...g.values()].sort((x, y) => y.proj - x.proj);
@@ -863,6 +880,16 @@ function colunasResumo(titulo) {
         .concat([{ t: `LIMITE_${a.limite || a.base}`, k: 'lim', n: true }, { t: `FECHAMENTO_${a.base}`, k: 'fech', n: true }, { t: `PROJECAO_${a.exercicio}`, k: 'proj', n: true }, { t: 'VARIACAO', k: 'var', n: true, pct: true, w: 11 }]);
 }
 function linhasResumo(lista) { return lista.map(x => Object.assign({}, x, { var: x.fech ? x.proj / x.fech - 1 : null })); }
+// Resumo por item de despesa (natureza completa), com os códigos e descrições em colunas; comOrgao = item × órgão.
+function abaResumoItem(wb, nome, comOrgao) {
+    let campos = [['NATUREZA', 'nat', 14], ['GRUPO', 'grupo', 8], ['DSC_GRUPO', 'dgrupo', 26], ['MODALIDADE', 'mod', 8], ['DSC_MODALIDADE', 'dmod', 30],
+        ['ELEMENTO', 'elem', 8], ['DSC_ELEMENTO', 'delem', 36], ['ITEM', 'item', 8], ['DSC_ITEM', 'ditem', 44]];
+    if (comOrgao) campos.push(['SECRETARIA', 'sec', 14], ['ORGAO', 'orgao', 16]);
+    let cols = campos.map(([t, k, w]) => ({ t, k: 'c_' + k, w })).concat(colunasResumo('').slice(1));
+    let lista = linhasResumo(resumoPor(l => comOrgao ? `${l.nat}|${l.orgao}` : l.nat));
+    lista.forEach(x => campos.forEach(([, k]) => x['c_' + k] = x.l[k]));
+    abaTabela(wb, nome, cols, lista);
+}
 
 async function exportarXLSXRedoc() {
     if (!exigirBaseRedoc()) return;
@@ -876,7 +903,7 @@ async function exportarXLSXRedoc() {
      ['Fechamento do ano base', 'Empenhado do ano base × fator da classe; com "Limite como teto", não passa do limite (salvo se o empenhado já passou); nunca abaixo do empenhado.'],
      ['Projeção', 'A · Pessoal: fechamento × (1 + vegetativo + reajuste). A · Custeio: fechamento × (1 + IPCA + real). B · Investimento: fechamento × (1 + correção). Índice próprio do GID substitui o da classe (A e B). C · Pontual e E · Contratual: regra da aba PARAMETROS. Valor manual substitui a regra.'],
      ['Chave REDOC', 'ORGAO__MAPP<código>__F<6 dígitos da fonte>__<natureza de 11 dígitos>'],
-     ['Abas', 'PARAMETROS, PROJECAO (uma linha por item), RESUMO_CLASSE, RESUMO_TIPO, RESUMO_GID, RESUMO_ORGAO, RESUMO_FONTE, TESTE_RETROATIVO, CRITICA']
+     ['Abas', 'PARAMETROS, PROJECAO (uma linha por item), RESUMO_CLASSE, RESUMO_TIPO, RESUMO_GID, RESUMO_ORGAO, RESUMO_FONTE, RESUMO_ITEM (por natureza de 11 dígitos), RESUMO_ITEM_ORGAO, TESTE_RETROATIVO, CRITICA']
     ].forEach(r => leia.addRow(r));
     leia.getColumn(1).font = { bold: true };
     leia.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
@@ -903,6 +930,8 @@ async function exportarXLSXRedoc() {
     abaTabela(wb, 'RESUMO_GID', colunasResumo('DSC_GID'), linhasResumo(resumoPor(l => l.gid)));
     abaTabela(wb, 'RESUMO_ORGAO', colunasResumo('SECRETARIA / ORGAO'), linhasResumo(resumoPor(l => `${l.sec} / ${l.orgao}`)));
     abaTabela(wb, 'RESUMO_FONTE', colunasResumo('DSC_FONTE_MAPP'), linhasResumo(resumoPor(l => l.fonte)));
+    abaResumoItem(wb, 'RESUMO_ITEM', false);
+    abaResumoItem(wb, 'RESUMO_ITEM_ORGAO', true);
 
     let t = calcularTesteRetroativo(p);
     if (t) {

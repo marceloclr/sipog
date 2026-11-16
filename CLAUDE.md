@@ -257,7 +257,9 @@ o js/03 e o js/05 (definições) e não toca no estado do SIPOG.
   maior (ou média/fechamento/zero); contratual = fechamento (ou limite/zero). Valor manual por linha (`redocValorManual`). Ajustes
   guardados em `localStorage` por nome de arquivo; parâmetros em `sipog_redoc_params_v1`.
 - Aba 3: série por dimensão, padrão de ocorrência, picos e **teste retroativo** (`calcularTesteRetroativo`: último ano completo pelos
-  anteriores, Órgão × Tipo × GID × classe, WAPE). Aba 4: árvore Secretaria → Órgão → Tipo → GID → linhas (até 300 por nó).
+  anteriores, Órgão × Tipo × GID × classe, WAPE). Aba 4: árvore `ARVORES_REDOC` — padrão **por item de despesa** (Grupo → Elemento →
+  Item = natureza completa de 11 dígitos, decisão do usuário 16/11 → Secretaria/Órgão → linhas) ou por órgão (Secretaria → Órgão → Tipo → GID →
+  linhas); filtros de Elemento e Item; até 300 linhas por nó. XLSX com RESUMO_ITEM e RESUMO_ITEM_ORGAO.
 - Exportação xlsx (PROJECAO com conta e regra, resumos, teste, crítica); cenário em JSON ou na nuvem, coleção `projecoes_redoc`
   (linhas em colunas, ~30 chunks para 22 mil linhas).
 - Conferido em 16/11 com `redoc_13-11-26.csv` (Chrome): 23.031 lidas → 22.065 linhas; totais iguais ao CSV (33,082 / 37,701 /
