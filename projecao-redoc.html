@@ -110,6 +110,7 @@
 <nav class="estudo-menu" aria-label="Etapas da projeção">
     <button class="estudo-menu-item" data-aba="carga" onclick="mostrarAbaRedoc('carga')"><span class="estudo-menu-num">1</span> Carga e crítica</button>
     <button class="estudo-menu-item" data-aba="parametros" onclick="mostrarAbaRedoc('parametros')"><span class="estudo-menu-num">2</span> Parâmetros</button>
+    <button class="estudo-menu-item" data-aba="projecao" onclick="mostrarAbaRedoc('projecao')"><span class="estudo-menu-num">4</span> Projeção <span class="ano-exercicio"></span></button>
 </nav>
 
 <main class="wrap estudo-conteudo">
@@ -187,6 +188,26 @@
             <h3 class="estudo-subtitulo">Índice próprio por GID</h3>
             <p class="estudo-nota">Para um GID com correção diferente da classe (por exemplo, Terceirização pela repactuação ou Contratos de Gestão pelo contrato), informe o percentual. Vale para as linhas das classes A e B desse GID.</p>
             <div id="indices-gid"></div>
+        </div>
+    </section>
+
+    <section class="estudo-aba estudo-secao" data-aba="projecao">
+        <h2 class="estudo-aba-titulo">4. Projeção <span class="ano-exercicio"></span> por item de despesa</h2>
+        <div class="estudo-corpo">
+            <p class="estudo-nota">Clique numa linha para abrir o nível seguinte (Secretaria → Órgão → Tipo → GID → linhas da extração). Valores em R$. Passe o mouse sobre o fechamento e a projeção para ver a conta. Na linha, a <strong>classe</strong> pode ser trocada e o <strong>valor manual</strong> substitui a regra (em branco volta à regra; ↺ desfaz os dois). Os ajustes ficam guardados neste navegador para o mesmo arquivo.</p>
+            <div class="estudo-resumo" id="cards-projecao"></div>
+            <div class="estudo-filtros">
+                <label>Secretaria <select id="f-sec" onchange="alterarFiltroRedoc()"></select></label>
+                <label>Tipo <select id="f-tipo" onchange="alterarFiltroRedoc()"></select></label>
+                <label>Classe <select id="f-classe" onchange="alterarFiltroRedoc()"></select></label>
+                <label>Fonte <select id="f-fonte" onchange="alterarFiltroRedoc()"></select></label>
+                <label>Busca <input type="search" id="f-busca" placeholder="MAPP, natureza, item…" onchange="alterarFiltroRedoc()"></label>
+                <label><input type="checkbox" id="f-editadas" onchange="alterarFiltroRedoc()"> só ajustadas à mão</label>
+                <button class="btn-mini-header" onclick="limparFiltrosRedoc()">Limpar filtros</button>
+                <button class="btn-mini-header" onclick="recolherTudoRedoc()">Recolher tudo</button>
+                <button class="btn-mini-header" onclick="descartarManuaisRedoc()" title="Apaga todos os valores digitados e classes trocadas">Descartar ajustes</button>
+            </div>
+            <div id="grade-projecao"><p class="estudo-nota">Carregue a extração na aba 1.</p></div>
         </div>
     </section>
 

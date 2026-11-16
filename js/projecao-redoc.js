@@ -146,6 +146,8 @@ function aplicarCargaRedoc(r, arquivo, dataCorte) {
     redocArquivo = arquivo;
     redocDataCorte = dataCorte || redocDataCorte || '';
     document.getElementById('data-corte').value = redocDataCorte;
+    restaurarManuaisRedoc(arquivo.nome);
+    expandidosRedoc.clear();
     criticarDataCorte();
     atualizarAnosNaPagina();
     renderizarCargaRedoc();
@@ -494,6 +496,211 @@ function renderizarIndicesGid() {
             + `<td class="num"><input class="input-valor" style="width:90px;" data-gid="${escR(x.gid)}" value="${proprio === undefined ? '' : String(proprio).replace('.', ',')}" placeholder="—" onchange="alterarIndiceGid(this)"></td></tr>`;
     }
     el.innerHTML = h + '</tbody></table></div>';
+}
+
+// ─── PROJEÇÃO DO EXERCÍCIO ──────────────────────────────────────────────────
+const ROTULO_REGRA_PONTUAL = { media_sem_maior: 'média sem o maior ano', media: 'média dos anos completos', fechamento: 'fechamento do ano base', zero: 'zero' };
+const ROTULO_REGRA_CONTRATO = { fechamento: 'fechamento do ano base — informar cronograma', limite: 'limite do ano base', zero: 'zero' };
+
+function projecaoAutomatica(l, p) {
+    let a = redocAnos, c = l.classe;
+    if (c === 'A-PESSOAL' || c === 'A-CUSTEIO' || c === 'B-INVEST') {
+        let proprio = redocIndiceGid[l.gid], i = proprio !== undefined ? proprio / 100 : p.indice[c];
+        return { v: l.fech * (1 + i), regra: proprio !== undefined ? 'índice do GID' : 'índice da classe', exp: `Fechamento ${F(l.fech)} × (1 + ${fmtPct(i, 2)})${proprio !== undefined ? ' (índice próprio do GID)' : ''}` };
+    }
+    if (c === 'C-PONTUAL') {
+        let regra = p['p-pontual-regra'], hist = a.completos.map(y => l['e' + y] || 0);
+        if (regra === 'zero') return { v: 0, regra: 'pontual: zero', exp: 'Pontual: zero (informar à mão)' };
+        if (regra === 'fechamento') return { v: l.fech, regra: 'pontual: fechamento', exp: `Pontual: fechamento ${F(l.fech)}` };
+        let usados = hist.slice(), tirado = null;
+        if (regra === 'media_sem_maior' && usados.length >= 3) { let m = Math.max(...usados); tirado = m; usados.splice(usados.indexOf(m), 1); }
+        let v = usados.reduce((s, x) => s + x, 0) / (usados.length || 1);
+        return { v, regra: 'pontual: ' + ROTULO_REGRA_PONTUAL[regra], exp: `Pontual: média de ${usados.map(F).join(' + ')}${tirado !== null ? ` (sem o maior, ${F(tirado)})` : ''} = ${F(v)}` };
+    }
+    let regra = p['p-contrato-regra'];
+    if (regra === 'limite') return { v: l.lim || 0, regra: 'contratual: limite', exp: `Contratual: Limite ${F(l.lim)}` };
+    if (regra === 'zero') return { v: 0, regra: 'contratual: zero', exp: 'Contratual: zero (informar à mão)' };
+    return { v: l.fech, regra: 'contratual: fechamento', exp: `Contratual: fechamento ${F(l.fech)} — conferir com o cronograma do contrato` };
+}
+
+function projetarLinhasRedoc(p) {
+    for (let l of redocLinhas) {
+        let r = projecaoAutomatica(l, p);
+        l.projAuto = r.v;
+        if (redocValorManual[l.chave] !== undefined) {
+            l.proj = redocValorManual[l.chave]; l.projRegra = 'manual'; l.projExp = `Valor digitado: ${F(l.proj)} (regra daria ${F(r.v)} — ${r.exp})`;
+        } else { l.proj = r.v; l.projRegra = r.regra; l.projExp = r.exp; }
+    }
+}
+
+// ─── AJUSTES MANUAIS (guardados por arquivo neste navegador) ────────────────
+const CHAVE_MANUAIS_REDOC = 'sipog_redoc_manuais_v1';
+function guardarManuaisRedoc() {
+    if (!redocArquivo) return;
+    try {
+        let todos = JSON.parse(localStorage.getItem(CHAVE_MANUAIS_REDOC) || '{}');
+        todos[redocArquivo.nome] = { classe: redocClasseManual, valor: redocValorManual };
+        localStorage.setItem(CHAVE_MANUAIS_REDOC, JSON.stringify(todos));
+    } catch (e) {}
+}
+function restaurarManuaisRedoc(nome) {
+    redocClasseManual = {}; redocValorManual = {};
+    try {
+        let m = JSON.parse(localStorage.getItem(CHAVE_MANUAIS_REDOC) || '{}')[nome];
+        if (m) { redocClasseManual = m.classe || {}; redocValorManual = m.valor || {}; }
+    } catch (e) {}
+    let chaves = new Set(redocLinhas.map(l => l.chave));
+    for (let k in redocClasseManual) if (!chaves.has(k)) delete redocClasseManual[k];
+    for (let k in redocValorManual) if (!chaves.has(k)) delete redocValorManual[k];
+}
+function linhaPorChave(chave) { return redocLinhas.find(l => l.chave === chave); }
+function alterarClasseRedoc(sel) {
+    let l = linhaPorChave(sel.dataset.chave); if (!l) return;
+    if (sel.value === l.classeAuto) delete redocClasseManual[l.chave]; else redocClasseManual[l.chave] = sel.value;
+    guardarManuaisRedoc(); recalcularRedoc();
+}
+function editarValorRedoc(input) {
+    let chave = input.dataset.chave, t = input.value.trim();
+    if (t === '') delete redocValorManual[chave]; else redocValorManual[chave] = valorDigitado(t);
+    guardarManuaisRedoc(); recalcularRedoc();
+}
+function voltarRegraRedoc(chave) {
+    delete redocValorManual[chave]; delete redocClasseManual[chave];
+    guardarManuaisRedoc(); recalcularRedoc();
+}
+function descartarManuaisRedoc() {
+    let n = Object.keys(redocValorManual).length + Object.keys(redocClasseManual).length;
+    if (!n || !confirm(`Descartar ${n} ajuste(s) manual(is) de valor e de classe?`)) return;
+    redocValorManual = {}; redocClasseManual = {};
+    guardarManuaisRedoc(); recalcularRedoc();
+}
+
+// ─── TELA: PROJEÇÃO (grade em árvore Secretaria → Órgão → Tipo → GID → linhas) ──
+const NIVEIS_ARVORE = [['sec', 'Secretaria'], ['orgao', 'Órgão'], ['tipo', 'Tipo de MAPP'], ['gid', 'GID']];
+const MAX_LINHAS_NO = 300;
+let expandidosRedoc = new Set();
+let filtrosRedoc = { sec: '', tipo: '', classe: '', fonte: '', busca: '', editadas: false };
+
+function fmtR(v) { let n = Math.round(Number(v || 0)); return n === 0 ? '-' : n.toLocaleString('pt-BR'); }
+function celVar(proj, fech) {
+    if (!fech) return `<td class="num">${proj ? 'novo' : '—'}</td>`;
+    let v = proj / fech - 1, cls = Math.abs(v) < 0.0005 ? '' : (v > 0 ? 'var-pos' : 'var-neg');
+    return `<td class="num ${cls}">${fmtPct(v)}</td>`;
+}
+
+function linhasFiltradasRedoc() {
+    let f = filtrosRedoc, b = N(f.busca);
+    return redocLinhas.filter(l => (!f.sec || l.sec === f.sec) && (!f.tipo || l.tipo === f.tipo) && (!f.classe || l.classe === f.classe)
+        && (!f.fonte || l.fonte === f.fonte)
+        && (!f.editadas || redocValorManual[l.chave] !== undefined || redocClasseManual[l.chave] !== undefined)
+        && (!b || N(`${l.orgao} ${l.cod} ${l.mapp} ${l.nat} ${l.ditem} ${l.delem} ${l.fonte}`).includes(b)));
+}
+
+function preencherFiltroRedoc(id, valores, rotuloTodos, atual) {
+    let el = document.getElementById(id); if (!el) return;
+    el.innerHTML = `<option value="">${rotuloTodos}</option>` + valores.map(([v, t]) => `<option value="${escR(v)}" ${v === atual ? 'selected' : ''}>${escR(t)}</option>`).join('');
+}
+function alterarFiltroRedoc() {
+    filtrosRedoc = {
+        sec: document.getElementById('f-sec').value, tipo: document.getElementById('f-tipo').value,
+        classe: document.getElementById('f-classe').value, fonte: document.getElementById('f-fonte').value,
+        busca: document.getElementById('f-busca').value, editadas: document.getElementById('f-editadas').checked
+    };
+    renderizarProjecaoRedoc();
+}
+function limparFiltrosRedoc() {
+    ['f-sec', 'f-tipo', 'f-classe', 'f-fonte', 'f-busca'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-editadas').checked = false;
+    alterarFiltroRedoc();
+}
+function alternarNoRedoc(caminho) {
+    if (expandidosRedoc.has(caminho)) expandidosRedoc.delete(caminho); else expandidosRedoc.add(caminho);
+    renderizarProjecaoRedoc();
+}
+function recolherTudoRedoc() { expandidosRedoc.clear(); renderizarProjecaoRedoc(); }
+
+function somarNo(linhas) {
+    let s = { fech: 0, proj: 0, lim: 0, n: linhas.length };
+    redocAnos.empenho.forEach(a => s['e' + a] = 0);
+    for (let l of linhas) { s.fech += l.fech; s.proj += l.proj; s.lim += l.lim || 0; for (let a of redocAnos.empenho) s['e' + a] += l['e' + a] || 0; }
+    return s;
+}
+function celulasValores(s, titFech, titProj) {
+    let t = x => x ? ` title="${escR(x)}"` : '';
+    return redocAnos.empenho.map(a => `<td class="num">${fmtR(s['e' + a])}</td>`).join('')
+        + `<td class="num">${fmtR(s.lim)}</td><td class="num"${t(titFech)}>${fmtR(s.fech)}</td><td class="num"${t(titProj)}><strong>${fmtR(s.proj)}</strong></td>` + celVar(s.proj, s.fech);
+}
+// Valor digitado: "1.234.567", "1234567,89", "R$ 1.234,5".
+function valorDigitado(t) {
+    t = String(t || '').replace(/R\$\s*/, '').replace(/\s/g, '');
+    if (t.includes(',')) return V(t);
+    if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) return Number(t.replace(/\./g, ''));
+    return parseFloat(t) || 0;
+}
+
+function renderizarProjecaoRedoc() {
+    let el = document.getElementById('grade-projecao');
+    if (!el || !redocLinhas.length) return;
+    let a = redocAnos, f = filtrosRedoc;
+    let uniq = campo => [...new Set(redocLinhas.map(l => l[campo]))].sort((x, y) => x.localeCompare(y, 'pt-BR')).map(v => [v, v]);
+    preencherFiltroRedoc('f-sec', uniq('sec'), '(todas as secretarias)', f.sec);
+    preencherFiltroRedoc('f-tipo', uniq('tipo'), '(todos os tipos)', f.tipo);
+    preencherFiltroRedoc('f-fonte', uniq('fonte'), '(todas as fontes)', f.fonte);
+    preencherFiltroRedoc('f-classe', ORDEM_CLASSES.map(c => [c, CLASSES_REDOC[c].rotulo]), '(todas as classes)', f.classe);
+
+    let linhas = linhasFiltradasRedoc(), tot = somarNo(linhas);
+    let nManuais = Object.keys(redocValorManual).length, nClasse = Object.keys(redocClasseManual).length;
+    document.getElementById('cards-projecao').innerHTML =
+        `<div title="Soma do fechamento das linhas filtradas"><span>Fechamento ${a.base}</span><b>R$ ${fmtMi(tot.fech)} mi</b></div>`
+        + `<div title="Soma da projeção das linhas filtradas"><span>Projeção ${a.exercicio}</span><b>R$ ${fmtMi(tot.proj)} mi</b></div>`
+        + `<div><span>Variação sobre o fechamento</span><b>${tot.fech ? fmtPct(tot.proj / tot.fech - 1) : '—'}</b></div>`
+        + `<div><span>Último ano completo (${a.completos[a.completos.length - 1]})</span><b>R$ ${fmtMi(tot['e' + a.completos[a.completos.length - 1]])} mi</b></div>`
+        + `<div><span>Linhas no filtro</span><b>${fmtNum(linhas.length)}</b></div>`
+        + `<div title="Valores digitados e classes trocadas à mão (em todas as linhas)"><span>Ajustes manuais</span><b>${fmtNum(nManuais)} valor(es) · ${fmtNum(nClasse)} classe(s)</b></div>`;
+
+    let cab = `<tr><th class="sem-ordem">Secretaria › Órgão › Tipo › GID › linha</th>`
+        + a.empenho.map(y => `<th class="sem-ordem num" title="Empenhado ${y}${y === a.base ? ` até ${dataBR(redocDataCorte)}` : ''}">${y}${y === a.base ? ' parcial' : ''}</th>`).join('')
+        + `<th class="sem-ordem num">Limite ${a.limite || a.base}</th><th class="sem-ordem num" title="Empenhado parcial × fator da classe (aba 2), com o Limite como teto">Fechamento ${a.base}</th>`
+        + `<th class="sem-ordem num" title="Fechamento corrigido pela regra da classe, ou o valor digitado">Projeção ${a.exercicio}</th><th class="sem-ordem num" title="Projeção ÷ fechamento − 1">Var.</th>`
+        + `<th class="sem-ordem">Classe</th><th class="sem-ordem">Regra</th><th class="sem-ordem" title="Digite para substituir a regra; em branco volta à regra">Valor manual</th></tr>`;
+    let ncol = a.empenho.length + 8;
+    let corpo = [];
+    let montar = (lista, nivel, caminho) => {
+        if (nivel === NIVEIS_ARVORE.length) {
+            let ordenadas = lista.slice().sort((x, y) => y.proj - x.proj);
+            ordenadas.slice(0, MAX_LINHAS_NO).forEach(l => corpo.push(linhaFolhaRedoc(l)));
+            if (ordenadas.length > MAX_LINHAS_NO) corpo.push(`<tr class="linha-aviso"><td colspan="${ncol}">Mostrando ${MAX_LINHAS_NO} de ${fmtNum(ordenadas.length)} linhas (as de maior projeção). Use a busca para achar as demais.</td></tr>`);
+            return;
+        }
+        let campo = NIVEIS_ARVORE[nivel][0], grupos = new Map();
+        for (let l of lista) { let k = l[campo]; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(l); }
+        let ordem = [...grupos.entries()].map(([k, ls]) => [k, ls, somarNo(ls)]).sort((x, y) => y[2].proj - x[2].proj);
+        for (let [k, ls, s] of ordem) {
+            let cam = caminho + '¦' + k, aberto = expandidosRedoc.has(cam);
+            let mix = {}; ls.forEach(l => mix[l.classe] = (mix[l.classe] || 0) + l.proj);
+            let tags = Object.entries(mix).sort((x, y) => y[1] - x[1]).map(([c]) => `<span class="estudo-tag cl-${c}" title="${escR(CLASSES_REDOC[c].rotulo)}">${c[0]}</span>`).join(' ');
+            corpo.push(`<tr class="no-arvore nivel-${nivel}" onclick="alternarNoRedoc(this.dataset.cam)" data-cam="${escR(cam)}"><td><span class="seta">${aberto ? '▾' : '▸'}</span> ${escR(k)} <span style="color:var(--muted);font-weight:400;font-size:11px;">(${fmtNum(ls.length)})</span></td>${celulasValores(s)}<td>${tags}</td><td></td><td></td></tr>`);
+            if (aberto) montar(ls, nivel + 1, cam);
+        }
+    };
+    montar(linhas, 0, '');
+    el.innerHTML = `<div class="estudo-tabela-wrap" style="max-height:none;"><table><thead>${cab}</thead><tbody>${corpo.join('') || `<tr><td colspan="${ncol}" class="estudo-nota">Nenhuma linha no filtro.</td></tr>`}</tbody>`
+        + `<tfoot><tr><td>Total do filtro</td>${celulasValores(tot)}<td colspan="3"></td></tr></tfoot></table></div>`;
+}
+
+function linhaFolhaRedoc(l) {
+    let editada = redocValorManual[l.chave] !== undefined, classeTrocada = redocClasseManual[l.chave] !== undefined;
+    let opts = ORDEM_CLASSES.map(c => `<option value="${c}" ${c === l.classe ? 'selected' : ''}>${CLASSES_REDOC[c].rotulo}${c === l.classeAuto ? ' (auto)' : ''}</option>`).join('');
+    let chave = escR(l.chave);
+    let s = Object.assign({ fech: l.fech, proj: l.proj, lim: l.lim }, ...redocAnos.empenho.map(a => ({ ['e' + a]: l['e' + a] })));
+    let cels = celulasValores(s, l.fechExp, l.projExp);
+    return `<tr class="nivel-4 ${editada || classeTrocada ? 'linha-editada' : ''}">`
+        + `<td title="${escR(`${l.mapp}\n${l.fonte}\nNatureza ${l.nat} — ${l.delem} / ${l.ditem}\nChave REDOC: ${l.chaveRedoc}`)}"><strong>MAPP ${escR(l.cod)}</strong> — ${escR(l.mapp.length > 90 ? l.mapp.slice(0, 90) + '…' : l.mapp)}<br><span style="color:var(--muted);">${escR(l.fonte)} · ${escR(l.nat)} ${escR(l.ditem)}</span></td>`
+        + cels
+        + `<td><select class="select-classe" data-chave="${chave}" onchange="alterarClasseRedoc(this)" onclick="event.stopPropagation()">${opts}</select></td>`
+        + `<td style="font-size:11px;min-width:130px;">${escR(l.projRegra)}</td>`
+        + `<td style="white-space:nowrap;"><input class="input-valor" data-chave="${chave}" value="${editada ? fmtR(redocValorManual[l.chave]) : ''}" placeholder="${fmtR(l.projAuto)}" onchange="editarValorRedoc(this)">`
+        + `${editada || classeTrocada ? ` <button class="btn-link" title="Volta à classe e à regra automáticas" onclick="voltarRegraRedoc(this.dataset.chave)" data-chave="${chave}">↺</button>` : ''}</td></tr>`;
 }
 
 // ─── NAVEGAÇÃO E TEMA ───────────────────────────────────────────────────────
