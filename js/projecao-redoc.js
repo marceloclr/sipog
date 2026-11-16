@@ -822,6 +822,213 @@ function renderizarTesteRetroativo(p) {
         + ORDEM_CLASSES.map(c => linha(c, t.res[c])).join('') + `</tbody><tfoot>${linha('TOTAL', t.res.TOTAL)}</tfoot></table></div>`;
 }
 
+// ─── EXPORTAÇÃO XLSX ────────────────────────────────────────────────────────
+function exigirBaseRedoc() {
+    if (redocLinhas.length) return true;
+    alert('Carregue a extração do REDOC (aba 1) ou abra um cenário antes.');
+    return false;
+}
+async function baixarWorkbookRedoc(wb, nome) {
+    let buffer = await wb.xlsx.writeBuffer();
+    baixarBlobRedoc(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), nome);
+}
+function baixarBlobRedoc(blob, nome) {
+    let url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = nome; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// Aba com cabeçalho em negrito, congelado e com filtro; colunas numéricas com #,##0.00.
+function abaTabela(wb, nome, colunas, linhas) {
+    let ws = wb.addWorksheet(nome, { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.columns = colunas.map(c => ({ header: c.t, key: c.k, width: c.w || (c.n ? 16 : 24) }));
+    ws.getRow(1).font = { bold: true };
+    linhas.forEach(r => ws.addRow(r));
+    colunas.forEach((c, i) => { if (c.n) ws.getColumn(i + 1).numFmt = c.pct ? '0.0%' : '#,##0.00'; });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colunas.length } };
+    return ws;
+}
+function resumoPor(campoFn) {
+    let a = redocAnos, g = new Map();
+    for (let l of redocLinhas) {
+        let k = campoFn(l), x = g.get(k);
+        if (!x) { x = { k, n: 0, lim: 0, fech: 0, proj: 0 }; a.empenho.forEach(y => x['e' + y] = 0); g.set(k, x); }
+        x.n++; x.lim += l.lim || 0; x.fech += l.fech; x.proj += l.proj; a.empenho.forEach(y => x['e' + y] += l['e' + y] || 0);
+    }
+    return [...g.values()].sort((x, y) => y.proj - x.proj);
+}
+function colunasResumo(titulo) {
+    let a = redocAnos;
+    return [{ t: titulo, k: 'k', w: 50 }, { t: 'LINHAS', k: 'n', n: true, w: 10 }]
+        .concat(a.empenho.map(y => ({ t: `EMPENHADO_${y}${y === a.base ? '_PARCIAL' : ''}`, k: 'e' + y, n: true })))
+        .concat([{ t: `LIMITE_${a.limite || a.base}`, k: 'lim', n: true }, { t: `FECHAMENTO_${a.base}`, k: 'fech', n: true }, { t: `PROJECAO_${a.exercicio}`, k: 'proj', n: true }, { t: 'VARIACAO', k: 'var', n: true, pct: true, w: 11 }]);
+}
+function linhasResumo(lista) { return lista.map(x => Object.assign({}, x, { var: x.fech ? x.proj / x.fech - 1 : null })); }
+
+async function exportarXLSXRedoc() {
+    if (!exigirBaseRedoc()) return;
+    let a = redocAnos, p = lerParametrosRedoc(), wb = new ExcelJS.Workbook();
+    wb.creator = 'SIPOG — Projeção REDOC';
+    let leia = wb.addWorksheet('LEIA-ME');
+    leia.columns = [{ width: 34 }, { width: 110 }];
+    [['Projeção', `Exercício ${a.exercicio} — despesas da extração do REDOC, por item de despesa`],
+     ['Arquivo', redocArquivo ? redocArquivo.nome : ''], ['Data de corte do ano base', dataBR(redocDataCorte)],
+     ['Anos completos', a.completos.join(', ')], ['Ano base (parcial)', String(a.base)], ['Gerado em', new Date().toLocaleString('pt-BR')],
+     ['Fechamento do ano base', 'Empenhado do ano base × fator da classe; com "Limite como teto", não passa do limite (salvo se o empenhado já passou); nunca abaixo do empenhado.'],
+     ['Projeção', 'A · Pessoal: fechamento × (1 + vegetativo + reajuste). A · Custeio: fechamento × (1 + IPCA + real). B · Investimento: fechamento × (1 + correção). Índice próprio do GID substitui o da classe (A e B). C · Pontual e E · Contratual: regra da aba PARAMETROS. Valor manual substitui a regra.'],
+     ['Chave REDOC', 'ORGAO__MAPP<código>__F<6 dígitos da fonte>__<natureza de 11 dígitos>'],
+     ['Abas', 'PARAMETROS, PROJECAO (uma linha por item), RESUMO_CLASSE, RESUMO_TIPO, RESUMO_GID, RESUMO_ORGAO, RESUMO_FONTE, TESTE_RETROATIVO, CRITICA']
+    ].forEach(r => leia.addRow(r));
+    leia.getColumn(1).font = { bold: true };
+    leia.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
+
+    let prm = coletarParametrosRedocTela();
+    let linhasPrm = Object.entries(prm.campos).map(([k, v]) => ({ k, v: typeof v === 'boolean' ? (v ? 'S' : 'N') : v }));
+    Object.entries(prm.indiceGid).forEach(([g, v]) => linhasPrm.push({ k: 'INDICE_GID:' + g, v }));
+    abaTabela(wb, 'PARAMETROS', [{ t: 'PARAMETRO', k: 'k', w: 40 }, { t: 'VALOR', k: 'v', w: 40 }], linhasPrm);
+
+    let cols = [['SECRETARIA', 'sec'], ['ORGAO', 'orgao'], ['TIPO_MAPP', 'tipo'], ['DSC_FONTE_MAPP', 'fonte', 30], ['COD_MAPP', 'cod', 10], ['DSC_MAPP', 'mapp', 60], ['DSC_GID', 'gid', 30],
+        ['CODIGO_COMPLETO', 'nat', 14], ['GRUPO', 'grupo', 8], ['MODALIDADE', 'mod', 8], ['ELEMENTO', 'elem', 8], ['DSC_ELEMENTO', 'delem', 36], ['ITEM', 'item', 8], ['DSC_ITEM', 'ditem', 40]]
+        .map(([t, k, w]) => ({ t, k, w }))
+        .concat(a.empenho.map(y => ({ t: `EMPENHADO_${y}${y === a.base ? '_PARCIAL' : ''}`, k: 'e' + y, n: true })))
+        .concat([{ t: `LIMITE_${a.limite || a.base}`, k: 'lim', n: true }, { t: 'CLASSE', k: 'classeTxt', w: 22 }, { t: 'CLASSE_AUTOMATICA', k: 'classeAutoTxt', w: 22 },
+            { t: `FECHAMENTO_${a.base}`, k: 'fech', n: true }, { t: 'CONTA_FECHAMENTO', k: 'fechExp', w: 50 },
+            { t: `PROJECAO_${a.exercicio}`, k: 'proj', n: true }, { t: 'REGRA_PROJECAO', k: 'projRegra', w: 26 }, { t: 'CONTA_PROJECAO', k: 'projExp', w: 60 },
+            { t: 'AJUSTE_MANUAL', k: 'manual', w: 8 }, { t: 'CHAVE_REDOC', k: 'chaveRedoc', w: 50 }]);
+    abaTabela(wb, 'PROJECAO', cols, redocLinhas.map(l => Object.assign({}, l, {
+        classeTxt: CLASSES_REDOC[l.classe].rotulo, classeAutoTxt: CLASSES_REDOC[l.classeAuto].rotulo,
+        manual: (redocValorManual[l.chave] !== undefined || redocClasseManual[l.chave] !== undefined) ? 'S' : 'N'
+    })));
+    abaTabela(wb, 'RESUMO_CLASSE', colunasResumo('CLASSE'), linhasResumo(resumoPor(l => CLASSES_REDOC[l.classe].rotulo)));
+    abaTabela(wb, 'RESUMO_TIPO', colunasResumo('TIPO_MAPP'), linhasResumo(resumoPor(l => l.tipo)));
+    abaTabela(wb, 'RESUMO_GID', colunasResumo('DSC_GID'), linhasResumo(resumoPor(l => l.gid)));
+    abaTabela(wb, 'RESUMO_ORGAO', colunasResumo('SECRETARIA / ORGAO'), linhasResumo(resumoPor(l => `${l.sec} / ${l.orgao}`)));
+    abaTabela(wb, 'RESUMO_FONTE', colunasResumo('DSC_FONTE_MAPP'), linhasResumo(resumoPor(l => l.fonte)));
+
+    let t = calcularTesteRetroativo(p);
+    if (t) {
+        abaTabela(wb, 'TESTE_RETROATIVO', [{ t: 'CLASSE', k: 'c', w: 26 }, { t: 'GRUPOS', k: 'n', n: true, w: 10 }, { t: `REALIZADO_${t.alvo}`, k: 'real', n: true },
+            { t: 'PREVISTO_REGRA', k: 'regra', n: true }, { t: 'ERRO_TOTAL_REGRA', k: 'eRegra', n: true, pct: true }, { t: 'WAPE_REGRA', k: 'wRegra', n: true, pct: true },
+            { t: `PREVISTO_REPETIR_${t.hist[t.hist.length - 1]}`, k: 'repete', n: true }, { t: 'ERRO_TOTAL_REPETIR', k: 'eRep', n: true, pct: true }, { t: 'WAPE_REPETIR', k: 'wRep', n: true, pct: true }],
+            ORDEM_CLASSES.concat(['TOTAL']).map(c => { let r = t.res[c]; return { c: c === 'TOTAL' ? 'Total' : CLASSES_REDOC[c].rotulo, n: r.n, real: r.real, regra: r.regra, repete: r.repete,
+                eRegra: r.real ? r.regra / r.real - 1 : null, wRegra: r.real ? r.absRegra / r.real : null, eRep: r.real ? r.repete / r.real - 1 : null, wRep: r.real ? r.absRepete / r.real : null }; }));
+    }
+    abaTabela(wb, 'CRITICA', [{ t: 'NIVEL', k: 'nivel', w: 8 }, { t: 'ITEM', k: 'titulo', w: 32 }, { t: 'DESCRICAO', k: 'texto', w: 90 }, { t: 'EXEMPLOS', k: 'ex', w: 90 }],
+        redocCritica.map(c => ({ nivel: c.nivel, titulo: c.titulo, texto: c.texto, ex: (c.exemplos || []).join(' | ') })));
+    await baixarWorkbookRedoc(wb, `SIPOG_Projecao_REDOC_${a.exercicio}_${carimboDataHoraRedoc()}.xlsx`);
+}
+
+// ─── CENÁRIO: JSON LOCAL E NUVEM ────────────────────────────────────────────
+// O cenário leva as linhas consolidadas (colunar, para caber em menos chunks), a crítica, os parâmetros e os ajustes.
+const CAMPOS_TEXTO_REDOC = ['sec', 'orgao', 'tipo', 'fonte', 'cod', 'mapp', 'gid', 'nat', 'grupo', 'dgrupo', 'mod', 'dmod', 'elem', 'delem', 'item', 'ditem'];
+const COLECAO_REDOC = 'projecoes_redoc';
+
+function montarCenarioRedoc(nome) {
+    let campos = CAMPOS_TEXTO_REDOC.concat(redocAnos.empenho.map(y => 'e' + y), ['lim']);
+    return {
+        sistema: 'SIPOG', tipo: 'projecao-redoc', versao_schema: 1, nome, salvo_em: new Date().toISOString(),
+        arquivo: redocArquivo, dataCorte: redocDataCorte, anos: redocAnos, totaisLidos: redocTotaisLidos,
+        critica: redocCritica.filter(c => c.titulo !== 'Data de corte'),
+        parametros: coletarParametrosRedocTela(), classeManual: redocClasseManual, valorManual: redocValorManual,
+        // "dadosBrutos" alimenta o totalRegistros dos metadados da nuvem (gravarPacoteFragmentado, js/05).
+        dados: { campos, dadosBrutos: redocLinhas.map(l => campos.map(c => l[c])) }
+    };
+}
+
+function abrirCenarioRedoc(c) {
+    if (!c || c.tipo !== 'projecao-redoc' || !c.dados || !Array.isArray(c.dados.dadosBrutos)) throw new Error('O arquivo não é um cenário da projeção REDOC.');
+    let campos = c.dados.campos;
+    let linhas = c.dados.dadosBrutos.map(v => {
+        let l = {}; campos.forEach((k, i) => l[k] = v[i]);
+        l.chave = [l.orgao, l.tipo, l.cod, N(l.mapp), l.fonte, l.nat].join('|');
+        l.chaveRedoc = chaveRedocLinha(l);
+        return l;
+    });
+    aplicarParametrosRedocTela(c.parametros);
+    guardarParametrosRedocLocal();
+    aplicarCargaRedoc({ linhas, anos: c.anos, totaisLidos: c.totaisLidos, critica: c.critica || [] }, c.arquivo || { nome: c.nome, lidas: linhas.length }, c.dataCorte);
+    redocClasseManual = Object.assign({}, c.classeManual || {});
+    redocValorManual = Object.assign({}, c.valorManual || {});
+    guardarManuaisRedoc();
+    recalcularRedoc();
+    document.getElementById('status-redoc').innerHTML += `<br><span class="ok">Cenário aberto:</span> ${escR(c.nome || '')}`;
+}
+
+function baixarJSONRedoc() {
+    if (!exigirBaseRedoc()) return;
+    let nome = `Projecao REDOC ${redocAnos.exercicio} ${carimboDataHoraRedoc()}`;
+    baixarBlobRedoc(new Blob([JSON.stringify(montarCenarioRedoc(nome))], { type: 'application/json' }), `SIPOG_Projecao_REDOC_${redocAnos.exercicio}_${carimboDataHoraRedoc()}.json`);
+}
+async function selecionarJSONRedoc(input) {
+    let arq = input.files && input.files[0];
+    if (!arq) return;
+    try { abrirCenarioRedoc(JSON.parse(await arq.text())); }
+    catch (err) { console.error(err); alert('Não foi possível abrir o cenário: ' + (err.message || err)); }
+    finally { input.value = ''; }
+}
+
+async function salvarCenarioNuvemRedoc() {
+    if (!exigirBaseRedoc()) return;
+    let base = prompt('Nome do cenário (a data e hora DDMMAAAA-HHMM são acrescentadas ao final):', `Projeção REDOC ${redocAnos.exercicio}`);
+    if (base === null) return;
+    let nome = `${base.trim() || 'Projeção REDOC'} ${carimboDataHoraRedoc()}`;
+    try {
+        window.__setStatusNuvem('☁️ Salvando cenário...', true);
+        let fb = await aguardarNuvemPronta();
+        let pacote = montarCenarioRedoc(nome);
+        pacote.criado_em = fb.serverTimestamp();
+        await gravarPacoteFragmentado(fb, COLECAO_REDOC, pacote);
+        window.__setStatusNuvem('☁️ Cenário salvo na nuvem', true);
+        alert(`Cenário "${nome}" salvo na nuvem.`);
+    } catch (err) {
+        console.error(err);
+        window.__setStatusNuvem('☁️ Falha ao salvar', false);
+        alert('Não foi possível salvar na nuvem. Verifique a conexão e tente de novo (ou use "Baixar JSON").');
+    }
+}
+async function listarCenariosNuvemRedoc() {
+    let lista = document.getElementById('lista-cenarios-redoc');
+    document.getElementById('modal-cenarios-redoc').style.display = 'flex';
+    lista.innerHTML = '<p class="estudo-nota" style="padding:12px;">Carregando cenários salvos...</p>';
+    try {
+        let fb = await aguardarNuvemPronta();
+        let snap = await fb.getDocs(fb.query(fb.collection(fb.db, COLECAO_REDOC), fb.orderBy('criado_em', 'desc')));
+        if (snap.empty) { lista.innerHTML = '<p class="estudo-nota" style="padding:12px;">Nenhum cenário salvo na nuvem ainda.</p>'; return; }
+        let h = '<table><thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">Salvo em</th><th class="sem-ordem num">Linhas</th><th class="sem-ordem" style="width:190px;">Ações</th></tr></thead><tbody>';
+        snap.forEach(d => {
+            let x = d.data();
+            let quando = (x.criado_em && typeof x.criado_em.toDate === 'function') ? x.criado_em.toDate().toLocaleString('pt-BR') : (x.salvo_em ? new Date(x.salvo_em).toLocaleString('pt-BR') : '—');
+            h += `<tr><td><strong>${escR(x.nome || 'Sem nome')}</strong></td><td>${escR(quando)}</td><td class="num">${typeof x.totalRegistros === 'number' ? fmtNum(x.totalRegistros) : '—'}</td>`
+                + `<td><button class="btn-mini-header" onclick="carregarCenarioNuvemRedoc('${d.id}')">⚡ Carregar</button> <button class="btn-mini-header" onclick="excluirCenarioNuvemRedoc('${d.id}')">🗑️ Excluir</button></td></tr>`;
+        });
+        lista.innerHTML = h + '</tbody></table>';
+    } catch (err) {
+        console.error(err);
+        lista.innerHTML = '<p class="estudo-nota" style="padding:12px; color:var(--danger);">Falha ao carregar a lista. Verifique a conexão.</p>';
+    }
+}
+function fecharModalCenariosRedoc() { document.getElementById('modal-cenarios-redoc').style.display = 'none'; }
+async function carregarCenarioNuvemRedoc(id) {
+    if (redocLinhas.length && !confirm('Substituir a base, os parâmetros e os ajustes atuais pelo cenário selecionado?')) return;
+    try {
+        window.__setStatusNuvem('☁️ Carregando cenário...', true);
+        let fb = await aguardarNuvemPronta();
+        let c = await lerPacoteFragmentado(fb, COLECAO_REDOC, id);
+        if (!c) { alert('Cenário não encontrado — pode ter sido excluído.'); return; }
+        abrirCenarioRedoc(c);
+        fecharModalCenariosRedoc();
+        window.__setStatusNuvem('☁️ Cenário carregado', true);
+    } catch (err) {
+        console.error(err);
+        window.__setStatusNuvem('☁️ Falha ao carregar', false);
+        alert('Não foi possível carregar o cenário: ' + (err.message || err));
+    }
+}
+async function excluirCenarioNuvemRedoc(id) {
+    if (!confirm('Excluir este cenário da nuvem? Não dá para desfazer.')) return;
+    try { let fb = await aguardarNuvemPronta(); await excluirPacoteFragmentado(fb, COLECAO_REDOC, id); listarCenariosNuvemRedoc(); }
+    catch (err) { console.error(err); alert('Não foi possível excluir o cenário.'); }
+}
+
 // ─── NAVEGAÇÃO E TEMA ───────────────────────────────────────────────────────
 function mostrarAbaRedoc(aba) {
     if (!document.querySelector(`.estudo-aba[data-aba="${aba}"]`)) aba = 'carga';
